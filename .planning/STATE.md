@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 1 of 8 (Infrastructure Foundation)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing
-Last activity: 2026-02-17 -- Completed 01-01 (Docker Compose stack with 4 healthy containers)
+Last activity: 2026-02-17 -- Completed 01-02 (MongoDB, Redis, 9 models, BullMQ queues/schedulers)
 
-Progress: [█░░░░░░░░░] ~4%
+Progress: [██░░░░░░░░] ~8%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
+- Total plans completed: 2
 - Average duration: 5min
-- Total execution time: 0.1 hours
+- Total execution time: 0.2 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-infrastructure-foundation | 1/3 | 5min | 5min |
+| 01-infrastructure-foundation | 2/3 | 10min | 5min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (5min)
-- Trend: Starting
+- Last 5 plans: 01-01 (5min), 01-02 (5min)
+- Trend: Steady
 
 *Updated after each plan completion*
 
@@ -49,6 +49,9 @@ Recent decisions affecting current work:
 - [01-01]: Used nginxinc/nginx-unprivileged:alpine for non-root frontend container
 - [01-01]: Frontend healthcheck must use 127.0.0.1 (not localhost) due to IPv6 resolution in alpine
 - [01-01]: Both packages use ESM ("type": "module") for modern import/export
+- [01-02]: Use plain config objects for BullMQ connections (avoids ioredis version mismatch with BullMQ's bundled ioredis)
+- [01-02]: Named import { Redis } from ioredis for ESM compatibility with NodeNext module resolution
+- [01-02]: Server startup sequence: connectDatabase -> Redis ping -> initializeSchedulers -> listen
 
 ### Pending Todos
 
@@ -62,5 +65,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 01-01-PLAN.md (Docker Compose stack). Ready for 01-02.
+Stopped at: Completed 01-02-PLAN.md (database, models, BullMQ). Ready for 01-03.
 Resume file: None
