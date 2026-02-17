@@ -7,7 +7,7 @@ export interface INotificationRelatedEntity {
 
 export interface INotification extends Document {
   userId: Types.ObjectId;
-  type: 'pattern_detected' | 'rule_executed' | 'staging_alert' | 'system' | 'inactivity_warning';
+  type: 'pattern_detected' | 'rule_executed' | 'staging_alert' | 'system' | 'inactivity_warning' | 'token_expiring';
   title: string;
   message: string;
   isRead: boolean;
@@ -23,7 +23,7 @@ const notificationSchema = new Schema<INotification>(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     type: {
       type: String,
-      enum: ['pattern_detected', 'rule_executed', 'staging_alert', 'system', 'inactivity_warning'],
+      enum: ['pattern_detected', 'rule_executed', 'staging_alert', 'system', 'inactivity_warning', 'token_expiring'],
       required: true,
     },
     title: { type: String, required: true },

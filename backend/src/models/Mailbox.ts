@@ -12,6 +12,7 @@ export interface IMailbox extends Document {
   email: string;
   displayName?: string;
   tenantId?: string;
+  homeAccountId?: string;
   isConnected: boolean;
   encryptedTokens?: {
     accessToken?: IEncryptedToken;
@@ -41,6 +42,7 @@ const mailboxSchema = new Schema<IMailbox>(
     email: { type: String, required: true },
     displayName: { type: String },
     tenantId: { type: String },
+    homeAccountId: { type: String },
     isConnected: { type: Boolean, default: true },
     encryptedTokens: {
       accessToken: { type: encryptedTokenSchema },
@@ -62,5 +64,6 @@ const mailboxSchema = new Schema<IMailbox>(
 // Indexes
 mailboxSchema.index({ userId: 1, email: 1 }, { unique: true });
 mailboxSchema.index({ userId: 1 });
+mailboxSchema.index({ homeAccountId: 1 }, { unique: true, sparse: true });
 
 export const Mailbox = model<IMailbox>('Mailbox', mailboxSchema);
