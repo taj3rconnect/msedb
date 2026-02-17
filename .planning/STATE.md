@@ -39,6 +39,7 @@ Progress: [██████████████████░] ~80%
 - Trend: Steady
 
 *Updated after each plan completion*
+| Phase 06 P01 | 2min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,10 @@ Recent decisions affecting current work:
 - [06-02]: Conversion is idempotent: calling twice for same pattern returns existing rule
 - [06-02]: Undo reverses actions in reverse order for correctness (last action undone first)
 - [06-02]: 404 from Graph API treated as partial undo success, not failure (message may be purged by Exchange)
+- [Phase 06-01]: Org-wide whitelist stored in Redis Sets for O(1) lookup without extra Mongo queries
+- [Phase 06-01]: StagedEmail TTL uses cleanupAt = expiresAt + 7 days to prevent premature auto-deletion
+- [Phase 06-01]: Action executor breaks on 404 (message gone) rather than continuing to next action
+- [Phase 06-01]: Socket.IO staging notifications wrapped in try/catch for worker process compatibility
 
 ### Pending Todos
 
@@ -120,5 +125,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 06-02-PLAN.md (rule converter + undo service). Next: 06-03.
+Stopped at: Completed 06-01-PLAN.md (rule engine, whitelist, action executor, staging manager). 06-02 also done. Next: 06-03.
 Resume file: None
