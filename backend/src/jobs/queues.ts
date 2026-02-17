@@ -15,6 +15,7 @@ const defaultJobOptions = {
 
 // Queue names
 const QUEUE_NAMES = [
+  'webhook-events',
   'webhook-renewal',
   'delta-sync',
   'pattern-analysis',
@@ -24,8 +25,12 @@ const QUEUE_NAMES = [
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
 
-// Create all 5 queues
+// Create all 6 queues
 export const queues: Record<QueueName, Queue> = {
+  'webhook-events': new Queue('webhook-events', {
+    connection: queueConnectionConfig,
+    defaultJobOptions,
+  }),
   'webhook-renewal': new Queue('webhook-renewal', {
     connection: queueConnectionConfig,
     defaultJobOptions,
@@ -59,6 +64,7 @@ function createProcessor(queueName: string) {
 
 // Map queue names to their processor functions (real or placeholder)
 const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
+  'webhook-events': createProcessor('webhook-events'),
   'webhook-renewal': createProcessor('webhook-renewal'),
   'delta-sync': createProcessor('delta-sync'),
   'pattern-analysis': createProcessor('pattern-analysis'),
@@ -66,7 +72,7 @@ const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
   'token-refresh': processTokenRefresh,
 };
 
-// Create all 5 workers (each with its own Redis connection via config object)
+// Create all 6 workers (each with its own Redis connection via config object)
 const workers: Worker[] = QUEUE_NAMES.map((name) => {
   const worker = new Worker(name, processorMap[name], {
     connection: workerConnectionConfig,
