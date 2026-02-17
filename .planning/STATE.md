@@ -5,33 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 2 - Authentication & Token Management
+**Current focus:** Phase 2 - Authentication & Token Management (Complete)
 
 ## Current Position
 
 Phase: 2 of 8 (Authentication & Token Management)
-Plan: 1 of 2 in current phase
-Status: Executing Phase 2
-Last activity: 2026-02-17 -- Completed 02-01 (MSAL OAuth auth, JWT sessions, auth middleware)
+Plan: 2 of 2 in current phase
+Status: Phase 2 Complete
+Last activity: 2026-02-17 -- Completed 02-02 (Token refresh, admin routes, multi-mailbox)
 
-Progress: [███░░░░░░░] ~18%
+Progress: [████░░░░░░] ~25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 5min
-- Total execution time: 0.30 hours
+- Total plans completed: 5
+- Average duration: 4min
+- Total execution time: 0.35 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-infrastructure-foundation | 3/3 | 15min | 5min |
-| 02-authentication-token-management | 1/2 | 3min | 3min |
+| 02-authentication-token-management | 2/2 | 6min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (5min), 01-02 (5min), 01-03 (5min), 02-01 (3min)
+- Last 5 plans: 01-02 (5min), 01-03 (5min), 02-01 (3min), 02-02 (3min)
 - Trend: Steady/Improving
 
 *Updated after each plan completion*
@@ -60,6 +60,10 @@ Recent decisions affecting current work:
 - [02-01]: Signed JWT as OAuth state parameter instead of Redis nonce -- self-contained, no Redis lookup required
 - [02-01]: Auth middleware applied at route level only, not as blanket server-level middleware
 - [02-01]: Separate createLoginMsalClient (no cache plugin) vs createMsalClient (with cache plugin) for login vs post-login flows
+- [02-02]: Token refresh queries ALL connected mailboxes (no expiry filter) -- MSAL acquireTokenSilent handles cache hits for still-valid tokens
+- [02-02]: ProcessorMap pattern in queues.ts maps queue names to processor functions (real or placeholder)
+- [02-02]: ConflictError (409) added to error handler for admin invite duplicate detection
+- [02-02]: Multi-mailbox connect uses signed JWT state with userId for CSRF-safe cross-request context
 
 ### Pending Todos
 
@@ -73,5 +77,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 02-01-PLAN.md (MSAL OAuth auth, JWT sessions, auth middleware). Ready for 02-02.
+Stopped at: Completed 02-02-PLAN.md (Token refresh, admin routes, multi-mailbox). Phase 2 complete. Ready for Phase 3.
 Resume file: None
