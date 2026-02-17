@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 6 of 8 (Automation & Safety)
-Plan: 4 of 6 in current phase
+Plan: 5 of 6 in current phase
 Status: In Progress
-Last activity: 2026-02-17 -- Completed 06-04 (automation pipeline wiring)
+Last activity: 2026-02-17 -- Completed 06-05 (rules page with drag-and-drop)
 
-Progress: [██████████████████░] ~80%
+Progress: [███████████████████] ~83%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 19
+- Total plans completed: 20
 - Average duration: 4min
 - Total execution time: 1.00 hours
 
@@ -32,16 +32,17 @@ Progress: [██████████████████░] ~80%
 | 03-email-observation-pipeline | 3/3 | 9min | 3min |
 | 04-frontend-shell-observation-ui | 3/3 | 11min | 4min |
 | 05-pattern-intelligence | 3/3 | 9min | 3min |
-| 06-automation-safety | 4/6 | 18min | 5min |
+| 06-automation-safety | 5/6 | 22min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 05-03 (3min), 06-01 (4min), 06-02 (2min), 06-03 (3min), 06-04 (3min)
+- Last 5 plans: 06-01 (4min), 06-02 (2min), 06-03 (3min), 06-04 (3min), 06-05 (4min)
 - Trend: Steady
 
 *Updated after each plan completion*
 | Phase 06 P01 | 2min | 2 tasks | 5 files |
 | Phase 06 P03 | 6min | 2 tasks | 6 files |
 | Phase 06 P04 | 3min | 2 tasks | 3 files |
+| Phase 06 P05 | 4min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,10 @@ Recent decisions affecting current work:
 - [Phase 06-04]: Rule evaluation runs inline with webhook processing (not separate queue) for low latency
 - [Phase 06-04]: Rule evaluation errors isolated -- email event recording continues even if automation fails
 - [Phase 06-04]: Removed createProcessor placeholder; all 6 BullMQ queues now have production processors
+- [Phase 06-05]: Drag handle on GripVertical icon only (not entire card) to preserve click/toggle interactions
+- [Phase 06-05]: Optimistic local state in RuleList for instant visual reorder feedback
+- [Phase 06-05]: PointerSensor with 5px activation distance to prevent accidental drags
+- [Phase 06-05]: Action badges color-coded by type (move=blue, delete=red, markRead=green, etc.)
 
 ### Pending Todos
 
@@ -135,5 +140,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 06-03-PLAN.md (REST API routes for rules, staging, audit, whitelist). Next: 06-05.
+Stopped at: Completed 06-05-PLAN.md (rules page with drag-and-drop). Next: 06-06.
 Resume file: None
