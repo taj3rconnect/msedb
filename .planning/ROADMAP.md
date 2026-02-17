@@ -50,12 +50,11 @@ Plans:
   3. Admin can invite users by email, assign roles (Admin/User), and `requireAdmin` middleware blocks non-admin users from admin-only routes
   4. After `docker restart msedb-backend`, all users' Graph API access continues working without re-authentication (MSAL cache persisted to MongoDB, encrypted refresh tokens intact)
   5. A single user can connect multiple mailboxes (e.g., taj@aptask.com and taj@jobtalk.ai) via separate OAuth consent flows, with each mailbox maintaining independent tokens and the UI clearly labeling which mailbox is which
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: MSAL OAuth flow, JWT sessions, auth middleware
-- [ ] 02-02: Encrypted token storage, MSAL cache persistence, token refresh job
-- [ ] 02-03: Multi-mailbox connection flow, admin user management, role-based access
+- [ ] 02-01-PLAN.md — MSAL OAuth flow, JWT sessions, auth middleware, ICachePlugin, token manager
+- [ ] 02-02-PLAN.md — Token refresh worker, admin user management, multi-mailbox connection flow
 
 ### Phase 3: Email Observation Pipeline
 **Goal**: The system observes email activity in real-time via webhooks with delta query fallback, collecting deduplicated metadata events for every connected mailbox -- the data foundation for all intelligence and automation
