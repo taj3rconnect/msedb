@@ -1,8 +1,11 @@
 import { Router, type Request, type Response } from 'express';
+import { Types } from 'mongoose';
 import { requireAuth } from '../auth/middleware.js';
 import { Pattern } from '../models/Pattern.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { queues } from '../jobs/queues.js';
+import { convertPatternToRule } from '../services/ruleConverter.js';
+import logger from '../config/logger.js';
 import {
   NotFoundError,
   ConflictError,
@@ -138,6 +141,17 @@ patternsRouter.post('/:id/approve', async (req: Request, res: Response) => {
     },
   });
 
+  // Auto-convert approved pattern to rule (ROADMAP success criterion 1)
+  // Rule creation failure should not fail the approve response
+  try {
+    await convertPatternToRule(pattern._id, new Types.ObjectId(userId));
+  } catch (err) {
+    logger.warn('Auto-conversion of pattern to rule failed', {
+      patternId: pattern._id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   res.json({ pattern });
 });
 
@@ -244,6 +258,17 @@ patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
       originalAction,
     },
   });
+
+  // Auto-convert approved pattern to rule (ROADMAP success criterion 1)
+  // Rule creation failure should not fail the approve response
+  try {
+    await convertPatternToRule(pattern._id, new Types.ObjectId(userId));
+  } catch (err) {
+    logger.warn('Auto-conversion of customized pattern to rule failed', {
+      patternId: pattern._id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   res.json({ pattern });
 });
