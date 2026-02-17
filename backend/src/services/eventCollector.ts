@@ -1,11 +1,14 @@
 import { graphFetch, GraphApiError } from './graphClient.js';
 import { extractMetadata, type GraphMessage } from './metadataExtractor.js';
+import { evaluateRulesForMessage } from './ruleEngine.js';
+import { executeActions } from './actionExecutor.js';
 import { buildSelectParam } from '../utils/graph.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { EmailEvent, type IEmailEvent } from '../models/EmailEvent.js';
 import { WebhookSubscription } from '../models/WebhookSubscription.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { getIO } from '../config/socket.js';
+import type { Types } from 'mongoose';
 import logger from '../config/logger.js';
 
 /**
@@ -252,6 +255,41 @@ async function handleCreated(
   } as Partial<IEmailEvent>;
 
   await saveEmailEvent(eventData);
+
+  // Evaluate automation rules for the new message
+  try {
+    const result = await evaluateRulesForMessage(
+      userId as Types.ObjectId,
+      mailboxId as Types.ObjectId,
+      graphMessage,
+      accessToken,
+    );
+
+    if (result.matched && result.ruleId && result.actions) {
+      logger.info('Rule matched incoming email', {
+        ruleId: result.ruleId,
+        messageId,
+        actionsCount: result.actions.length,
+      });
+
+      await executeActions({
+        mailboxEmail,
+        messageId,
+        actions: result.actions,
+        ruleId: result.ruleId as unknown as Types.ObjectId,
+        userId: userId as Types.ObjectId,
+        mailboxId: mailboxId as Types.ObjectId,
+        originalFolder: graphMessage.parentFolderId ?? '',
+        accessToken,
+      });
+    }
+  } catch (err) {
+    // Rule evaluation failures must not block event collection
+    logger.error('Rule evaluation failed for incoming email', {
+      messageId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**
