@@ -15,6 +15,9 @@ import webhooksRouter from './routes/webhooks.js';
 import authRouter from './auth/routes.js';
 import adminRouter from './routes/admin.js';
 import mailboxRouter from './routes/mailbox.js';
+import { dashboardRouter } from './routes/dashboard.js';
+import { userRouter } from './routes/user.js';
+import { createSocketServer } from './config/socket.js';
 
 // Import all models to trigger Mongoose model registration
 import './models/index.js';
@@ -41,6 +44,12 @@ app.use('/api/admin', adminRouter);
 
 // Mount mailbox routes (requireAuth applied internally)
 app.use('/api/mailboxes', mailboxRouter);
+
+// Mount dashboard routes (requireAuth applied internally)
+app.use('/api/dashboard', dashboardRouter);
+
+// Mount user routes -- dedicated router for kill switch (requireAuth applied internally)
+app.use('/api/user', userRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);
@@ -79,8 +88,11 @@ async function startServer(): Promise<void> {
       });
     }
 
-    // 6. Start Express server (only after all infrastructure is ready)
-    app.listen(config.port, () => {
+    // 6. Create Socket.IO server and start listening (only after all infrastructure is ready)
+    const { httpServer, io } = createSocketServer(app);
+    app.set('io', io);
+
+    httpServer.listen(config.port, () => {
       logger.info(`MSEDB backend started on port ${config.port}`, {
         environment: config.nodeEnv,
         port: config.port,
