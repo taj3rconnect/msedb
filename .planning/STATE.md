@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 1 - Infrastructure Foundation
+**Current focus:** Phase 2 - Authentication & Token Management
 
 ## Current Position
 
-Phase: 1 of 8 (Infrastructure Foundation) -- COMPLETE
-Plan: 3 of 3 in current phase (all complete)
-Status: Phase 1 Complete
-Last activity: 2026-02-17 -- Completed 01-03 (security hardening, health endpoint, webhooks, encryption)
+Phase: 2 of 8 (Authentication & Token Management)
+Plan: 1 of 2 in current phase
+Status: Executing Phase 2
+Last activity: 2026-02-17 -- Completed 02-01 (MSAL OAuth auth, JWT sessions, auth middleware)
 
-Progress: [██░░░░░░░░] ~12%
+Progress: [███░░░░░░░] ~18%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 5min
-- Total execution time: 0.25 hours
+- Total execution time: 0.30 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-infrastructure-foundation | 3/3 | 15min | 5min |
+| 02-authentication-token-management | 1/2 | 3min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (5min), 01-02 (5min), 01-03 (5min)
-- Trend: Steady
+- Last 5 plans: 01-01 (5min), 01-02 (5min), 01-03 (5min), 02-01 (3min)
+- Trend: Steady/Improving
 
 *Updated after each plan completion*
 
@@ -56,6 +57,9 @@ Recent decisions affecting current work:
 - [01-03]: Graph API SELECT_FIELDS as central constant -- all future Graph calls must use buildSelectParam() for INFR-04
 - [01-03]: Health endpoint treats subscriptions.active and tokens.healthy as informational, not gates for healthy/degraded
 - [01-03]: Cloudflare Tunnel deferred to Phase 3 prerequisite (user decision)
+- [02-01]: Signed JWT as OAuth state parameter instead of Redis nonce -- self-contained, no Redis lookup required
+- [02-01]: Auth middleware applied at route level only, not as blanket server-level middleware
+- [02-01]: Separate createLoginMsalClient (no cache plugin) vs createMsalClient (with cache plugin) for login vs post-login flows
 
 ### Pending Todos
 
@@ -69,5 +73,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 01-03-PLAN.md (security, health, webhooks, encryption). Phase 1 complete. Ready for Phase 2.
+Stopped at: Completed 02-01-PLAN.md (MSAL OAuth auth, JWT sessions, auth middleware). Ready for 02-02.
 Resume file: None
