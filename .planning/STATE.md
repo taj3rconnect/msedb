@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 4 of 8 (Frontend Shell & Observation UI)
-Plan: 1 of 3 in current phase
-Status: Plan 04-01 Complete
-Last activity: 2026-02-17 -- Completed 04-01 (Frontend foundation: shadcn/ui, auth store, protected routes, login page)
+Plan: 2 of 3 in current phase
+Status: Plan 04-02 Complete
+Last activity: 2026-02-17 -- Completed 04-02 (Dashboard, app shell, Socket.IO, kill switch)
 
-Progress: [█████████░] ~50%
+Progress: [██████████░] ~55%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 3min
-- Total execution time: 0.55 hours
+- Total execution time: 0.63 hours
 
 **By Phase:**
 
@@ -30,10 +30,10 @@ Progress: [█████████░] ~50%
 | 01-infrastructure-foundation | 3/3 | 15min | 5min |
 | 02-authentication-token-management | 2/2 | 6min | 3min |
 | 03-email-observation-pipeline | 3/3 | 9min | 3min |
-| 04-frontend-shell-observation-ui | 1/3 | 3min | 3min |
+| 04-frontend-shell-observation-ui | 2/3 | 8min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (3min), 03-01 (3min), 03-02 (3min), 03-03 (3min), 04-01 (3min)
+- Last 5 plans: 03-01 (3min), 03-02 (3min), 03-03 (3min), 04-01 (3min), 04-02 (5min)
 - Trend: Steady/Improving
 
 *Updated after each plan completion*
@@ -83,6 +83,10 @@ Recent decisions affecting current work:
 - [04-01]: AppRoot component with useAuth hook wraps all routes for session initialization
 - [04-01]: API client auto-prefixes /api for non-auth paths, uses /auth paths as-is
 - [04-01]: npm overrides for react-is to ensure React 19 compatibility with recharts
+- [04-02]: Socket.IO emission centralized in saveEmailEvent -- all saves automatically emit to dashboard
+- [04-02]: Kill switch at /api/user/preferences with dedicated userRouter (not nested in dashboard)
+- [04-02]: Socket.IO useRef pattern prevents reconnection on re-renders
+- [04-02]: AppShell renders Outlet directly for react-router nesting
 
 ### Pending Todos
 
@@ -95,5 +99,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 04-01-PLAN.md (Frontend foundation: shadcn/ui, auth store, protected routes, login page). Ready for 04-02.
+Stopped at: Completed 04-02-PLAN.md (Dashboard, app shell, Socket.IO, kill switch). Ready for 04-03.
 Resume file: None
