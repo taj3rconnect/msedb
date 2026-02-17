@@ -71,6 +71,7 @@ Users never lose control of their email. The system observes, learns, suggests, 
 - **Resource cap:** 5 CPU cores, 5GB RAM total across all 4 containers
 - **Infrastructure state:** Azure AD app registration and Cloudflare Tunnel not yet set up — need to be created as part of Phase 1
 - **Initial user:** Taj (admin) — solo testing before wider rollout
+- **Multi-domain O365 tenant:** Multiple business domains under one Office 365 account — aptask.com, jobtalk.ai, yenom.ai, hudosndatallc.com, and others. Users may have email addresses across different domains but share one Azure AD tenant
 - **Existing code:** Project scaffolding and documentation only — no application code yet
 - **PRD status:** v1.1 Final, approved — detailed spec in `MSEDB-PRD.md`
 - **Setup guide:** Infrastructure setup documented in `MSEDB-Setup-Guide.md`
