@@ -6,6 +6,7 @@ import { processWebhookRenewal } from './processors/webhookRenewal.js';
 import { processWebhookEvent } from './processors/webhookEvents.js';
 import { processDeltaSync } from './processors/deltaSync.js';
 import { processPatternAnalysis } from './processors/patternAnalysis.js';
+import { processStagingItems } from './processors/stagingProcessor.js';
 
 // Connection configs (plain objects avoid ioredis version conflicts with BullMQ)
 const queueConnectionConfig = getQueueConnectionConfig();
@@ -57,22 +58,13 @@ export const queues: Record<QueueName, Queue> = {
   }),
 };
 
-// Placeholder processor -- logs job start/completion
-function createProcessor(queueName: string) {
-  return async (job: Job): Promise<void> => {
-    logger.info('Processing job', { queue: queueName, jobId: job.id, jobName: job.name });
-    // Actual job logic will be implemented in later phases
-    logger.info('Job completed', { queue: queueName, jobId: job.id, jobName: job.name });
-  };
-}
-
-// Map queue names to their processor functions (real or placeholder)
+// Map queue names to their processor functions
 const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
   'webhook-events': processWebhookEvent,
   'webhook-renewal': processWebhookRenewal,
   'delta-sync': processDeltaSync,
   'pattern-analysis': processPatternAnalysis,
-  'staging-processor': createProcessor('staging-processor'),
+  'staging-processor': processStagingItems,
   'token-refresh': processTokenRefresh,
 };
 
