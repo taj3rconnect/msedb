@@ -65,12 +65,12 @@ Plans:
   2. Webhook subscriptions include `lifecycleNotificationUrl`, renew automatically every 2 hours, and recover from `subscriptionRemoved` and `missed` lifecycle events by re-creating subscriptions and running immediate delta sync
   3. Delta query runs every 15 minutes per mailbox per folder, catches events missed by webhooks, and stores deltaLinks in Redis -- with fallback to full sync on expired delta tokens (410 Gone)
   4. Duplicate events are rejected via the compound index on userId + mailboxId + messageId + eventType, and the webhook handler returns 202 within 3 seconds with zero blocking (all processing via BullMQ)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Graph client factory, webhook subscription service, webhook handler
-- [ ] 03-02: Event collector, metadata extractor, deduplication
-- [ ] 03-03: Delta sync service, BullMQ jobs (webhook renewal, delta sync, token refresh)
+- [ ] 03-01-PLAN.md — Graph API client, webhook handler enhancement, subscription service, Cloudflare Tunnel
+- [ ] 03-02-PLAN.md — Metadata extractor, event collector, webhook-events BullMQ processor
+- [ ] 03-03-PLAN.md — Folder cache, delta sync service, delta-sync BullMQ processor
 
 ### Phase 4: Frontend Shell & Observation UI
 **Goal**: Users can log in to the React dashboard, see real-time email activity stats, browse collected events, and verify the observation pipeline is working -- with the kill switch visible in persistent navigation from day one
