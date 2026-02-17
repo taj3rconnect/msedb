@@ -150,6 +150,47 @@ export function shouldSuggestPattern(
 }
 
 // ---------------------------------------------------------------------------
+// Shared Aggregation Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the base $match filter shared by all pattern detection pipelines.
+ * Excludes automated events and requires sender.email to be present.
+ */
+function buildBaseMatchFilter(
+  userId: Types.ObjectId,
+  mailboxId: Types.ObjectId,
+  windowStart: Date,
+  extras: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    userId,
+    mailboxId,
+    timestamp: { $gte: windowStart },
+    'metadata.automatedByRule': { $exists: false },
+    'sender.email': { $exists: true, $ne: null },
+    ...extras,
+  };
+}
+
+/**
+ * Build the evidence collection $topN accumulator for $group stages.
+ */
+function buildEvidenceAccumulator() {
+  return {
+    $topN: {
+      n: MAX_EVIDENCE_ITEMS,
+      sortBy: { timestamp: -1 as const },
+      output: {
+        messageId: '$messageId',
+        timestamp: '$timestamp',
+        eventType: '$eventType',
+      },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Aggregation Functions
 // ---------------------------------------------------------------------------
 
@@ -169,13 +210,7 @@ export async function detectSenderPatterns(
 
   const results = await EmailEvent.aggregate<SenderAggregationResult>([
     {
-      $match: {
-        userId,
-        mailboxId,
-        timestamp: { $gte: windowStart },
-        'metadata.automatedByRule': { $exists: false },
-        'sender.email': { $exists: true, $ne: null },
-      },
+      $match: buildBaseMatchFilter(userId, mailboxId, windowStart),
     },
     {
       $group: {
@@ -198,17 +233,7 @@ export async function detectSenderPatterns(
         },
         firstSeen: { $min: '$timestamp' },
         lastSeen: { $max: '$timestamp' },
-        recentEvents: {
-          $topN: {
-            n: MAX_EVIDENCE_ITEMS,
-            sortBy: { timestamp: -1 as const },
-            output: {
-              messageId: '$messageId',
-              timestamp: '$timestamp',
-              eventType: '$eventType',
-            },
-          },
-        },
+        recentEvents: buildEvidenceAccumulator(),
       },
     },
     {
@@ -246,15 +271,10 @@ export async function detectFolderRoutingPatterns(
 
   const results = await EmailEvent.aggregate<FolderRoutingAggregationResult>([
     {
-      $match: {
-        userId,
-        mailboxId,
+      $match: buildBaseMatchFilter(userId, mailboxId, windowStart, {
         eventType: 'moved',
-        timestamp: { $gte: windowStart },
-        'metadata.automatedByRule': { $exists: false },
-        'sender.email': { $exists: true, $ne: null },
         toFolder: { $exists: true, $ne: null },
-      },
+      }),
     },
     {
       $group: {
@@ -265,17 +285,7 @@ export async function detectFolderRoutingPatterns(
         moveCount: { $sum: 1 },
         firstSeen: { $min: '$timestamp' },
         lastSeen: { $max: '$timestamp' },
-        evidence: {
-          $topN: {
-            n: MAX_EVIDENCE_ITEMS,
-            sortBy: { timestamp: -1 as const },
-            output: {
-              messageId: '$messageId',
-              timestamp: '$timestamp',
-              eventType: '$eventType',
-            },
-          },
-        },
+        evidence: buildEvidenceAccumulator(),
       },
     },
     {
