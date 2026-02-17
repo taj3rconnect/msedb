@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 2 - Authentication & Token Management (Complete)
+**Current focus:** Phase 3 - Email Observation Pipeline (In Progress)
 
 ## Current Position
 
-Phase: 2 of 8 (Authentication & Token Management)
-Plan: 2 of 2 in current phase
-Status: Phase 2 Complete
-Last activity: 2026-02-17 -- Completed 02-02 (Token refresh, admin routes, multi-mailbox)
+Phase: 3 of 8 (Email Observation Pipeline)
+Plan: 1 of 3 in current phase
+Status: Plan 03-01 Complete
+Last activity: 2026-02-17 -- Completed 03-01 (Webhook ingress: Graph client, subscription service, webhook handler)
 
-Progress: [████░░░░░░] ~25%
+Progress: [██████░░░░] ~33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: 4min
-- Total execution time: 0.35 hours
+- Total execution time: 0.40 hours
 
 **By Phase:**
 
@@ -29,9 +29,10 @@ Progress: [████░░░░░░] ~25%
 |-------|-------|-------|----------|
 | 01-infrastructure-foundation | 3/3 | 15min | 5min |
 | 02-authentication-token-management | 2/2 | 6min | 3min |
+| 03-email-observation-pipeline | 1/3 | 3min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (5min), 01-03 (5min), 02-01 (3min), 02-02 (3min)
+- Last 5 plans: 01-03 (5min), 02-01 (3min), 02-02 (3min), 03-01 (3min)
 - Trend: Steady/Improving
 
 *Updated after each plan completion*
@@ -64,6 +65,11 @@ Recent decisions affecting current work:
 - [02-02]: ProcessorMap pattern in queues.ts maps queue names to processor functions (real or placeholder)
 - [02-02]: ConflictError (409) added to error handler for admin invite duplicate detection
 - [02-02]: Multi-mailbox connect uses signed JWT state with userId for CSRF-safe cross-request context
+- [03-01]: graphFetch uses native fetch with no retry logic -- BullMQ handles retries at job level
+- [03-01]: Webhook handler returns 202 before clientState validation -- enqueue is fire-and-forget after response
+- [03-01]: Subscriptions use users/{email}/messages resource path (not me/messages) since background jobs have no user context
+- [03-01]: syncSubscriptionsOnStartup reused by periodic webhook-renewal job (same create-or-renew logic)
+- [03-01]: Cloudflare Tunnel skipped by user -- webhook subscriptions will fail until tunnel is configured
 
 ### Pending Todos
 
@@ -71,11 +77,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- Azure AD app registration not yet created -- must be set up before Phase 2 can begin
-- Cloudflare Tunnel not yet configured -- deferred from 01-03 by user decision, must be operational before Phase 3 webhook testing. Steps: create tunnel to localhost:8010, set GRAPH_WEBHOOK_URL in .env, disable Bot Fight Mode or add WAF Skip rule for /webhooks/graph
+- Cloudflare Tunnel not yet configured -- skipped again in 03-01 by user decision ("skip tunnel"). Webhook subscriptions will fail until tunnel is operational. Steps: install cloudflared, create tunnel to localhost:8010, set GRAPH_WEBHOOK_URL in .env, disable Bot Fight Mode or add WAF Skip rule for /webhooks/graph. All webhook ingress code is ready and waiting.
 
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 02-02-PLAN.md (Token refresh, admin routes, multi-mailbox). Phase 2 complete. Ready for Phase 3.
+Stopped at: Completed 03-01-PLAN.md (Webhook ingress: Graph client, subscription service, webhook handler). Task 3 (Cloudflare Tunnel) skipped by user. Ready for 03-02.
 Resume file: None
