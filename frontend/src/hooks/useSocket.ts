@@ -28,6 +28,12 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: ['events'] });
     });
 
+    socket.on('staging:new', () => {
+      // Invalidate staging queries to update badge and staging page in real-time
+      queryClient.invalidateQueries({ queryKey: ['staging-count'] });
+      queryClient.invalidateQueries({ queryKey: ['staging'] });
+    });
+
     socket.on('connect_error', (err) => {
       console.error('Socket.IO connection error:', err.message);
     });

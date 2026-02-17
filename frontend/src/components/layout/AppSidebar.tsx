@@ -11,7 +11,9 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
 } from '@/components/ui/sidebar';
-import { NAV_ITEMS } from '@/lib/constants';
+import { Badge } from '@/components/ui/badge';
+import { NAV_ITEMS, ROUTE_PATHS } from '@/lib/constants';
+import { useStagingCount } from '@/hooks/useStaging';
 
 /**
  * Application sidebar with logo and navigation links.
@@ -20,6 +22,9 @@ import { NAV_ITEMS } from '@/lib/constants';
  * Collapsible on mobile via SidebarTrigger in the Topbar.
  */
 export function AppSidebar() {
+  const { data: countData } = useStagingCount();
+  const stagingCount = countData?.count ?? 0;
+
   return (
     <Sidebar>
       <SidebarHeader className="border-b px-4 py-3">
@@ -44,7 +49,12 @@ export function AppSidebar() {
                       }
                     >
                       <item.icon className="h-4 w-4" />
-                      <span>{item.label}</span>
+                      <span className="flex-1">{item.label}</span>
+                      {item.path === ROUTE_PATHS.staging && stagingCount > 0 && (
+                        <Badge variant="destructive" className="ml-auto text-xs px-1.5 py-0 min-w-5 h-5 flex items-center justify-center">
+                          {stagingCount}
+                        </Badge>
+                      )}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
