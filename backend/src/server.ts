@@ -17,6 +17,7 @@ import adminRouter from './routes/admin.js';
 import mailboxRouter from './routes/mailbox.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { userRouter } from './routes/user.js';
+import { eventsRouter } from './routes/events.js';
 import { createSocketServer } from './config/socket.js';
 
 // Import all models to trigger Mongoose model registration
@@ -50,6 +51,9 @@ app.use('/api/dashboard', dashboardRouter);
 
 // Mount user routes -- dedicated router for kill switch (requireAuth applied internally)
 app.use('/api/user', userRouter);
+
+// Mount events routes (requireAuth applied internally)
+app.use('/api/events', eventsRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);
