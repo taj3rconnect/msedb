@@ -67,7 +67,7 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
           await queues['webhook-renewal'].add('lifecycle-event', {
             notification,
             subscriptionId: notification.subscriptionId,
-          });
+          }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
           logger.info('Lifecycle notification enqueued', {
             subscriptionId: notification.subscriptionId,
             lifecycleEvent: notification.lifecycleEvent,
@@ -76,7 +76,7 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
           await queues['webhook-events'].add('change-notification', {
             notification,
             subscriptionId: notification.subscriptionId,
-          });
+          }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
           logger.debug('Change notification enqueued', {
             subscriptionId: notification.subscriptionId,
             resource: notification.resource,
