@@ -19,6 +19,9 @@ import { dashboardRouter } from './routes/dashboard.js';
 import { userRouter } from './routes/user.js';
 import { eventsRouter } from './routes/events.js';
 import { patternsRouter } from './routes/patterns.js';
+import { rulesRouter } from './routes/rules.js';
+import { stagingRouter } from './routes/staging.js';
+import { auditRouter } from './routes/audit.js';
 import { createSocketServer } from './config/socket.js';
 
 // Import all models to trigger Mongoose model registration
@@ -58,6 +61,15 @@ app.use('/api/events', eventsRouter);
 
 // Mount patterns routes (requireAuth applied internally)
 app.use('/api/patterns', patternsRouter);
+
+// Mount rules routes (requireAuth applied internally)
+app.use('/api/rules', rulesRouter);
+
+// Mount staging routes (requireAuth applied internally)
+app.use('/api/staging', stagingRouter);
+
+// Mount audit routes (requireAuth applied internally)
+app.use('/api/audit', auditRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);
