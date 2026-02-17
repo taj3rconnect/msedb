@@ -15,8 +15,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Infrastructure Foundation** - Docker Compose stack with MongoDB, Redis, health endpoints, and all Mongoose models (completed 2026-02-17)
 - [x] **Phase 2: Authentication & Token Management** - Azure AD OAuth 2.0 SSO, JWT sessions, encrypted token storage, multi-mailbox connections (completed 2026-02-17)
 - [x] **Phase 3: Email Observation Pipeline** - Webhook subscriptions, delta query fallback, event collection, metadata extraction, background jobs (completed 2026-02-17)
-- [ ] **Phase 4: Frontend Shell & Observation UI** - React SPA with auth flow, dashboard, email activity page, Socket.IO real-time updates
-- [ ] **Phase 5: Pattern Intelligence** - Sender and folder routing pattern detection, confidence scoring, pattern review and approval UI
+- [x] **Phase 4: Frontend Shell & Observation UI** - React SPA with auth flow, dashboard, email activity page, Socket.IO real-time updates (completed 2026-02-17)
+- [x] **Phase 5: Pattern Intelligence** - Sender and folder routing pattern detection, confidence scoring, pattern review and approval UI (completed 2026-02-17)
 - [ ] **Phase 6: Automation & Safety** - Rule engine, staging folder, undo mechanism, whitelist enforcement, kill switch integration, audit log
 - [ ] **Phase 7: Polish, Notifications & Admin** - Settings page, admin panel, notification system, and remaining UI pages
 - [ ] **Phase 8: Outlook Add-in** - Office Add-in with sender/domain whitelist/blacklist actions and Azure AD SSO
@@ -176,11 +176,11 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infrastructure Foundation | 0/3 | Not started | - |
-| 2. Authentication & Token Management | 0/3 | Not started | - |
-| 3. Email Observation Pipeline | 0/3 | Not started | - |
-| 4. Frontend Shell & Observation UI | 0/3 | Not started | - |
-| 5. Pattern Intelligence | 0/3 | Not started | - |
+| 1. Infrastructure Foundation | 3/3 | Complete | 2026-02-17 |
+| 2. Authentication & Token Management | 2/2 | Complete | 2026-02-17 |
+| 3. Email Observation Pipeline | 3/3 | Complete | 2026-02-17 |
+| 4. Frontend Shell & Observation UI | 3/3 | Complete | 2026-02-17 |
+| 5. Pattern Intelligence | 3/3 | Complete | 2026-02-17 |
 | 6. Automation & Safety | 0/3 | Not started | - |
 | 7. Polish, Notifications & Admin | 0/2 | Not started | - |
 | 8. Outlook Add-in | 0/2 | Not started | - |
