@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 3 of 8 (Email Observation Pipeline)
-Plan: 1 of 3 in current phase
-Status: Plan 03-01 Complete
-Last activity: 2026-02-17 -- Completed 03-01 (Webhook ingress: Graph client, subscription service, webhook handler)
+Plan: 2 of 3 in current phase
+Status: Plan 03-02 Complete
+Last activity: 2026-02-17 -- Completed 03-02 (Event processing pipeline: metadata extractor, event collector, webhook events processor)
 
-Progress: [██████░░░░] ~33%
+Progress: [████████░░] ~40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
+- Total plans completed: 7
 - Average duration: 4min
-- Total execution time: 0.40 hours
+- Total execution time: 0.45 hours
 
 **By Phase:**
 
@@ -29,10 +29,10 @@ Progress: [██████░░░░] ~33%
 |-------|-------|-------|----------|
 | 01-infrastructure-foundation | 3/3 | 15min | 5min |
 | 02-authentication-token-management | 2/2 | 6min | 3min |
-| 03-email-observation-pipeline | 1/3 | 3min | 3min |
+| 03-email-observation-pipeline | 2/3 | 6min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 01-03 (5min), 02-01 (3min), 02-02 (3min), 03-01 (3min)
+- Last 5 plans: 01-03 (5min), 02-01 (3min), 02-02 (3min), 03-01 (3min), 03-02 (3min)
 - Trend: Steady/Improving
 
 *Updated after each plan completion*
@@ -70,6 +70,10 @@ Recent decisions affecting current work:
 - [03-01]: Subscriptions use users/{email}/messages resource path (not me/messages) since background jobs have no user context
 - [03-01]: syncSubscriptionsOnStartup reused by periodic webhook-renewal job (same create-or-renew logic)
 - [03-01]: Cloudflare Tunnel skipped by user -- webhook subscriptions will fail until tunnel is configured
+- [03-02]: Copy metadata from prior events for deleted message notifications (message already gone from Graph)
+- [03-02]: Move detection via parentFolderId comparison against most recent EmailEvent.toFolder
+- [03-02]: Newsletter detection heuristic: presence of List-Unsubscribe header
+- [03-02]: Flag detection uses EmailEvent query (no prior flagged event) rather than stored flag field
 
 ### Pending Todos
 
@@ -82,5 +86,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 03-01-PLAN.md (Webhook ingress: Graph client, subscription service, webhook handler). Task 3 (Cloudflare Tunnel) skipped by user. Ready for 03-02.
+Stopped at: Completed 03-02-PLAN.md (Event processing pipeline: metadata extractor, event collector, webhook events processor). Ready for 03-03.
 Resume file: None
