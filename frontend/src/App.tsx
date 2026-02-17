@@ -2,33 +2,21 @@ import { createBrowserRouter, Navigate, Outlet, RouterProvider } from 'react-rou
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/authStore';
+import { useSocket } from '@/hooks/useSocket';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { AppShell } from '@/components/layout/AppShell';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
-
-// --- Placeholder pages (to be replaced in Plan 02/03) ---
-
-function DashboardPage() {
-  return <h1 className="p-8 text-2xl font-bold">Dashboard</h1>;
-}
-
-function EmailActivityPage() {
-  return <h1 className="p-8 text-2xl font-bold">Email Activity</h1>;
-}
-
-function ComingSoon({ title }: { title: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center p-8">
-      <h1 className="text-2xl font-bold">{title}</h1>
-      <p className="mt-2 text-muted-foreground">Coming soon</p>
-    </div>
-  );
-}
+import { DashboardPage } from '@/pages/DashboardPage';
+import { ComingSoonPage } from '@/pages/ComingSoonPage';
 
 // --- Protected Layout ---
 
 function ProtectedLayout() {
   const { isLoading, isAuthenticated } = useAuthStore();
+
+  // Connect Socket.IO only when authenticated
+  useSocket();
 
   if (isLoading) {
     return <LoadingSpinner />;
@@ -38,8 +26,8 @@ function ProtectedLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  // Render child routes (no AppShell yet -- that's Plan 02)
-  return <Outlet />;
+  // Wrap child routes in AppShell (sidebar + topbar)
+  return <AppShell />;
 }
 
 // --- App Root ---
@@ -72,27 +60,27 @@ const router = createBrowserRouter([
           },
           {
             path: '/activity',
-            element: <EmailActivityPage />,
+            element: <ComingSoonPage title="Email Activity" />,
           },
           {
             path: '/patterns',
-            element: <ComingSoon title="Patterns" />,
+            element: <ComingSoonPage title="Patterns" />,
           },
           {
             path: '/rules',
-            element: <ComingSoon title="Rules" />,
+            element: <ComingSoonPage title="Rules" />,
           },
           {
             path: '/staging',
-            element: <ComingSoon title="Staging" />,
+            element: <ComingSoonPage title="Staging" />,
           },
           {
             path: '/audit',
-            element: <ComingSoon title="Audit" />,
+            element: <ComingSoonPage title="Audit Log" />,
           },
           {
             path: '/settings',
-            element: <ComingSoon title="Settings" />,
+            element: <ComingSoonPage title="Settings" />,
           },
         ],
       },
