@@ -59,9 +59,13 @@ authRouter.get('/auth/callback', async (req: Request, res: Response) => {
   }
 
   // Validate state parameter
-  let stateData: { action: string; ts: number };
+  let stateData: { action: string; ts: number; userId?: string };
   try {
-    stateData = jwt.verify(String(state), config.jwtSecret) as { action: string; ts: number };
+    stateData = jwt.verify(String(state), config.jwtSecret) as {
+      action: string;
+      ts: number;
+      userId?: string;
+    };
   } catch {
     logger.warn('Invalid or expired OAuth state parameter');
     res.redirect(`${config.appUrl}/login?error=invalid_state`);
@@ -162,8 +166,81 @@ authRouter.get('/auth/callback', async (req: Request, res: Response) => {
 
       res.redirect(config.appUrl);
     } else if (stateData.action === 'connect_mailbox') {
-      // Handled in Plan 02-02 (routes/mailbox.ts)
-      res.redirect(`${config.appUrl}?error=unsupported_action`);
+      // Multi-mailbox connect flow
+      if (!stateData.userId) {
+        logger.error('connect_mailbox state missing userId');
+        res.redirect(`${config.appUrl}/settings?error=invalid_state`);
+        return;
+      }
+
+      // Verify the user exists and is active
+      const connectUser = await User.findById(stateData.userId);
+      if (!connectUser || !connectUser.isActive) {
+        logger.error('connect_mailbox user not found or inactive', {
+          userId: stateData.userId,
+        });
+        res.redirect(`${config.appUrl}/settings?error=user_not_found`);
+        return;
+      }
+
+      const connectEmail = account.username.toLowerCase();
+
+      // Check if this mailbox already exists for this user
+      const existingMailbox = await Mailbox.findOne({
+        userId: stateData.userId,
+        email: connectEmail,
+      });
+
+      if (existingMailbox && existingMailbox.isConnected) {
+        // Already connected
+        res.redirect(
+          `${config.appUrl}/settings?error=mailbox_already_connected`,
+        );
+        return;
+      }
+
+      let mailboxId: string;
+
+      if (existingMailbox) {
+        // Reconnect a previously disconnected mailbox
+        existingMailbox.isConnected = true;
+        existingMailbox.homeAccountId = account.homeAccountId;
+        existingMailbox.tenantId = account.tenantId;
+        await existingMailbox.save();
+        mailboxId = existingMailbox._id.toString();
+
+        logger.info('Mailbox reconnected', {
+          email: connectEmail,
+          userId: stateData.userId,
+        });
+      } else {
+        // Create a new mailbox
+        const newMailbox = await Mailbox.create({
+          userId: stateData.userId,
+          email: connectEmail,
+          displayName: account.name,
+          homeAccountId: account.homeAccountId,
+          tenantId: account.tenantId,
+          isConnected: true,
+        });
+        mailboxId = newMailbox._id.toString();
+
+        logger.info('New mailbox connected', {
+          email: connectEmail,
+          userId: stateData.userId,
+        });
+      }
+
+      // Persist MSAL token cache to the mailbox
+      const connectCache = loginMsalClient.getTokenCache().serialize();
+      await Mailbox.findByIdAndUpdate(mailboxId, {
+        msalCache: connectCache,
+        'encryptedTokens.expiresAt': tokenResponse.expiresOn,
+      });
+
+      res.redirect(
+        `${config.appUrl}/settings?connected=${encodeURIComponent(connectEmail)}`,
+      );
     } else {
       res.redirect(`${config.appUrl}/login?error=unknown_action`);
     }

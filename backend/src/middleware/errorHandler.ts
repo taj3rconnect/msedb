@@ -39,6 +39,12 @@ export class NotFoundError extends AppError {
   }
 }
 
+export class ConflictError extends AppError {
+  constructor(message: string = 'Conflict') {
+    super(message, 409);
+  }
+}
+
 /**
  * Global Express 5 error handler.
  * Must be registered LAST -- Express identifies error handlers by their 4-argument signature.

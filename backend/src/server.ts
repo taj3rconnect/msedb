@@ -12,6 +12,8 @@ import { globalErrorHandler } from './middleware/errorHandler.js';
 import healthRouter from './routes/health.js';
 import webhooksRouter from './routes/webhooks.js';
 import authRouter from './auth/routes.js';
+import adminRouter from './routes/admin.js';
+import mailboxRouter from './routes/mailbox.js';
 
 // Import all models to trigger Mongoose model registration
 import './models/index.js';
@@ -32,6 +34,12 @@ app.use(webhooksRouter);
 
 // Mount auth routes (login, callback, logout, me)
 app.use(authRouter);
+
+// Mount admin routes (requireAuth + requireAdmin applied internally)
+app.use('/api/admin', adminRouter);
+
+// Mount mailbox routes (requireAuth applied internally)
+app.use('/api/mailboxes', mailboxRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);
