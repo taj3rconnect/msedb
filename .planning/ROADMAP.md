@@ -33,12 +33,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Redis is configured with `noeviction` policy, BullMQ queues are initialized with `removeOnComplete`/`removeOnFail` age limits, and a test job can be enqueued and processed
   4. Cloudflare Tunnel is operational and forwards HTTPS traffic to the backend webhook endpoint, with bot protection bypassed for `/webhooks/graph`
   5. Health endpoint at `/api/health` reports status of all services (MongoDB, Redis, container uptime) and rate limiting is enforced on all API routes
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Docker Compose stack, Dockerfiles, project scaffolding
-- [ ] 01-02: MongoDB and Redis connections, Mongoose models, BullMQ setup
-- [ ] 01-03: Security hardening, health endpoints, Cloudflare Tunnel
+- [ ] 01-01-PLAN.md — Docker Compose stack, Dockerfiles, Express 5 backend skeleton, React 19 frontend shell
+- [ ] 01-02-PLAN.md — MongoDB/Redis connections, 9 Mongoose models with indexes, BullMQ queues and job schedulers
+- [ ] 01-03-PLAN.md — AES-256-GCM encryption, rate limiting, health endpoint, webhook handler, Cloudflare Tunnel
 
 ### Phase 2: Authentication & Token Management
 **Goal**: Users can authenticate via Azure AD, maintain persistent sessions, connect multiple Microsoft 365 mailboxes, and have their tokens securely stored and proactively refreshed -- even across container restarts
