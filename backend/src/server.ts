@@ -1,64 +1,34 @@
-import express, { type Request, type Response, type NextFunction } from 'express';
-import mongoose from 'mongoose';
-import helmet from 'helmet';
-import cors from 'cors';
-import compression from 'compression';
+import express from 'express';
 import { config } from './config/index.js';
 import logger from './config/logger.js';
 import { connectDatabase } from './config/database.js';
 import { getRedisClient } from './config/redis.js';
 import { initializeSchedulers } from './jobs/schedulers.js';
 import { closeAllWorkers, closeAllQueues } from './jobs/queues.js';
+import { configureSecurityMiddleware } from './middleware/security.js';
+import { createAuthLimiter, createApiLimiter } from './middleware/rateLimiter.js';
+import { globalErrorHandler } from './middleware/errorHandler.js';
+import healthRouter from './routes/health.js';
+import webhooksRouter from './routes/webhooks.js';
 
 // Import all models to trigger Mongoose model registration
 import './models/index.js';
 
 const app = express();
 
-// Security and compression middleware
-app.use(helmet());
-app.use(cors({ origin: config.appUrl, credentials: true }));
-app.use(compression());
-app.use(express.json());
+// Security middleware (helmet, cors, compression, body parsing)
+configureSecurityMiddleware(app);
 
-// Health check endpoint (placeholder -- full implementation in Plan 03)
-app.get('/api/health', (_req: Request, res: Response) => {
-  const redisClient = app.get('redis');
-  const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+// Mount health endpoint (no rate limiting)
+app.use(healthRouter);
 
-  let redisStatus = 'disconnected';
-  if (redisClient) {
-    redisStatus = redisClient.status === 'ready' ? 'connected' : 'disconnected';
-  }
+// Mount webhook endpoint (no rate limiting -- Microsoft controls the rate)
+app.use(webhooksRouter);
 
-  const healthy = mongoStatus === 'connected' && redisStatus === 'connected';
+// Global error handler (must be last middleware)
+app.use(globalErrorHandler);
 
-  res.status(healthy ? 200 : 503).json({
-    status: healthy ? 'healthy' : 'degraded',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    services: {
-      mongodb: mongoStatus,
-      redis: redisStatus,
-    },
-  });
-});
-
-// Webhook endpoint (placeholder -- full implementation in later phase)
-app.post('/webhooks/graph', (_req: Request, res: Response) => {
-  res.status(202).json({ status: 'accepted' });
-});
-
-// Global error handler (Express 5 -- async errors auto-propagate)
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error('Unhandled error:', { error: err.message, stack: err.stack });
-  res.status(500).json({
-    error: 'Internal server error',
-    ...(config.nodeEnv === 'development' && { message: err.message }),
-  });
-});
-
-// Startup sequence: connect database, verify Redis, initialize schedulers, then listen
+// Startup sequence: connect database, verify Redis, apply rate limiters, initialize schedulers, then listen
 async function startServer(): Promise<void> {
   try {
     // 1. Connect to MongoDB with retry logic
@@ -72,10 +42,14 @@ async function startServer(): Promise<void> {
     // Store redis client on app for health checks
     app.set('redis', redisClient);
 
-    // 3. Initialize BullMQ job schedulers
+    // 3. Apply rate limiters (Redis must be ready before creating limiters)
+    app.use('/auth', createAuthLimiter());
+    app.use('/api', createApiLimiter());
+
+    // 4. Initialize BullMQ job schedulers
     await initializeSchedulers();
 
-    // 4. Start Express server (only after all infrastructure is ready)
+    // 5. Start Express server (only after all infrastructure is ready)
     app.listen(config.port, () => {
       logger.info(`MSEDB backend started on port ${config.port}`, {
         environment: config.nodeEnv,
@@ -102,7 +76,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await closeAllQueues();
 
     // Disconnect Mongoose
-    await mongoose.disconnect();
+    const mongoose = await import('mongoose');
+    await mongoose.default.disconnect();
     logger.info('MongoDB disconnected');
 
     // Close general Redis client
