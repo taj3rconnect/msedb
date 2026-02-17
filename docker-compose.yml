@@ -1,0 +1,113 @@
+services:
+  msedb-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: msedb-backend
+    ports:
+      - "8010:8010"
+    env_file:
+      - .env
+    depends_on:
+      msedb-mongo:
+        condition: service_healthy
+      msedb-redis:
+        condition: service_healthy
+    networks:
+      - msedb-network
+    volumes:
+      - msedb-logs:/app/logs
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8010/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  msedb-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: msedb-frontend
+    ports:
+      - "3010:8080"
+    depends_on:
+      msedb-backend:
+        condition: service_healthy
+    networks:
+      - msedb-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  msedb-mongo:
+    image: mongo:7
+    container_name: msedb-mongo
+    ports:
+      - "27020:27017"
+    volumes:
+      - msedb-mongo-data:/data/db
+    networks:
+      - msedb-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    command: ["mongod", "--bind_ip_all"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  msedb-redis:
+    image: redis:7-alpine
+    container_name: msedb-redis
+    ports:
+      - "6382:6379"
+    volumes:
+      - msedb-redis-data:/data
+    networks:
+      - msedb-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  msedb-network:
+    driver: bridge
+    name: msedb-network
+
+volumes:
+  msedb-mongo-data:
+    name: msedb-mongo-data
+  msedb-redis-data:
+    name: msedb-redis-data
+  msedb-logs:
+    name: msedb-logs

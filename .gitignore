@@ -6,18 +6,13 @@ node_modules/
 .env.local
 .env.*.local
 
-# Next.js
-.next/
-out/
-
 # Build
 dist/
 build/
 
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Logs
+*.log
+logs/
 
 # OS
 .DS_Store
@@ -34,3 +29,8 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
