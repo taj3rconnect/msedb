@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 4 - Frontend Shell & Observation UI (Complete)
+**Current focus:** Phase 5 - Pattern Intelligence (In Progress)
 
 ## Current Position
 
-Phase: 4 of 8 (Frontend Shell & Observation UI)
-Plan: 3 of 3 in current phase
-Status: Phase 04 Complete
-Last activity: 2026-02-17 -- Completed 04-03 (Email activity page with data table, charts, and filters)
+Phase: 5 of 8 (Pattern Intelligence)
+Plan: 1 of 3 in current phase
+Status: In Progress
+Last activity: 2026-02-17 -- Completed 05-01 (Pattern detection engine with confidence scoring)
 
-Progress: [████████████░] ~60%
+Progress: [█████████████░] ~65%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
-- Average duration: 3min
-- Total execution time: 0.68 hours
+- Total plans completed: 12
+- Average duration: 4min
+- Total execution time: 0.75 hours
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: [████████████░] ~60%
 | 02-authentication-token-management | 2/2 | 6min | 3min |
 | 03-email-observation-pipeline | 3/3 | 9min | 3min |
 | 04-frontend-shell-observation-ui | 3/3 | 11min | 4min |
+| 05-pattern-intelligence | 1/3 | 4min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (3min), 03-03 (3min), 04-01 (3min), 04-02 (5min), 04-03 (3min)
-- Trend: Steady/Improving
+- Last 5 plans: 03-03 (3min), 04-01 (3min), 04-02 (5min), 04-03 (3min), 05-01 (4min)
+- Trend: Steady
 
 *Updated after each plan completion*
 
@@ -91,6 +92,10 @@ Recent decisions affecting current work:
 - [04-03]: shadcn ChartContainer wraps Recharts for consistent theming with OKLCH colors
 - [04-03]: Sender breakdown shows top 10 from 20 API results to keep chart readable
 - [04-03]: Timeline range toggle uses Button group (not tabs) for compactness
+- [05-01]: Vitest chosen over Jest for ESM TypeScript compatibility (native ESM, no transforms needed)
+- [05-01]: Shared pipeline builders (buildBaseMatchFilter, buildEvidenceAccumulator) reduce aggregation duplication
+- [05-01]: Confidence minimum threshold of 50% before persisting patterns (noise reduction)
+- [05-01]: Recency penalty uses 0.5x divergence weight with 0.85 floor factor
 
 ### Pending Todos
 
@@ -103,5 +108,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 04-03-PLAN.md (Email activity page, events API, charts). Phase 04 complete. Ready for Phase 05.
+Stopped at: Completed 05-01-PLAN.md (Pattern detection engine with confidence scoring, TDD). Phase 05 in progress (1/3 plans done).
 Resume file: None
