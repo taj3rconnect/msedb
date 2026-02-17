@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 5 complete. Ready for Phase 6 - Automation & Safety
+**Current focus:** Phase 6 in progress - Automation & Safety
 
 ## Current Position
 
-Phase: 5 of 8 (Pattern Intelligence)
-Plan: 3 of 3 in current phase
-Status: Phase Complete (Verified)
-Last activity: 2026-02-17 -- Phase 5 verified (4/4 criteria, 5/5 requirements, 0 gaps)
+Phase: 6 of 8 (Automation & Safety)
+Plan: 2 of 6 in current phase
+Status: In Progress
+Last activity: 2026-02-17 -- Completed 06-02 (rule converter + undo service)
 
-Progress: [████████████████░] ~75%
+Progress: [██████████████████░] ~80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14
+- Total plans completed: 16
 - Average duration: 4min
-- Total execution time: 0.83 hours
+- Total execution time: 0.90 hours
 
 **By Phase:**
 
@@ -32,9 +32,10 @@ Progress: [████████████████░] ~75%
 | 03-email-observation-pipeline | 3/3 | 9min | 3min |
 | 04-frontend-shell-observation-ui | 3/3 | 11min | 4min |
 | 05-pattern-intelligence | 3/3 | 9min | 3min |
+| 06-automation-safety | 2/6 | 6min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 04-02 (5min), 04-03 (3min), 05-01 (4min), 05-02 (2min), 05-03 (3min)
+- Last 5 plans: 05-01 (4min), 05-02 (2min), 05-03 (3min), 06-01 (4min), 06-02 (2min)
 - Trend: Steady
 
 *Updated after each plan completion*
@@ -103,6 +104,10 @@ Recent decisions affecting current work:
 - [05-03]: Client-side patternType filtering since backend API only supports status filter
 - [05-03]: PendingSuggestionsSection is self-contained (fetches own data via usePatterns hook)
 - [05-03]: Customize from dashboard navigates to /patterns (full dialog needs page context)
+- [06-02]: Move/archive actions automatically paired with markRead as secondary action (common user pattern)
+- [06-02]: Conversion is idempotent: calling twice for same pattern returns existing rule
+- [06-02]: Undo reverses actions in reverse order for correctness (last action undone first)
+- [06-02]: 404 from Graph API treated as partial undo success, not failure (message may be purged by Exchange)
 
 ### Pending Todos
 
@@ -115,5 +120,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Phase 05 verified and complete. Ready for Phase 06 (Automation & Safety).
+Stopped at: Completed 06-02-PLAN.md (rule converter + undo service). Next: 06-03.
 Resume file: None
