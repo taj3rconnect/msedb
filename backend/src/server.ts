@@ -18,6 +18,7 @@ import mailboxRouter from './routes/mailbox.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { userRouter } from './routes/user.js';
 import { eventsRouter } from './routes/events.js';
+import { patternsRouter } from './routes/patterns.js';
 import { createSocketServer } from './config/socket.js';
 
 // Import all models to trigger Mongoose model registration
@@ -54,6 +55,9 @@ app.use('/api/user', userRouter);
 
 // Mount events routes (requireAuth applied internally)
 app.use('/api/events', eventsRouter);
+
+// Mount patterns routes (requireAuth applied internally)
+app.use('/api/patterns', patternsRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);

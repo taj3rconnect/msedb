@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { requireAuth } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
+import { Pattern } from '../models/Pattern.js';
 
 const dashboardRouter = Router();
 
@@ -48,10 +49,20 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
     ...mailboxMap.get(m._id.toString()),
   }));
 
+  // Count pending patterns (detected or suggested) for the user
+  const patternFilter: Record<string, unknown> = {
+    userId,
+    status: { $in: ['detected', 'suggested'] },
+  };
+  if (mailboxId && typeof mailboxId === 'string') {
+    patternFilter.mailboxId = mailboxId;
+  }
+  const patternsPending = await Pattern.countDocuments(patternFilter);
+
   res.json({
     emailsProcessed,
     rulesFired: 0,
-    patternsPending: 0,
+    patternsPending,
     stagingCount: 0,
     perMailbox,
   });
