@@ -13,6 +13,7 @@ export interface IStagedEmail extends Document {
   originalFolder: string;
   stagedAt: Date;
   expiresAt: Date;
+  cleanupAt?: Date;
   status: 'staged' | 'executed' | 'rescued' | 'expired';
   actions: IStagedEmailAction[];
   executedAt?: Date;
@@ -30,6 +31,7 @@ const stagedEmailSchema = new Schema<IStagedEmail>(
     originalFolder: { type: String, required: true },
     stagedAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },
+    cleanupAt: { type: Date },
     status: {
       type: String,
       enum: ['staged', 'executed', 'rescued', 'expired'],
@@ -49,6 +51,6 @@ const stagedEmailSchema = new Schema<IStagedEmail>(
 
 // Indexes
 stagedEmailSchema.index({ userId: 1, status: 1, expiresAt: 1 });
-stagedEmailSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL at exact date
+stagedEmailSchema.index({ cleanupAt: 1 }, { expireAfterSeconds: 0 }); // TTL at cleanupAt (expiresAt + 7 days buffer)
 
 export const StagedEmail = model<IStagedEmail>('StagedEmail', stagedEmailSchema);
