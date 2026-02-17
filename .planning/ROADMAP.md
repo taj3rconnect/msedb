@@ -81,12 +81,12 @@ Plans:
   2. When a new email event is collected by the backend, it appears on the dashboard within seconds via Socket.IO without requiring a page refresh
   3. Email activity page displays events in a filterable table with per-mailbox filters, event timeline, and sender breakdown -- paginated for performance
   4. Kill switch toggle is visible in the top navigation bar on every page (not buried in settings), and the main layout includes sidebar navigation to all future pages
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: React + Vite + Tailwind + shadcn/ui setup, auth flow, protected routes
-- [ ] 04-02: Layout, dashboard page, Socket.IO integration
-- [ ] 04-03: Email activity page with filters and real-time updates
+- [ ] 04-01-PLAN.md — React + Vite + Tailwind + shadcn/ui setup, auth flow, protected routes
+- [ ] 04-02-PLAN.md — App shell layout, dashboard page, Socket.IO server+client, backend API endpoints
+- [ ] 04-03-PLAN.md — Email activity page with data table, filters, timeline chart, sender breakdown
 
 ### Phase 5: Pattern Intelligence
 **Goal**: The system detects sender-level and folder routing patterns from accumulated email events, scores confidence with asymmetric risk thresholds, and presents actionable suggestions that users can approve, reject, or customize
