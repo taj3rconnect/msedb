@@ -97,12 +97,12 @@ Plans:
   2. Confidence scoring applies asymmetric thresholds: 98%+ for delete suggestions, 85%+ for move suggestions -- with bonuses for large sample sizes and penalties for recent behavior shifts
   3. Pattern suggestion cards on the Patterns page show confidence percentage, sample size, exception count, and sample evidence -- and the user can approve, reject, or customize each suggestion
   4. Rejected patterns enter a 30-day cooldown before being re-suggested, and the daily pattern analysis BullMQ job runs at 2 AM without blocking other background jobs
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: Pattern detection engine (sender-level, folder routing), confidence scorer
-- [ ] 05-02: Pattern analysis BullMQ job, pattern API endpoints
-- [ ] 05-03: Patterns page UI with cards, confidence visualization, approve/reject/customize
+- [ ] 05-01-PLAN.md — Pattern detection engine (sender-level, folder routing), confidence scorer (TDD)
+- [ ] 05-02-PLAN.md — BullMQ pattern-analysis processor, patterns REST API, dashboard stats integration
+- [ ] 05-03-PLAN.md — Patterns page UI with cards, confidence visualization, approve/reject/customize
 
 ### Phase 6: Automation & Safety
 **Goal**: Approved patterns are converted into executable rules that the system evaluates against incoming email -- with a staging folder grace period, kill switch enforcement, whitelist protection, undo capability, and full audit logging ensuring no automated action is irreversible
