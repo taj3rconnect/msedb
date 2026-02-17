@@ -5,6 +5,7 @@ import { processTokenRefresh } from './processors/tokenRefresh.js';
 import { processWebhookRenewal } from './processors/webhookRenewal.js';
 import { processWebhookEvent } from './processors/webhookEvents.js';
 import { processDeltaSync } from './processors/deltaSync.js';
+import { processPatternAnalysis } from './processors/patternAnalysis.js';
 
 // Connection configs (plain objects avoid ioredis version conflicts with BullMQ)
 const queueConnectionConfig = getQueueConnectionConfig();
@@ -70,7 +71,7 @@ const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
   'webhook-events': processWebhookEvent,
   'webhook-renewal': processWebhookRenewal,
   'delta-sync': processDeltaSync,
-  'pattern-analysis': createProcessor('pattern-analysis'),
+  'pattern-analysis': processPatternAnalysis,
   'staging-processor': createProcessor('staging-processor'),
   'token-refresh': processTokenRefresh,
 };
