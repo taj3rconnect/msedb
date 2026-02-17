@@ -134,54 +134,54 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| AUTH-06 | — | Pending |
-| OBSV-01 | — | Pending |
-| OBSV-02 | — | Pending |
-| OBSV-03 | — | Pending |
-| OBSV-04 | — | Pending |
-| PATN-01 | — | Pending |
-| PATN-02 | — | Pending |
-| PATN-03 | — | Pending |
-| PATN-04 | — | Pending |
-| AUTO-01 | — | Pending |
-| AUTO-02 | — | Pending |
-| AUTO-03 | — | Pending |
-| AUTO-04 | — | Pending |
-| SAFE-01 | — | Pending |
-| SAFE-02 | — | Pending |
-| SAFE-03 | — | Pending |
-| SAFE-04 | — | Pending |
-| SAFE-05 | — | Pending |
-| DASH-01 | — | Pending |
-| DASH-02 | — | Pending |
-| DASH-03 | — | Pending |
-| PAGE-01 | — | Pending |
-| PAGE-02 | — | Pending |
-| PAGE-03 | — | Pending |
-| PAGE-04 | — | Pending |
-| PAGE-05 | — | Pending |
-| PAGE-06 | — | Pending |
-| PAGE-07 | — | Pending |
-| INFR-01 | — | Pending |
-| INFR-02 | — | Pending |
-| INFR-03 | — | Pending |
-| INFR-04 | — | Pending |
-| INFR-05 | — | Pending |
-| PLUG-01 | — | Pending |
-| PLUG-02 | — | Pending |
-| PLUG-03 | — | Pending |
-| PLUG-04 | — | Pending |
+| AUTH-01 | Phase 2: Authentication & Token Management | Pending |
+| AUTH-02 | Phase 2: Authentication & Token Management | Pending |
+| AUTH-03 | Phase 2: Authentication & Token Management | Pending |
+| AUTH-04 | Phase 2: Authentication & Token Management | Pending |
+| AUTH-05 | Phase 2: Authentication & Token Management | Pending |
+| AUTH-06 | Phase 2: Authentication & Token Management | Pending |
+| OBSV-01 | Phase 3: Email Observation Pipeline | Pending |
+| OBSV-02 | Phase 3: Email Observation Pipeline | Pending |
+| OBSV-03 | Phase 3: Email Observation Pipeline | Pending |
+| OBSV-04 | Phase 3: Email Observation Pipeline | Pending |
+| PATN-01 | Phase 5: Pattern Intelligence | Pending |
+| PATN-02 | Phase 5: Pattern Intelligence | Pending |
+| PATN-03 | Phase 5: Pattern Intelligence | Pending |
+| PATN-04 | Phase 5: Pattern Intelligence | Pending |
+| AUTO-01 | Phase 6: Automation & Safety | Pending |
+| AUTO-02 | Phase 6: Automation & Safety | Pending |
+| AUTO-03 | Phase 6: Automation & Safety | Pending |
+| AUTO-04 | Phase 6: Automation & Safety | Pending |
+| SAFE-01 | Phase 6: Automation & Safety | Pending |
+| SAFE-02 | Phase 6: Automation & Safety | Pending |
+| SAFE-03 | Phase 6: Automation & Safety | Pending |
+| SAFE-04 | Phase 6: Automation & Safety | Pending |
+| SAFE-05 | Phase 6: Automation & Safety | Pending |
+| DASH-01 | Phase 4: Frontend Shell & Observation UI | Pending |
+| DASH-02 | Phase 4: Frontend Shell & Observation UI | Pending |
+| DASH-03 | Phase 7: Polish, Notifications & Admin | Pending |
+| PAGE-01 | Phase 4: Frontend Shell & Observation UI | Pending |
+| PAGE-02 | Phase 5: Pattern Intelligence | Pending |
+| PAGE-03 | Phase 6: Automation & Safety | Pending |
+| PAGE-04 | Phase 6: Automation & Safety | Pending |
+| PAGE-05 | Phase 6: Automation & Safety | Pending |
+| PAGE-06 | Phase 7: Polish, Notifications & Admin | Pending |
+| PAGE-07 | Phase 7: Polish, Notifications & Admin | Pending |
+| INFR-01 | Phase 1: Infrastructure Foundation | Pending |
+| INFR-02 | Phase 1: Infrastructure Foundation | Pending |
+| INFR-03 | Phase 1: Infrastructure Foundation | Pending |
+| INFR-04 | Phase 1: Infrastructure Foundation | Pending |
+| INFR-05 | Phase 1: Infrastructure Foundation | Pending |
+| PLUG-01 | Phase 8: Outlook Add-in | Pending |
+| PLUG-02 | Phase 8: Outlook Add-in | Pending |
+| PLUG-03 | Phase 8: Outlook Add-in | Pending |
+| PLUG-04 | Phase 8: Outlook Add-in | Pending |
 
 **Coverage:**
-- v1 requirements: 41 total
-- Mapped to phases: 0
-- Unmapped: 41 (will be mapped during roadmap creation)
+- v1 requirements: 42 total
+- Mapped to phases: 42/42
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-16*
-*Last updated: 2026-02-16 after initial definition*
+*Last updated: 2026-02-16 after roadmap creation -- all requirements mapped to phases*
