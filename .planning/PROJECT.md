@@ -20,7 +20,7 @@ Users never lose control of their email. The system observes, learns, suggests, 
 
 - [ ] Azure AD OAuth 2.0 authentication for Microsoft 365 accounts
 - [ ] Admin can invite users by email; role-based access (Admin, User)
-- [ ] Each user connects their own mailbox via OAuth consent flow
+- [ ] Each user connects one or more mailboxes via OAuth consent flow (multi-mailbox per user)
 - [ ] Real-time email observation via Graph API webhooks (created, updated, moved, deleted events)
 - [ ] Delta query fallback (every 15 min) to catch missed webhook events
 - [ ] Email metadata extraction and storage (sender, subject, folder, timestamps — never body content)
@@ -50,6 +50,7 @@ Users never lose control of their email. The system observes, learns, suggests, 
 - [ ] All tokens encrypted at rest (AES-256-GCM)
 - [ ] User data isolation enforced at query level
 - [ ] Rate limiting on all endpoints
+- [ ] Outlook Add-in with sender/domain whitelist/blacklist actions, Azure AD SSO integration
 
 ### Out of Scope
 
@@ -63,6 +64,9 @@ Users never lose control of their email. The system observes, learns, suggests, 
 - Calendar integration — future
 - SaaS multi-tenant billing — Phase 4
 - Pattern types: time-based, subject, composite — will add iteratively after sender + folder routing prove out
+- Outlook Add-in email tracking (pixel/beacon) — future project
+- Outlook Add-in AI email rewrite/compose — future project
+- Outlook Add-in email templates — future project
 
 ## Context
 
@@ -98,6 +102,8 @@ Users never lose control of their email. The system observes, learns, suggests, 
 | Request Mail.Send scope upfront even though Phase 1 doesn't use it | Avoids re-consent when Phase 2 adds auto-responses | — Pending |
 | BullMQ + Redis for background jobs | Already need Redis for caching; BullMQ adds reliable job processing with minimal overhead | — Pending |
 | Cloudflare Tunnel for webhook exposure | Avoids opening ports on DGX; provides HTTPS for Graph API webhook requirements | — Pending |
+| Multi-mailbox per user (not 1:1) | Users have email across multiple domains (aptask.com, jobtalk.ai, yenom.ai). Each mailbox gets own webhooks, patterns, rules | — Pending |
+| Outlook Add-in in v1 scope | Sender/domain whitelist/blacklist from Outlook context menu ties directly into safety features. Email tracking, AI, templates deferred | — Pending |
 
 ---
 *Last updated: 2026-02-16 after initialization*
