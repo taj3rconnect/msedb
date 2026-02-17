@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 4 - Frontend Shell & Observation UI (In Progress)
+**Current focus:** Phase 4 - Frontend Shell & Observation UI (Complete)
 
 ## Current Position
 
 Phase: 4 of 8 (Frontend Shell & Observation UI)
-Plan: 2 of 3 in current phase
-Status: Plan 04-02 Complete
-Last activity: 2026-02-17 -- Completed 04-02 (Dashboard, app shell, Socket.IO, kill switch)
+Plan: 3 of 3 in current phase
+Status: Phase 04 Complete
+Last activity: 2026-02-17 -- Completed 04-03 (Email activity page with data table, charts, and filters)
 
-Progress: [██████████░] ~55%
+Progress: [████████████░] ~60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
+- Total plans completed: 11
 - Average duration: 3min
-- Total execution time: 0.63 hours
+- Total execution time: 0.68 hours
 
 **By Phase:**
 
@@ -30,10 +30,10 @@ Progress: [██████████░] ~55%
 | 01-infrastructure-foundation | 3/3 | 15min | 5min |
 | 02-authentication-token-management | 2/2 | 6min | 3min |
 | 03-email-observation-pipeline | 3/3 | 9min | 3min |
-| 04-frontend-shell-observation-ui | 2/3 | 8min | 4min |
+| 04-frontend-shell-observation-ui | 3/3 | 11min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 03-01 (3min), 03-02 (3min), 03-03 (3min), 04-01 (3min), 04-02 (5min)
+- Last 5 plans: 03-02 (3min), 03-03 (3min), 04-01 (3min), 04-02 (5min), 04-03 (3min)
 - Trend: Steady/Improving
 
 *Updated after each plan completion*
@@ -87,6 +87,10 @@ Recent decisions affecting current work:
 - [04-02]: Kill switch at /api/user/preferences with dedicated userRouter (not nested in dashboard)
 - [04-02]: Socket.IO useRef pattern prevents reconnection on re-renders
 - [04-02]: AppShell renders Outlet directly for react-router nesting
+- [04-03]: TanStack Table with manualSorting and manualPagination for server-driven data table
+- [04-03]: shadcn ChartContainer wraps Recharts for consistent theming with OKLCH colors
+- [04-03]: Sender breakdown shows top 10 from 20 API results to keep chart readable
+- [04-03]: Timeline range toggle uses Button group (not tabs) for compactness
 
 ### Pending Todos
 
@@ -99,5 +103,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 04-02-PLAN.md (Dashboard, app shell, Socket.IO, kill switch). Ready for 04-03.
+Stopped at: Completed 04-03-PLAN.md (Email activity page, events API, charts). Phase 04 complete. Ready for Phase 05.
 Resume file: None
