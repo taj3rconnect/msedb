@@ -9,28 +9,28 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 
 ## Current Position
 
-Phase: 1 of 8 (Infrastructure Foundation)
-Plan: 2 of 3 in current phase
-Status: Executing
-Last activity: 2026-02-17 -- Completed 01-02 (MongoDB, Redis, 9 models, BullMQ queues/schedulers)
+Phase: 1 of 8 (Infrastructure Foundation) -- COMPLETE
+Plan: 3 of 3 in current phase (all complete)
+Status: Phase 1 Complete
+Last activity: 2026-02-17 -- Completed 01-03 (security hardening, health endpoint, webhooks, encryption)
 
-Progress: [██░░░░░░░░] ~8%
+Progress: [██░░░░░░░░] ~12%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
+- Total plans completed: 3
 - Average duration: 5min
-- Total execution time: 0.2 hours
+- Total execution time: 0.25 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-infrastructure-foundation | 2/3 | 10min | 5min |
+| 01-infrastructure-foundation | 3/3 | 15min | 5min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (5min), 01-02 (5min)
+- Last 5 plans: 01-01 (5min), 01-02 (5min), 01-03 (5min)
 - Trend: Steady
 
 *Updated after each plan completion*
@@ -52,6 +52,10 @@ Recent decisions affecting current work:
 - [01-02]: Use plain config objects for BullMQ connections (avoids ioredis version mismatch with BullMQ's bundled ioredis)
 - [01-02]: Named import { Redis } from ioredis for ESM compatibility with NodeNext module resolution
 - [01-02]: Server startup sequence: connectDatabase -> Redis ping -> initializeSchedulers -> listen
+- [01-03]: Factory functions for rate limiters (createAuthLimiter/createApiLimiter) -- Redis client unavailable at import time
+- [01-03]: Graph API SELECT_FIELDS as central constant -- all future Graph calls must use buildSelectParam() for INFR-04
+- [01-03]: Health endpoint treats subscriptions.active and tokens.healthy as informational, not gates for healthy/degraded
+- [01-03]: Cloudflare Tunnel deferred to Phase 3 prerequisite (user decision)
 
 ### Pending Todos
 
@@ -60,10 +64,10 @@ None yet.
 ### Blockers/Concerns
 
 - Azure AD app registration not yet created -- must be set up before Phase 2 can begin
-- Cloudflare Tunnel not yet configured -- must be operational before Phase 3 webhook testing
+- Cloudflare Tunnel not yet configured -- deferred from 01-03 by user decision, must be operational before Phase 3 webhook testing. Steps: create tunnel to localhost:8010, set GRAPH_WEBHOOK_URL in .env, disable Bot Fight Mode or add WAF Skip rule for /webhooks/graph
 
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 01-02-PLAN.md (database, models, BullMQ). Ready for 01-03.
+Stopped at: Completed 01-03-PLAN.md (security, health, webhooks, encryption). Phase 1 complete. Ready for Phase 2.
 Resume file: None
