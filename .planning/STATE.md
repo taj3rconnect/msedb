@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 3 - Email Observation Pipeline (In Progress)
+**Current focus:** Phase 4 - Frontend Shell & Observation UI (In Progress)
 
 ## Current Position
 
-Phase: 3 of 8 (Email Observation Pipeline)
-Plan: 3 of 3 in current phase
-Status: Phase 03 Complete
-Last activity: 2026-02-17 -- Completed 03-03 (Delta sync: folder cache, delta query service, BullMQ processor)
+Phase: 4 of 8 (Frontend Shell & Observation UI)
+Plan: 1 of 3 in current phase
+Status: Plan 04-01 Complete
+Last activity: 2026-02-17 -- Completed 04-01 (Frontend foundation: shadcn/ui, auth store, protected routes, login page)
 
-Progress: [████████░░] ~45%
+Progress: [█████████░] ~50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 3min
-- Total execution time: 0.5 hours
+- Total execution time: 0.55 hours
 
 **By Phase:**
 
@@ -30,9 +30,10 @@ Progress: [████████░░] ~45%
 | 01-infrastructure-foundation | 3/3 | 15min | 5min |
 | 02-authentication-token-management | 2/2 | 6min | 3min |
 | 03-email-observation-pipeline | 3/3 | 9min | 3min |
+| 04-frontend-shell-observation-ui | 1/3 | 3min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (3min), 02-02 (3min), 03-01 (3min), 03-02 (3min), 03-03 (3min)
+- Last 5 plans: 02-02 (3min), 03-01 (3min), 03-02 (3min), 03-03 (3min), 04-01 (3min)
 - Trend: Steady/Improving
 
 *Updated after each plan completion*
@@ -78,6 +79,10 @@ Recent decisions affecting current work:
 - [03-03]: Well-known folder resolution via Graph API aliases (not name-matching from folder list)
 - [03-03]: Delta sync treats all non-deleted messages as 'arrived' events
 - [03-03]: Per-mailbox and per-folder error isolation prevents cascade failures in delta sync
+- [04-01]: Path alias @/ added to both root tsconfig.json and tsconfig.app.json for shadcn compatibility
+- [04-01]: AppRoot component with useAuth hook wraps all routes for session initialization
+- [04-01]: API client auto-prefixes /api for non-auth paths, uses /auth paths as-is
+- [04-01]: npm overrides for react-is to ensure React 19 compatibility with recharts
 
 ### Pending Todos
 
@@ -90,5 +95,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 03-03-PLAN.md (Delta sync: folder cache, delta query service, BullMQ processor). Phase 03 complete. Ready for Phase 04.
+Stopped at: Completed 04-01-PLAN.md (Frontend foundation: shadcn/ui, auth store, protected routes, login page). Ready for 04-02.
 Resume file: None
