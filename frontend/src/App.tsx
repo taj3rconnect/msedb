@@ -10,6 +10,7 @@ import { NotFoundPage } from '@/pages/NotFoundPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ComingSoonPage } from '@/pages/ComingSoonPage';
 import { EmailActivityPage } from '@/pages/EmailActivityPage';
+import { PatternsPage } from '@/pages/PatternsPage';
 
 // --- Protected Layout ---
 
@@ -65,7 +66,7 @@ const router = createBrowserRouter([
           },
           {
             path: '/patterns',
-            element: <ComingSoonPage title="Patterns" />,
+            element: <PatternsPage />,
           },
           {
             path: '/rules',
