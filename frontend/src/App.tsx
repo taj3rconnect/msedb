@@ -11,6 +11,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { ComingSoonPage } from '@/pages/ComingSoonPage';
 import { EmailActivityPage } from '@/pages/EmailActivityPage';
 import { PatternsPage } from '@/pages/PatternsPage';
+import { RulesPage } from '@/pages/RulesPage';
 
 // --- Protected Layout ---
 
@@ -70,7 +71,7 @@ const router = createBrowserRouter([
           },
           {
             path: '/rules',
-            element: <ComingSoonPage title="Rules" />,
+            element: <RulesPage />,
           },
           {
             path: '/staging',
