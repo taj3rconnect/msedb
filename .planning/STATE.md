@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 3 of 8 (Email Observation Pipeline)
-Plan: 2 of 3 in current phase
-Status: Plan 03-02 Complete
-Last activity: 2026-02-17 -- Completed 03-02 (Event processing pipeline: metadata extractor, event collector, webhook events processor)
+Plan: 3 of 3 in current phase
+Status: Phase 03 Complete
+Last activity: 2026-02-17 -- Completed 03-03 (Delta sync: folder cache, delta query service, BullMQ processor)
 
-Progress: [████████░░] ~40%
+Progress: [████████░░] ~45%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 4min
-- Total execution time: 0.45 hours
+- Total plans completed: 8
+- Average duration: 3min
+- Total execution time: 0.5 hours
 
 **By Phase:**
 
@@ -29,10 +29,10 @@ Progress: [████████░░] ~40%
 |-------|-------|-------|----------|
 | 01-infrastructure-foundation | 3/3 | 15min | 5min |
 | 02-authentication-token-management | 2/2 | 6min | 3min |
-| 03-email-observation-pipeline | 2/3 | 6min | 3min |
+| 03-email-observation-pipeline | 3/3 | 9min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 01-03 (5min), 02-01 (3min), 02-02 (3min), 03-01 (3min), 03-02 (3min)
+- Last 5 plans: 02-01 (3min), 02-02 (3min), 03-01 (3min), 03-02 (3min), 03-03 (3min)
 - Trend: Steady/Improving
 
 *Updated after each plan completion*
@@ -74,6 +74,10 @@ Recent decisions affecting current work:
 - [03-02]: Move detection via parentFolderId comparison against most recent EmailEvent.toFolder
 - [03-02]: Newsletter detection heuristic: presence of List-Unsubscribe header
 - [03-02]: Flag detection uses EmailEvent query (no prior flagged event) rather than stored flag field
+- [03-03]: deltaLinks stored in Redis with no TTL -- expire server-side via 410 Gone
+- [03-03]: Well-known folder resolution via Graph API aliases (not name-matching from folder list)
+- [03-03]: Delta sync treats all non-deleted messages as 'arrived' events
+- [03-03]: Per-mailbox and per-folder error isolation prevents cascade failures in delta sync
 
 ### Pending Todos
 
@@ -86,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 03-02-PLAN.md (Event processing pipeline: metadata extractor, event collector, webhook events processor). Ready for 03-03.
+Stopped at: Completed 03-03-PLAN.md (Delta sync: folder cache, delta query service, BullMQ processor). Phase 03 complete. Ready for Phase 04.
 Resume file: None
