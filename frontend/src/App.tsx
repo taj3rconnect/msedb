@@ -9,6 +9,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ComingSoonPage } from '@/pages/ComingSoonPage';
+import { EmailActivityPage } from '@/pages/EmailActivityPage';
 
 // --- Protected Layout ---
 
@@ -60,7 +61,7 @@ const router = createBrowserRouter([
           },
           {
             path: '/activity',
-            element: <ComingSoonPage title="Email Activity" />,
+            element: <EmailActivityPage />,
           },
           {
             path: '/patterns',
