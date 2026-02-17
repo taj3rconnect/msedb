@@ -1,4 +1,5 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import { config } from './config/index.js';
 import logger from './config/logger.js';
 import { connectDatabase } from './config/database.js';
@@ -10,6 +11,7 @@ import { createAuthLimiter, createApiLimiter } from './middleware/rateLimiter.js
 import { globalErrorHandler } from './middleware/errorHandler.js';
 import healthRouter from './routes/health.js';
 import webhooksRouter from './routes/webhooks.js';
+import authRouter from './auth/routes.js';
 
 // Import all models to trigger Mongoose model registration
 import './models/index.js';
@@ -19,11 +21,17 @@ const app = express();
 // Security middleware (helmet, cors, compression, body parsing)
 configureSecurityMiddleware(app);
 
+// Cookie parser (must be before auth routes that read cookies)
+app.use(cookieParser());
+
 // Mount health endpoint (no rate limiting)
 app.use(healthRouter);
 
 // Mount webhook endpoint (no rate limiting -- Microsoft controls the rate)
 app.use(webhooksRouter);
+
+// Mount auth routes (login, callback, logout, me)
+app.use(authRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);
