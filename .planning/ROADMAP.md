@@ -114,12 +114,15 @@ Plans:
   3. The kill switch (automationPaused) stops all rule evaluation across all mailboxes immediately, the whitelist prevents automation on protected senders/domains (per-mailbox and org-wide), and rule evaluation follows the correct order: check kill switch, check whitelist, evaluate rules by priority (first-match-wins)
   4. User can undo any automated action within 48 hours (soft-delete only, never permanentDelete), and the audit log page shows filterable history (by mailbox, rule, action type, date range) with an undo button on each row
   5. Socket.IO pushes notifications when emails enter staging, and the staging count badge appears on the dashboard and navigation
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
-- [ ] 06-01: Rule engine, pattern-to-rule conversion, rule CRUD API
-- [ ] 06-02: Staging manager, staging processor BullMQ job, undo service
-- [ ] 06-03: Rules page, Staging page, Audit log page
+- [ ] 06-01-PLAN.md -- Rule engine core, action executor, whitelist service, staging manager, StagedEmail TTL fix
+- [ ] 06-02-PLAN.md -- Pattern-to-rule converter, undo service
+- [ ] 06-03-PLAN.md -- Rules CRUD API, staging API, audit API, whitelist endpoints
+- [ ] 06-04-PLAN.md -- Staging processor BullMQ job, rule engine webhook integration
+- [ ] 06-05-PLAN.md -- Rules page with dnd-kit drag-and-drop reordering
+- [ ] 06-06-PLAN.md -- Staging page with countdown timers, audit log page with undo
 
 ### Phase 7: Polish, Notifications & Admin
 **Goal**: The remaining UI pages are complete -- settings for user preferences and mailbox management, admin panel for user and org-wide rule management, and an in-app notification system that keeps users informed without requiring them to check the dashboard
@@ -181,6 +184,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 3. Email Observation Pipeline | 3/3 | Complete | 2026-02-17 |
 | 4. Frontend Shell & Observation UI | 3/3 | Complete | 2026-02-17 |
 | 5. Pattern Intelligence | 3/3 | Complete | 2026-02-17 |
-| 6. Automation & Safety | 0/3 | Not started | - |
+| 6. Automation & Safety | 0/6 | Not started | - |
 | 7. Polish, Notifications & Admin | 0/2 | Not started | - |
 | 8. Outlook Add-in | 0/2 | Not started | - |
