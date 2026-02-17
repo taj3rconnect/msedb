@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-16)
 ## Current Position
 
 Phase: 5 of 8 (Pattern Intelligence)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In Progress
-Last activity: 2026-02-17 -- Completed 05-01 (Pattern detection engine with confidence scoring)
+Last activity: 2026-02-17 -- Completed 05-02 (Pattern API and BullMQ processor)
 
-Progress: [█████████████░] ~65%
+Progress: [██████████████░] ~70%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
+- Total plans completed: 13
 - Average duration: 4min
-- Total execution time: 0.75 hours
+- Total execution time: 0.78 hours
 
 **By Phase:**
 
@@ -31,10 +31,10 @@ Progress: [█████████████░] ~65%
 | 02-authentication-token-management | 2/2 | 6min | 3min |
 | 03-email-observation-pipeline | 3/3 | 9min | 3min |
 | 04-frontend-shell-observation-ui | 3/3 | 11min | 4min |
-| 05-pattern-intelligence | 1/3 | 4min | 4min |
+| 05-pattern-intelligence | 2/3 | 6min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 03-03 (3min), 04-01 (3min), 04-02 (5min), 04-03 (3min), 05-01 (4min)
+- Last 5 plans: 04-01 (3min), 04-02 (5min), 04-03 (3min), 05-01 (4min), 05-02 (2min)
 - Trend: Steady
 
 *Updated after each plan completion*
@@ -96,6 +96,9 @@ Recent decisions affecting current work:
 - [05-01]: Shared pipeline builders (buildBaseMatchFilter, buildEvidenceAccumulator) reduce aggregation duplication
 - [05-01]: Confidence minimum threshold of 50% before persisting patterns (noise reduction)
 - [05-01]: Recency penalty uses 0.5x divergence weight with 0.85 floor factor
+- [05-02]: POST /analyze route defined before /:id routes to prevent 'analyze' being captured as :id param
+- [05-02]: Customize endpoint combines action modification and auto-approval in a single operation
+- [05-02]: Dashboard patternsPending uses $in: ['detected', 'suggested'] with optional mailboxId filter
 
 ### Pending Todos
 
@@ -108,5 +111,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 05-01-PLAN.md (Pattern detection engine with confidence scoring, TDD). Phase 05 in progress (1/3 plans done).
+Stopped at: Completed 05-02-PLAN.md (Pattern API and BullMQ processor). Phase 05 in progress (2/3 plans done).
 Resume file: None
