@@ -1,4 +1,29 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// Mock heavy dependencies before importing the module under test
+vi.mock('../../config/logger.js', () => ({
+  default: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
+vi.mock('../../models/EmailEvent.js', () => ({
+  EmailEvent: {
+    aggregate: vi.fn().mockResolvedValue([]),
+    countDocuments: vi.fn().mockResolvedValue(0),
+  },
+}));
+
+vi.mock('../../models/Pattern.js', () => ({
+  Pattern: {
+    findOne: vi.fn().mockResolvedValue(null),
+    create: vi.fn().mockResolvedValue({}),
+  },
+}));
+
 import {
   calculateConfidence,
   shouldSuggestPattern,
