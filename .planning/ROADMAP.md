@@ -13,7 +13,7 @@ MSEDB delivers a self-hosted email intelligence portal that connects to Microsof
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Infrastructure Foundation** - Docker Compose stack with MongoDB, Redis, health endpoints, and all Mongoose models (completed 2026-02-17)
-- [ ] **Phase 2: Authentication & Token Management** - Azure AD OAuth 2.0 SSO, JWT sessions, encrypted token storage, multi-mailbox connections
+- [x] **Phase 2: Authentication & Token Management** - Azure AD OAuth 2.0 SSO, JWT sessions, encrypted token storage, multi-mailbox connections (completed 2026-02-17)
 - [ ] **Phase 3: Email Observation Pipeline** - Webhook subscriptions, delta query fallback, event collection, metadata extraction, background jobs
 - [ ] **Phase 4: Frontend Shell & Observation UI** - React SPA with auth flow, dashboard, email activity page, Socket.IO real-time updates
 - [ ] **Phase 5: Pattern Intelligence** - Sender and folder routing pattern detection, confidence scoring, pattern review and approval UI
@@ -165,8 +165,7 @@ Plans:
 
 | Phase | Pitfall | Prevention |
 |-------|---------|------------|
-| 1 | Redis `allkeys-lru` silently evicts BullMQ job keys | Complete    | 2026-02-17 | 2 | MSAL token cache lost on container restart | Implement MSAL `ICachePlugin` persisting to MongoDB; test with `docker restart` |
-| 3 | Webhook subscriptions silently expire | `lifecycleNotificationUrl` on every subscription; renewal on startup + every 2h |
+| 1 | Redis `allkeys-lru` silently evicts BullMQ job keys | Complete    | 2026-02-17 | 2 | MSAL token cache lost on container restart | Complete    | 2026-02-17 | 3 | Webhook subscriptions silently expire | `lifecycleNotificationUrl` on every subscription; renewal on startup + every 2h |
 | 3 | Webhook handler blocks beyond 3 seconds | Return 202 immediately; zero Graph API calls in handler; process via BullMQ |
 | 5 | Pattern false positives destroy trust | Asymmetric thresholds (98% delete, 85% move); surface exceptions; 14-day minimum observation |
 | 6 | Staging folder becomes invisible black hole | Socket.IO push on staging entry; dashboard badge; rescue links; 7-day inactivity alert |
