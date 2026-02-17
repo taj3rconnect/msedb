@@ -1,6 +1,7 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import { getQueueConnectionConfig, getWorkerConnectionConfig } from '../config/redis.js';
 import logger from '../config/logger.js';
+import { processTokenRefresh } from './processors/tokenRefresh.js';
 
 // Connection configs (plain objects avoid ioredis version conflicts with BullMQ)
 const queueConnectionConfig = getQueueConnectionConfig();
@@ -56,9 +57,18 @@ function createProcessor(queueName: string) {
   };
 }
 
+// Map queue names to their processor functions (real or placeholder)
+const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
+  'webhook-renewal': createProcessor('webhook-renewal'),
+  'delta-sync': createProcessor('delta-sync'),
+  'pattern-analysis': createProcessor('pattern-analysis'),
+  'staging-processor': createProcessor('staging-processor'),
+  'token-refresh': processTokenRefresh,
+};
+
 // Create all 5 workers (each with its own Redis connection via config object)
 const workers: Worker[] = QUEUE_NAMES.map((name) => {
-  const worker = new Worker(name, createProcessor(name), {
+  const worker = new Worker(name, processorMap[name], {
     connection: workerConnectionConfig,
   });
 
