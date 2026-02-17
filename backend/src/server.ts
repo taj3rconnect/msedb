@@ -6,6 +6,7 @@ import { connectDatabase } from './config/database.js';
 import { getRedisClient } from './config/redis.js';
 import { initializeSchedulers } from './jobs/schedulers.js';
 import { closeAllWorkers, closeAllQueues } from './jobs/queues.js';
+import { syncSubscriptionsOnStartup } from './services/subscriptionService.js';
 import { configureSecurityMiddleware } from './middleware/security.js';
 import { createAuthLimiter, createApiLimiter } from './middleware/rateLimiter.js';
 import { globalErrorHandler } from './middleware/errorHandler.js';
@@ -65,7 +66,20 @@ async function startServer(): Promise<void> {
     // 4. Initialize BullMQ job schedulers
     await initializeSchedulers();
 
-    // 5. Start Express server (only after all infrastructure is ready)
+    // 5. Sync webhook subscriptions for all connected mailboxes
+    if (!config.graphWebhookUrl) {
+      logger.warn('GRAPH_WEBHOOK_URL is not set -- webhook subscriptions will fail until configured');
+    }
+    try {
+      await syncSubscriptionsOnStartup();
+    } catch (err) {
+      // Log but do NOT prevent server start -- periodic renewal will retry
+      logger.error('Subscription sync failed on startup', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // 6. Start Express server (only after all infrastructure is ready)
     app.listen(config.port, () => {
       logger.info(`MSEDB backend started on port ${config.port}`, {
         environment: config.nodeEnv,
