@@ -45,24 +45,25 @@ function dockerRequest(
 
 /**
  * Parse the Quick Tunnel URL from cloudflared container logs.
+ * Returns the LAST match to get the most recent URL after a restart.
  */
 function parseTunnelUrl(logs: string): string | null {
-  // cloudflared outputs the URL in a line like:
-  // "https://something-something.trycloudflare.com"
-  // or in a INF line with the URL
-  const match = logs.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-  return match ? match[0] : null;
+  const matches = logs.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/g);
+  return matches ? matches[matches.length - 1] : null;
 }
 
 /**
  * Read the tunnel URL from the cloudflared container logs via Docker API.
  */
-export async function getTunnelUrlFromContainer(): Promise<string | null> {
+export async function getTunnelUrlFromContainer(recentOnly = false): Promise<string | null> {
   try {
-    const res = await dockerRequest(
-      'GET',
-      `/containers/${TUNNEL_CONTAINER}/logs?stderr=true&stdout=true&tail=50`,
-    );
+    let path = `/containers/${TUNNEL_CONTAINER}/logs?stderr=true&stdout=true&tail=50`;
+    if (recentOnly) {
+      // Only read logs from the last 30s to avoid stale URLs from previous runs
+      const since = Math.floor(Date.now() / 1000) - 30;
+      path += `&since=${since}`;
+    }
+    const res = await dockerRequest('GET', path);
     if (res.status !== 200) {
       logger.warn('Could not read tunnel container logs', {
         status: res.status,
@@ -87,12 +88,18 @@ export async function checkTunnelHealth(url: string): Promise<boolean> {
   if (!url) return false;
 
   return new Promise((resolve) => {
-    const testUrl = `${url}/webhooks/graph?validationToken=healthcheck`;
-    const proto = testUrl.startsWith('https') ? https : http;
+    const parsedUrl = new URL(`${url}/webhooks/graph?validationToken=healthcheck`);
+    const proto = parsedUrl.protocol === 'https:' ? https : http;
 
-    const req = proto.get(
-      testUrl,
-      { timeout: 8000, rejectUnauthorized: false },
+    const req = proto.request(
+      {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: 'POST',
+        timeout: 8000,
+        rejectUnauthorized: false,
+      },
       (res: http.IncomingMessage) => {
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -102,6 +109,7 @@ export async function checkTunnelHealth(url: string): Promise<boolean> {
         });
       },
     );
+    req.end();
     req.on('error', () => resolve(false));
     req.on('timeout', () => {
       req.destroy();
@@ -169,40 +177,61 @@ export async function refreshTunnel() {
     throw new Error('Failed to restart tunnel container');
   }
 
-  // 2. Wait for cloudflared to establish the tunnel
+  // 2. Wait for cloudflared to register the URL (typically ~8s)
   await new Promise((resolve) => setTimeout(resolve, 10000));
 
-  // 3. Parse the new URL from container logs
-  const newUrl = await getTunnelUrlFromContainer();
+  // 3. Parse the new URL from recent container logs only
+  const newUrl = await getTunnelUrlFromContainer(true);
   if (!newUrl) {
     throw new Error(
       'Could not detect tunnel URL from container logs. The tunnel may still be starting.',
     );
   }
 
-  // 4. Update DB and runtime config
+  // 4. Update DB and runtime config immediately
   const tunnelConfig = await getTunnelConfig();
   tunnelConfig.webhookUrl = newUrl;
   config.graphWebhookUrl = newUrl;
 
-  // 5. Expire old subscriptions
+  // 5. Wait for Cloudflare DNS to propagate and tunnel to become healthy
+  //    Quick Tunnel DNS can take 30-90s to propagate after URL assignment
+  logger.info('Waiting for tunnel DNS to propagate...', { url: newUrl });
+  let healthy = false;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    healthy = await checkTunnelHealth(newUrl);
+    if (healthy) {
+      logger.info('Tunnel is healthy', { url: newUrl, attempt });
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+
+  if (!healthy) {
+    tunnelConfig.isHealthy = false;
+    tunnelConfig.lastHealthCheck = new Date();
+    await tunnelConfig.save();
+    throw new Error(
+      'Tunnel URL detected but not responding after 100s. Cloudflare DNS may still be propagating — try again in a minute.',
+    );
+  }
+
+  // 6. Expire old subscriptions
   await WebhookSubscription.updateMany(
     { status: 'active' },
     { status: 'expired' },
   );
 
-  // 6. Re-sync subscriptions with new URL
+  // 7. Re-sync subscriptions with new URL (tunnel is confirmed healthy)
   const syncResult = await syncSubscriptionsOnStartup();
 
-  // 7. Health check the new URL
-  const isHealthy = await checkTunnelHealth(newUrl);
-  tunnelConfig.isHealthy = isHealthy;
+  // 8. Final status update
+  tunnelConfig.isHealthy = true;
   tunnelConfig.lastHealthCheck = new Date();
   await tunnelConfig.save();
 
   logger.info('Tunnel refresh completed', {
     url: newUrl,
-    isHealthy,
+    isHealthy: true,
     sync: syncResult,
   });
 
@@ -212,7 +241,7 @@ export async function refreshTunnel() {
 
   return {
     url: newUrl,
-    isHealthy,
+    isHealthy: true,
     lastHealthCheck: tunnelConfig.lastHealthCheck,
     subscriptionCount,
     sync: syncResult,
