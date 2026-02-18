@@ -14,10 +14,18 @@ export function configureSecurityMiddleware(app: Express): void {
   // HTTP security headers
   app.use(helmet());
 
-  // CORS configuration
+  // CORS configuration -- allow both frontend dashboard and Outlook add-in origins
+  const allowedOrigins = [config.appUrl, config.addinUrl];
   app.use(
     cors({
-      origin: config.appUrl,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (non-browser clients, e.g. curl, server-to-server)
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error(`CORS: origin ${origin} not allowed`));
+        }
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
       allowedHeaders: ['Content-Type', 'Authorization'],
@@ -32,7 +40,7 @@ export function configureSecurityMiddleware(app: Express): void {
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   logger.info('Security middleware configured', {
-    cors: { origin: config.appUrl },
+    cors: { origins: allowedOrigins },
     helmet: 'enabled',
     compression: 'enabled',
     bodyLimit: '1mb',

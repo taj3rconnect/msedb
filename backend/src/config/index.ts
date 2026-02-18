@@ -26,6 +26,7 @@ export const config = {
 
   // URLs
   appUrl: process.env.APP_URL || 'http://localhost:3010',
+  addinUrl: process.env.ADDIN_URL || 'https://localhost:3000',
   apiUrl: process.env.API_URL || 'http://localhost:8010',
   graphWebhookUrl: process.env.GRAPH_WEBHOOK_URL || '',
 
