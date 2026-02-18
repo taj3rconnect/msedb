@@ -2,108 +2,104 @@
 
 ## What This Is
 
-A self-hosted, containerized email management portal that connects to Microsoft 365 via Microsoft Graph API, passively observes how users handle their email (delete, move, archive, flag), detects repetitive behavioral patterns, and — with explicit user approval — creates automation rules to handle those actions automatically. Built as a Docker Compose stack running on a DGX server alongside other services.
+A self-hosted, containerized email management portal that connects to Microsoft 365 via Microsoft Graph API, passively observes how users handle their email (delete, move, archive, flag), detects repetitive behavioral patterns with confidence scoring, and — with explicit user approval — creates automation rules to handle those actions automatically. Includes a React dashboard for management and an Outlook Add-in for inline sender/domain actions. Built as a Docker Compose stack (Express 5, React 19, MongoDB 7, Redis 7) running on a DGX server.
 
 ## Core Value
 
 Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval — and every action can be undone.
 
+## Current State
+
+**Version:** v1.0 MVP (shipped 2026-02-18)
+**Codebase:** 19,644 LOC TypeScript/TSX/CSS across 296 files
+**Stack:** Node.js 22, Express 5, React 19, Tailwind 4, Mongoose 8, BullMQ 5, MSAL Node 2.x
+
+**What's shipped:**
+- Full observation-to-automation pipeline (webhooks → patterns → rules → staging → execution)
+- 7 dashboard pages (Dashboard, Email Activity, Patterns, Rules, Staging, Audit Log, Settings, Admin)
+- 6 BullMQ background jobs (webhook renewal, delta sync, pattern analysis, staging processor, token refresh, daily digest)
+- Multi-mailbox per user with independent tokens/webhooks/patterns/rules
+- Safety: staging folder (24h grace), kill switch, undo (48h), whitelist protection, audit logging
+- Outlook Add-in with NAA SSO and sender/domain whitelist/blacklist actions
+
+**Known operational gaps:**
+- Cloudflare Tunnel not yet configured (webhook subscriptions will fail until set up)
+- Azure AD app registration requires manual configuration before first use
+
 ## Requirements
 
 ### Validated
 
-<!-- Shipped and confirmed valuable. -->
-
-(None yet — ship to validate)
+- ✓ Azure AD OAuth 2.0 SSO with multi-mailbox support — v1.0
+- ✓ Real-time email observation via Graph API webhooks + delta query fallback — v1.0
+- ✓ Sender-level and folder routing pattern detection with confidence scoring — v1.0
+- ✓ Multi-action automation rules with staging folder, kill switch, undo, whitelist — v1.0
+- ✓ React dashboard with 7 pages and Socket.IO real-time updates — v1.0
+- ✓ Settings, admin panel, and in-app notification system — v1.0
+- ✓ Outlook Add-in with NAA SSO and sender/domain whitelist/blacklist — v1.0
+- ✓ Containerized Docker Compose stack with BullMQ background jobs — v1.0
+- ✓ AES-256-GCM token encryption, rate limiting, user data isolation — v1.0
 
 ### Active
 
-- [ ] Azure AD OAuth 2.0 authentication for Microsoft 365 accounts
-- [ ] Admin can invite users by email; role-based access (Admin, User)
-- [ ] Each user connects one or more mailboxes via OAuth consent flow (multi-mailbox per user)
-- [ ] Real-time email observation via Graph API webhooks (created, updated, moved, deleted events)
-- [ ] Delta query fallback (every 15 min) to catch missed webhook events
-- [ ] Email metadata extraction and storage (sender, subject, folder, timestamps — never body content)
-- [ ] Subject normalization (replace numbers, dates, IDs with wildcards)
-- [ ] Pattern detection: sender-level patterns (v1)
-- [ ] Pattern detection: folder routing patterns (v1)
-- [ ] Confidence scoring (sample size + consistency-based)
-- [ ] Pattern suggestion UI with approve/reject/customize workflow
-- [ ] Multi-action automation rules (move + mark read + categorize in one rule)
-- [ ] Safety: staging folder with 24-hour grace period before destructive actions
-- [ ] Safety: kill switch to pause all automation
-- [ ] Safety: undo any automated action within 48 hours
-- [ ] Safety: sender/domain whitelist (never auto-act)
-- [ ] Dashboard with stats cards, activity feed, pending suggestions
-- [ ] Email activity page with filters, timeline, heatmap
-- [ ] Patterns page with card-based layout and confidence visualization
-- [ ] Rules page with priority ordering, enable/disable, stats
-- [ ] Staging page with countdown timers and rescue/execute actions
-- [ ] Audit log of all automated actions with undo capability
-- [ ] Settings page (preferences, working hours, whitelist, data export/delete)
-- [ ] Admin panel (user management, org-wide rules, aggregate analytics, system health)
-- [ ] In-app notifications (bell icon) and optional daily email digest
-- [ ] Real-time dashboard updates via Socket.IO
-- [ ] Background jobs: webhook renewal, delta sync, pattern analysis, staging processor, token refresh, daily digest
-- [ ] Fully containerized Docker Compose stack (frontend, backend, MongoDB, Redis)
-- [ ] Cloudflare Tunnel for public HTTPS webhook endpoint
-- [ ] All tokens encrypted at rest (AES-256-GCM)
-- [ ] User data isolation enforced at query level
-- [ ] Rate limiting on all endpoints
-- [ ] Outlook Add-in with sender/domain whitelist/blacklist actions, Azure AD SSO integration
+(None — next milestone not yet planned)
 
 ### Out of Scope
 
-- Auto-responses / auto-reply drafting — Phase 2
-- Email body content analysis — privacy boundary (data model will accommodate future optional content fields)
-- AI-powered email summarization — Phase 3
+- Auto-responses / auto-reply drafting — future milestone
+- Email body content analysis — privacy boundary (metadata only)
+- AI-powered email categorization — future milestone
 - Shared/team mailbox support — future
-- Mobile app — web-first
-- Multi-language support — English only for now
+- Mobile app — web-first (responsive covers mobile browsers)
+- Multi-language support — English only
 - Non-Microsoft email providers — Microsoft 365 only
 - Calendar integration — future
-- SaaS multi-tenant billing — Phase 4
-- Pattern types: time-based, subject, composite — will add iteratively after sender + folder routing prove out
-- Outlook Add-in email tracking (pixel/beacon) — future project
-- Outlook Add-in AI email rewrite/compose — future project
-- Outlook Add-in email templates — future project
+- SaaS multi-tenant billing — future
+- Time-based/subject/composite patterns — iterative addition after sender + folder prove out
+- Outlook Add-in email tracking, AI rewrite/compose, templates — future
 
 ## Context
 
 - **Deployment target:** DGX server at 172.16.219.222 alongside TZMonitor (:3002/:8002) and AiChatDesk (:3005/:8005)
 - **MSEDB ports:** Frontend :3010, Backend :8010, MongoDB :27020, Redis :6382
 - **Resource cap:** 5 CPU cores, 5GB RAM total across all 4 containers
-- **Infrastructure state:** Azure AD app registration and Cloudflare Tunnel not yet set up — need to be created as part of Phase 1
 - **Initial user:** Taj (admin) — solo testing before wider rollout
-- **Multi-domain O365 tenant:** Multiple business domains under one Office 365 account — aptask.com, jobtalk.ai, yenom.ai, hudosndatallc.com, and others. Users may have email addresses across different domains but share one Azure AD tenant
-- **Existing code:** Project scaffolding and documentation only — no application code yet
-- **PRD status:** v1.1 Final, approved — detailed spec in `MSEDB-PRD.md`
-- **Setup guide:** Infrastructure setup documented in `MSEDB-Setup-Guide.md`
+- **Multi-domain O365 tenant:** Multiple business domains (aptask.com, jobtalk.ai, yenom.ai, etc.) under one Azure AD tenant
+- **PRD:** v1.1 Final in `MSEDB-PRD.md`
+- **Setup guide:** `MSEDB-Setup-Guide.md`
 
 ## Constraints
 
-- **Tech stack**: React 18 + Vite + Tailwind + shadcn/ui frontend, Express.js + Node.js 20 backend, MongoDB 7, Redis 7, Docker Compose — as specified in PRD
-- **TypeScript**: Strict mode across frontend and backend
-- **Privacy**: Email body content never stored (metadata only). Data model should accommodate optional content fields for future use without storing them now
+- **Tech stack**: React 19 + Vite + Tailwind 4 + shadcn/ui frontend, Express 5 + Node.js 22 backend, MongoDB 7, Redis 7, Docker Compose
+- **TypeScript**: Strict mode across frontend, backend, and add-in
+- **Privacy**: Email body content never stored (metadata only)
 - **Security**: AES-256-GCM token encryption, non-root containers, rate limiting, user data isolation at query level
-- **Infrastructure**: Zero host dependencies — everything runs in Docker containers. No Node.js/npm/Redis/MongoDB installed on host
-- **Network**: Must coexist with other Docker services on same host without port or network conflicts
-- **Graph API**: Webhook subscriptions expire every 3 days max — need reliable renewal. Microsoft Graph rate limits apply
+- **Infrastructure**: Zero host dependencies — everything runs in Docker containers
+- **Network**: Must coexist with other Docker services on same host
+- **Graph API**: Webhook subscriptions expire every 3 days max — renewal job handles this
 - **Authentication**: Azure AD OAuth 2.0 only — no local/password auth
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Start with sender + folder routing patterns only | Highest value, lowest complexity. Add subject/time/composite iteratively | — Pending |
-| Multi-action rules from day 1 | Single-action model is hard to refactor later. Design data model for multiple actions per rule | — Pending |
-| Email body never stored, but model accommodates future content fields | Privacy boundary now, but don't paint ourselves into a corner architecturally | — Pending |
-| Query-level user data isolation (not separate databases) | Sufficient for single-org deployment. Simpler than database-per-tenant | — Pending |
-| Request Mail.Send scope upfront even though Phase 1 doesn't use it | Avoids re-consent when Phase 2 adds auto-responses | — Pending |
-| BullMQ + Redis for background jobs | Already need Redis for caching; BullMQ adds reliable job processing with minimal overhead | — Pending |
-| Cloudflare Tunnel for webhook exposure | Avoids opening ports on DGX; provides HTTPS for Graph API webhook requirements | — Pending |
-| Multi-mailbox per user (not 1:1) | Users have email across multiple domains (aptask.com, jobtalk.ai, yenom.ai). Each mailbox gets own webhooks, patterns, rules | — Pending |
-| Outlook Add-in in v1 scope | Sender/domain whitelist/blacklist from Outlook context menu ties directly into safety features. Email tracking, AI, templates deferred | — Pending |
+| Start with sender + folder routing patterns only | Highest value, lowest complexity | ✓ Good — shipped in v1.0 |
+| Multi-action rules from day 1 | Single-action model hard to refactor later | ✓ Good — works well |
+| Email body never stored | Privacy boundary now, model accommodates future fields | ✓ Good |
+| Query-level user data isolation | Sufficient for single-org deployment | ✓ Good |
+| BullMQ + Redis for background jobs | Already need Redis for caching; adds reliable job processing | ✓ Good |
+| Cloudflare Tunnel for webhook exposure | Avoids opening ports on DGX; provides HTTPS | — Pending (not configured) |
+| Multi-mailbox per user (not 1:1) | Users have email across multiple domains | ✓ Good — clean data model |
+| Outlook Add-in in v1 scope | Ties directly into safety features (whitelist/blacklist) | ✓ Good |
+| Redis noeviction policy | Prevents BullMQ job key eviction | ✓ Good |
+| MSAL cache in MongoDB via ICachePlugin | Survives container restarts | ✓ Good |
+| Signed JWT as OAuth state parameter | No Redis nonce lookup required | ✓ Good |
+| Webhook handler returns 202 immediately | Zero blocking; BullMQ processes events | ✓ Good |
+| Vitest over Jest | Native ESM, no transforms needed | ✓ Good |
+| Asymmetric confidence thresholds (98%/85%) | Higher bar for destructive actions | ✓ Good |
+| NAA for Outlook Add-in SSO | Modern auth approach, no getAccessTokenAsync fallback | ✓ Good |
+| webpack.config.cjs for add-in | ESM package.json needs CommonJS webpack config | ✓ Good |
+| CORS origin callback for multi-origin | Supports dashboard + add-in origins | ✓ Good |
 
 ---
-*Last updated: 2026-02-16 after initialization*
+*Last updated: 2026-02-18 after v1.0 milestone*
