@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 7 in progress -- Backend APIs and shadcn components complete
+**Current focus:** Phase 7 in progress -- Notification bell and Settings page complete, admin panel next
 
 ## Current Position
 
 Phase: 7 of 8 (Polish, Notifications & Admin)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-18 -- Plan 07-01 complete (notification service, settings routes, admin extensions, shadcn components)
+Last activity: 2026-02-18 -- Plan 07-02 complete (notification bell, settings page with 4 tabs)
 
-Progress: [██████████████████░░] ~88%
+Progress: [███████████████████░] ~92%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 22
+- Total plans completed: 23
 - Average duration: 4min
-- Total execution time: 1.13 hours
+- Total execution time: 1.22 hours
 
 **By Phase:**
 
@@ -33,10 +33,10 @@ Progress: [██████████████████░░] ~88%
 | 04-frontend-shell-observation-ui | 3/3 | 11min | 4min |
 | 05-pattern-intelligence | 3/3 | 9min | 3min |
 | 06-automation-safety | 6/6 | 27min | 5min |
-| 07-polish-notifications-admin | 1/3 | 3min | 3min |
+| 07-polish-notifications-admin | 2/3 | 8min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 06-04 (3min), 06-05 (4min), 06-06 (5min), 06-fix (2min), 07-01 (3min)
+- Last 5 plans: 06-05 (4min), 06-06 (5min), 06-fix (2min), 07-01 (3min), 07-02 (5min)
 - Trend: Steady
 
 ## Accumulated Context
@@ -132,6 +132,11 @@ Recent decisions affecting current work:
 - [Phase 07-01]: Rule.mailboxId optional (required: false) for org-scoped rules -- cleaner than per-mailbox duplication
 - [Phase 07-01]: notificationService wraps Socket.IO emit in try/catch for worker process/test compatibility
 - [Phase 07-01]: Data export limits EmailEvents to 10,000 and AuditLogs to 5,000 for timeout prevention
+- [Phase 07-02]: Zustand getState() used in Socket.IO callbacks and TanStack Query select for non-React context access
+- [Phase 07-02]: No refetchInterval for notifications -- Socket.IO handles real-time, staleTime 60s for initial load
+- [Phase 07-02]: Sonner Toaster mounted in App.tsx (was missing) for toast feedback from settings mutations
+- [Phase 07-02]: updatePreferences widened to Partial<UserPreferences> for field-level PATCH from settings page
+- [Phase 07-02]: Export data uses native fetch (not apiFetch) for Blob response with temporary anchor download
 
 ### Pending Todos
 
@@ -144,5 +149,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 07-01-PLAN.md
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
