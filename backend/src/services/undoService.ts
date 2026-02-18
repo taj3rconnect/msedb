@@ -124,7 +124,7 @@ async function undoRuleExecuted(
     throw new ValidationError('Audit entry missing details for undo');
   }
 
-  const messageId = details.messageId as string | undefined;
+  const messageId = (details.messageId as string | undefined) || auditEntry.targetId;
   const originalFolder = details.originalFolder as string | undefined;
   const actions = details.actions as Array<{ actionType: string; toFolder?: string }> | undefined;
 
@@ -238,7 +238,7 @@ async function undoEmailExecuted(
     throw new ValidationError('Audit entry missing details for undo');
   }
 
-  const messageId = details.messageId as string | undefined;
+  const messageId = (details.messageId as string | undefined) || auditEntry.targetId;
   const originalFolder = details.originalFolder as string | undefined;
 
   if (!messageId) {

@@ -164,6 +164,7 @@ async function processOneItem(
       details: {
         ruleId: item.ruleId.toString(),
         actions: item.actions.map((a) => a.actionType),
+        messageId: item.messageId,
         originalFolder: item.originalFolder,
       },
       undoable: true,

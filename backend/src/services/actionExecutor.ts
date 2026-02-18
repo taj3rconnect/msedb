@@ -200,6 +200,8 @@ export async function executeActions(params: {
     details: {
       ruleId: ruleId.toString(),
       actions: executedActions,
+      messageId,
+      originalFolder,
     },
     undoable: true,
   });
