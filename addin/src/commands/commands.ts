@@ -2,14 +2,17 @@
 
 Office.onReady(() => {
   // Register function commands
-  Office.actions.associate('showTaskpane', showTaskpane);
+  // The ribbon button uses ShowTaskpane action (handled by the manifest),
+  // not ExecuteFunction. commands.ts is loaded as the FunctionFile referenced
+  // in the manifest and provides a noop handler for potential future
+  // ExecuteFunction commands.
+  Office.actions.associate('noop', noop);
 });
 
 /**
- * Placeholder function command for showing the taskpane.
- * The actual ShowTaskpane action is handled by the manifest Action element.
- * This function is registered for potential future use as an ExecuteFunction command.
+ * No-op handler for potential future ExecuteFunction commands.
+ * Immediately signals completion to the Office host.
  */
-function showTaskpane(_event: Office.AddinCommands.Event): void {
-  _event.completed();
+function noop(event: Office.AddinCommands.Event): void {
+  event.completed();
 }
