@@ -361,7 +361,7 @@ adminRouter.get('/sync-status', async (_req: Request, res: Response) => {
 
   // Next sync: check the delta-sync scheduler's next run
   const schedulers = await queues['delta-sync'].getJobSchedulers();
-  const deltaSched = schedulers.find((s) => s.id === 'delta-sync-schedule');
+  const deltaSched = schedulers.find((s) => s.key === 'delta-sync-schedule');
   const nextSyncAt = deltaSched?.next ? new Date(deltaSched.next).toISOString() : null;
 
   res.json({
