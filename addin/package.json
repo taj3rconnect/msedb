@@ -16,6 +16,7 @@
     "tailwindcss": "^4.0.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
     "@types/office-js": "^1.0.421",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -23,6 +24,7 @@
     "css-loader": "^7.1.2",
     "html-webpack-plugin": "^5.6.3",
     "office-addin-dev-certs": "^1.12.2",
+    "postcss-loader": "^8.2.1",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.7.0",

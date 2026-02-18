@@ -37,6 +37,9 @@ module.exports = async (_env, options) => {
     },
     resolve: {
       extensions: [".ts", ".tsx", ".js", ".jsx"],
+      extensionAlias: {
+        ".js": [".ts", ".tsx", ".js"],
+      },
     },
     module: {
       rules: [
@@ -47,7 +50,18 @@ module.exports = async (_env, options) => {
         },
         {
           test: /\.css$/,
-          use: ["style-loader", "css-loader"],
+          use: [
+            "style-loader",
+            "css-loader",
+            {
+              loader: "postcss-loader",
+              options: {
+                postcssOptions: {
+                  plugins: ["@tailwindcss/postcss"],
+                },
+              },
+            },
+          ],
         },
       ],
     },
