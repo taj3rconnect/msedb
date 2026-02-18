@@ -22,7 +22,7 @@ export interface IRuleStats {
 
 export interface IRule extends Document {
   userId: Types.ObjectId;
-  mailboxId: Types.ObjectId;
+  mailboxId?: Types.ObjectId;
   name: string;
   sourcePatternId?: Types.ObjectId;
   isEnabled: boolean;
@@ -40,7 +40,7 @@ export interface IRule extends Document {
 const ruleSchema = new Schema<IRule>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    mailboxId: { type: Schema.Types.ObjectId, ref: 'Mailbox', required: true },
+    mailboxId: { type: Schema.Types.ObjectId, ref: 'Mailbox', required: false },
     name: { type: String, required: true },
     sourcePatternId: { type: Schema.Types.ObjectId, ref: 'Pattern' },
     isEnabled: { type: Boolean, default: true },

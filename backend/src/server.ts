@@ -23,6 +23,7 @@ import { rulesRouter } from './routes/rules.js';
 import { stagingRouter } from './routes/staging.js';
 import { auditRouter } from './routes/audit.js';
 import { notificationsRouter } from './routes/notifications.js';
+import { settingsRouter } from './routes/settings.js';
 import { createSocketServer } from './config/socket.js';
 
 // Import all models to trigger Mongoose model registration
@@ -74,6 +75,9 @@ app.use('/api/audit', auditRouter);
 
 // Mount notification routes (requireAuth applied internally)
 app.use('/api/notifications', notificationsRouter);
+
+// Mount settings routes (requireAuth applied internally)
+app.use('/api/settings', settingsRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);

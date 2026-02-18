@@ -1,5 +1,10 @@
 import { Router, type Request, type Response } from 'express';
 import { User } from '../models/User.js';
+import { EmailEvent } from '../models/EmailEvent.js';
+import { Rule } from '../models/Rule.js';
+import { Pattern } from '../models/Pattern.js';
+import { WebhookSubscription } from '../models/WebhookSubscription.js';
+import { Mailbox } from '../models/Mailbox.js';
 import { requireAuth, requireAdmin } from '../auth/middleware.js';
 import {
   ValidationError,
@@ -152,5 +157,148 @@ adminRouter.patch(
     });
   },
 );
+
+/**
+ * GET /api/admin/analytics
+ *
+ * Aggregate analytics across all users.
+ */
+adminRouter.get('/analytics', async (_req: Request, res: Response) => {
+  const [totalUsers, activeUsers, totalEvents, totalRules, totalPatterns] =
+    await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ isActive: true }),
+      EmailEvent.countDocuments(),
+      Rule.countDocuments({ isEnabled: true }),
+      Pattern.countDocuments({ status: { $in: ['detected', 'suggested'] } }),
+    ]);
+
+  res.json({
+    totalUsers,
+    activeUsers,
+    totalEvents,
+    totalRules,
+    totalPatterns,
+  });
+});
+
+/**
+ * GET /api/admin/health
+ *
+ * System health detail: per-mailbox webhook subscription status and per-user token health.
+ */
+adminRouter.get('/health', async (_req: Request, res: Response) => {
+  const [subscriptions, mailboxes] = await Promise.all([
+    WebhookSubscription.find()
+      .populate('mailboxId', 'email displayName')
+      .populate('userId', 'email displayName')
+      .select(
+        'subscriptionId status expiresAt lastNotificationAt errorCount mailboxId userId',
+      )
+      .lean(),
+    Mailbox.find()
+      .populate('userId', 'email displayName')
+      .select('email isConnected encryptedTokens.expiresAt userId lastSyncAt')
+      .lean(),
+  ]);
+
+  const now = new Date();
+  const tokenHealth = mailboxes.map((m) => ({
+    mailboxId: m._id,
+    email: m.email,
+    user: m.userId,
+    isConnected: m.isConnected,
+    tokenExpiresAt: m.encryptedTokens?.expiresAt,
+    tokenHealthy:
+      m.isConnected && m.encryptedTokens?.expiresAt
+        ? new Date(m.encryptedTokens.expiresAt) > now
+        : false,
+    lastSyncAt: m.lastSyncAt,
+  }));
+
+  res.json({ subscriptions, tokenHealth });
+});
+
+/**
+ * POST /api/admin/org-rules
+ *
+ * Create an org-wide rule (scope: 'org') without a mailboxId.
+ */
+adminRouter.post('/org-rules', async (req: Request, res: Response) => {
+  const { name, conditions, actions, isEnabled, priority } = req.body as {
+    name?: string;
+    conditions?: Record<string, unknown>;
+    actions?: unknown[];
+    isEnabled?: boolean;
+    priority?: number;
+  };
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    throw new ValidationError('Rule name is required');
+  }
+
+  if (!conditions || typeof conditions !== 'object') {
+    throw new ValidationError('Rule conditions are required');
+  }
+
+  if (!actions || !Array.isArray(actions) || actions.length === 0) {
+    throw new ValidationError('At least one action is required');
+  }
+
+  const rule = await Rule.create({
+    name: name.trim(),
+    conditions,
+    actions,
+    isEnabled: isEnabled ?? true,
+    priority: priority ?? 0,
+    scope: 'org',
+    userId: req.user!.userId,
+    createdBy: req.user!.userId,
+  });
+
+  logger.info('Org-wide rule created', {
+    ruleId: rule._id.toString(),
+    name: rule.name,
+    createdBy: req.user!.userId,
+  });
+
+  res.status(201).json(rule);
+});
+
+/**
+ * GET /api/admin/org-rules
+ *
+ * List all org-wide rules, sorted by priority.
+ */
+adminRouter.get('/org-rules', async (_req: Request, res: Response) => {
+  const rules = await Rule.find({ scope: 'org' })
+    .sort({ priority: 1 })
+    .lean();
+
+  res.json(rules);
+});
+
+/**
+ * DELETE /api/admin/org-rules/:id
+ *
+ * Delete an org-wide rule by ID.
+ */
+adminRouter.delete('/org-rules/:id', async (req: Request, res: Response) => {
+  const rule = await Rule.findOneAndDelete({
+    _id: req.params.id,
+    scope: 'org',
+  });
+
+  if (!rule) {
+    throw new NotFoundError('Org-wide rule not found');
+  }
+
+  logger.info('Org-wide rule deleted', {
+    ruleId: req.params.id,
+    deletedBy: req.user!.userId,
+  });
+
+  res.json({ success: true });
+});
 
 export default adminRouter;
