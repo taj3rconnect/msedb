@@ -132,11 +132,12 @@ Plans:
   1. Settings page allows user to manage preferences (working hours, automation aggressiveness), view per-mailbox connection status and token health, manage sender/domain whitelists, and export or delete their data
   2. Admin panel lets the admin invite/deactivate users, assign roles, create org-wide rules, and view aggregate analytics and system health (webhook subscription status per mailbox, token health per user)
   3. In-app notification system (bell icon with unread count) delivers alerts for pattern suggestions, rule executions, staging alerts, and system events -- with read/unread state management
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: Settings page, notification system (bell icon, Socket.IO push)
-- [ ] 07-02: Admin panel (user management, org-wide rules, system health)
+- [ ] 07-01-PLAN.md -- Backend APIs (notification service + CRUD, settings routes, admin analytics/health/org-rules), shadcn components
+- [ ] 07-02-PLAN.md -- Notification bell/dropdown with Socket.IO push, Settings page with tabbed sections
+- [ ] 07-03-PLAN.md -- Admin panel page with user management, org rules, analytics, system health, admin routing
 
 ### Phase 8: Outlook Add-in
 **Goal**: Users can whitelist or blacklist senders and domains directly from within Outlook via context menu or taskpane, with actions syncing to the MSEDB backend and affecting automation rules in real time
@@ -185,5 +186,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 4. Frontend Shell & Observation UI | 3/3 | Complete | 2026-02-17 |
 | 5. Pattern Intelligence | 3/3 | Complete | 2026-02-17 |
 | 6. Automation & Safety | 6/6 | Complete | 2026-02-17 |
-| 7. Polish, Notifications & Admin | 0/2 | Not started | - |
+| 7. Polish, Notifications & Admin | 0/3 | Not started | - |
 | 8. Outlook Add-in | 0/2 | Not started | - |
