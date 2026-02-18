@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 6 verified & complete - Ready for Phase 7
+**Current focus:** Phase 7 in progress -- Backend APIs and shadcn components complete
 
 ## Current Position
 
 Phase: 7 of 8 (Polish, Notifications & Admin)
-Plan: 0 of 2 in current phase
-Status: Not started
-Last activity: 2026-02-17 -- Phase 6 verified (4/5 → 5/5 after gap fix), marked complete
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-18 -- Plan 07-01 complete (notification service, settings routes, admin extensions, shadcn components)
 
-Progress: [█████████████████░░░] ~85%
+Progress: [██████████████████░░] ~88%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 21
+- Total plans completed: 22
 - Average duration: 4min
-- Total execution time: 1.08 hours
+- Total execution time: 1.13 hours
 
 **By Phase:**
 
@@ -33,9 +33,10 @@ Progress: [█████████████████░░░] ~85%
 | 04-frontend-shell-observation-ui | 3/3 | 11min | 4min |
 | 05-pattern-intelligence | 3/3 | 9min | 3min |
 | 06-automation-safety | 6/6 | 27min | 5min |
+| 07-polish-notifications-admin | 1/3 | 3min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 06-02 (2min), 06-03 (3min), 06-04 (3min), 06-05 (4min), 06-06 (5min)
+- Last 5 plans: 06-04 (3min), 06-05 (4min), 06-06 (5min), 06-fix (2min), 07-01 (3min)
 - Trend: Steady
 
 ## Accumulated Context
@@ -127,6 +128,10 @@ Recent decisions affecting current work:
 - [Phase 06-06]: Undo eligibility guard: undoable + within 48 hours + not already undone
 - [Phase 06-06]: Staging count badge auto-refreshes via 60s refetchInterval and Socket.IO staging:new event
 - [Phase 06-fix]: undoService reads messageId from details with targetId fallback; audit creators include messageId+originalFolder in details
+- [Phase 07-01]: Field-level $set for user preferences prevents kill switch overwrite (only provided fields updated)
+- [Phase 07-01]: Rule.mailboxId optional (required: false) for org-scoped rules -- cleaner than per-mailbox duplication
+- [Phase 07-01]: notificationService wraps Socket.IO emit in try/catch for worker process/test compatibility
+- [Phase 07-01]: Data export limits EmailEvents to 10,000 and AuditLogs to 5,000 for timeout prevention
 
 ### Pending Todos
 
@@ -138,6 +143,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-17
-Stopped at: Phase 6 verified & gap fixed. Ready for Phase 7.
+Last session: 2026-02-18
+Stopped at: Completed 07-01-PLAN.md
 Resume file: None
