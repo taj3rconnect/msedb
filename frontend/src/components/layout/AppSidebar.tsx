@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { NAV_ITEMS, ROUTE_PATHS } from '@/lib/constants';
+import { useAuthStore } from '@/stores/authStore';
 import { useStagingCount } from '@/hooks/useStaging';
 
 /**
@@ -22,8 +23,13 @@ import { useStagingCount } from '@/hooks/useStaging';
  * Collapsible on mobile via SidebarTrigger in the Topbar.
  */
 export function AppSidebar() {
+  const user = useAuthStore((s) => s.user);
   const { data: countData } = useStagingCount();
   const stagingCount = countData?.count ?? 0;
+
+  const visibleItems = NAV_ITEMS.filter(
+    (item) => !item.adminOnly || user?.role === 'admin',
+  );
 
   return (
     <Sidebar>
@@ -38,7 +44,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => (
+              {visibleItems.map((item) => (
                 <SidebarMenuItem key={item.path}>
                   <SidebarMenuButton asChild>
                     <NavLink

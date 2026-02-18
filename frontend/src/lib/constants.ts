@@ -7,6 +7,7 @@ import {
   Clock,
   FileText,
   Settings,
+  ShieldCheck,
 } from 'lucide-react';
 
 /**
@@ -32,6 +33,7 @@ export const ROUTE_PATHS = {
   staging: '/staging',
   audit: '/audit',
   settings: '/settings',
+  admin: '/admin',
   login: '/login',
 } as const;
 
@@ -42,6 +44,7 @@ export interface NavItem {
   label: string;
   path: string;
   icon: LucideIcon;
+  adminOnly?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -52,4 +55,5 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Staging', path: ROUTE_PATHS.staging, icon: Clock },
   { label: 'Audit Log', path: ROUTE_PATHS.audit, icon: FileText },
   { label: 'Settings', path: ROUTE_PATHS.settings, icon: Settings },
+  { label: 'Admin Panel', path: ROUTE_PATHS.admin, icon: ShieldCheck, adminOnly: true },
 ];

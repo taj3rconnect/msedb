@@ -14,6 +14,7 @@ import { RulesPage } from '@/pages/RulesPage';
 import { StagingPage } from '@/pages/StagingPage';
 import { AuditLogPage } from '@/pages/AuditLogPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { AdminPage } from '@/pages/AdminPage';
 import { Toaster } from '@/components/ui/sonner';
 
 // --- Protected Layout ---
@@ -45,6 +46,18 @@ function ProtectedLayout() {
 function AppRoot() {
   useAuth();
   return <Outlet />;
+}
+
+// --- Admin Guard ---
+
+/**
+ * AdminGuard redirects non-admin users to the dashboard.
+ * Backend requireAdmin middleware provides the real security boundary.
+ */
+function AdminGuard() {
+  const user = useAuthStore((s) => s.user);
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return <AdminPage />;
 }
 
 // --- Router ---
@@ -87,6 +100,10 @@ const router = createBrowserRouter([
           {
             path: '/settings',
             element: <SettingsPage />,
+          },
+          {
+            path: '/admin',
+            element: <AdminGuard />,
           },
         ],
       },
