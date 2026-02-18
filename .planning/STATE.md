@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 6 complete - Automation & Safety
+**Current focus:** Phase 6 verified & complete - Ready for Phase 7
 
 ## Current Position
 
-Phase: 6 of 8 (Automation & Safety)
-Plan: 6 of 6 in current phase
-Status: Phase Complete
-Last activity: 2026-02-17 -- Completed 06-06 (staging & audit pages)
+Phase: 7 of 8 (Polish, Notifications & Admin)
+Plan: 0 of 2 in current phase
+Status: Not started
+Last activity: 2026-02-17 -- Phase 6 verified (4/5 → 5/5 after gap fix), marked complete
 
 Progress: [█████████████████░░░] ~85%
 
@@ -37,13 +37,6 @@ Progress: [█████████████████░░░] ~85%
 **Recent Trend:**
 - Last 5 plans: 06-02 (2min), 06-03 (3min), 06-04 (3min), 06-05 (4min), 06-06 (5min)
 - Trend: Steady
-
-*Updated after each plan completion*
-| Phase 06 P01 | 2min | 2 tasks | 5 files |
-| Phase 06 P03 | 6min | 2 tasks | 6 files |
-| Phase 06 P04 | 3min | 2 tasks | 3 files |
-| Phase 06 P05 | 4min | 2 tasks | 7 files |
-| Phase 06 P06 | 5min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -133,6 +126,7 @@ Recent decisions affecting current work:
 - [Phase 06-06]: AlertDialog confirmation required before Execute Now (single and batch) -- destructive action
 - [Phase 06-06]: Undo eligibility guard: undoable + within 48 hours + not already undone
 - [Phase 06-06]: Staging count badge auto-refreshes via 60s refetchInterval and Socket.IO staging:new event
+- [Phase 06-fix]: undoService reads messageId from details with targetId fallback; audit creators include messageId+originalFolder in details
 
 ### Pending Todos
 
@@ -145,5 +139,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 06-06-PLAN.md (staging & audit pages). Phase 6 complete. Next: Phase 7.
+Stopped at: Phase 6 verified & gap fixed. Ready for Phase 7.
 Resume file: None
