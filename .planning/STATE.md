@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 7 complete -- All 3 plans done (notification endpoints, bell/settings UI, admin panel)
+**Current focus:** Phase 8 in progress -- Plan 01 complete (add-in scaffold, NAA auth, SSO middleware)
 
 ## Current Position
 
-Phase: 7 of 8 (Polish, Notifications & Admin)
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-02-18 -- Plan 07-03 complete (admin panel with user management, org rules, analytics, system health)
+Phase: 8 of 8 (Outlook Add-in)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-18 -- Plan 08-01 complete (add-in scaffold with NAA SSO auth and backend JWKS middleware)
 
-Progress: [████████████████████] ~96%
+Progress: [█████████████████████] ~98%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 24
+- Total plans completed: 25
 - Average duration: 4min
-- Total execution time: 1.27 hours
+- Total execution time: 1.35 hours
 
 **By Phase:**
 
@@ -34,9 +34,10 @@ Progress: [████████████████████] ~96%
 | 05-pattern-intelligence | 3/3 | 9min | 3min |
 | 06-automation-safety | 6/6 | 27min | 5min |
 | 07-polish-notifications-admin | 3/3 | 11min | 4min |
+| 08-outlook-add-in | 1/2 | 5min | 5min |
 
 **Recent Trend:**
-- Last 5 plans: 06-06 (5min), 06-fix (2min), 07-01 (3min), 07-02 (5min), 07-03 (3min)
+- Last 5 plans: 06-fix (2min), 07-01 (3min), 07-02 (5min), 07-03 (3min), 08-01 (5min)
 - Trend: Steady
 
 ## Accumulated Context
@@ -142,6 +143,10 @@ Recent decisions affecting current work:
 - [Phase 07-03]: System health auto-refreshes every 60s via refetchInterval on useSystemHealth hook
 - [Phase 07-03]: 409 ConflictError from invite handled with specific "User already exists" toast (per decision 02-02)
 - [Phase 07-03]: Token time remaining visualized as Progress bar assuming 1-hour token lifetime
+- [Phase 08-01]: IPublicClientApplication interface (not class) for MSAL NAA instance -- createNestablePublicClientApplication returns the interface type
+- [Phase 08-01]: webpack.config.cjs (not .js) because package.json uses type:module ESM but webpack config requires CommonJS
+- [Phase 08-01]: CORS uses origin callback function instead of string/array -- allows no-origin requests alongside multi-origin support
+- [Phase 08-01]: requireSsoOrCookieAuth composite middleware delegates auth based on Authorization header presence (Bearer = SSO, absent = cookie)
 
 ### Pending Todos
 
@@ -154,5 +159,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 07-03-PLAN.md (Phase 07 complete)
+Stopped at: Completed 08-01-PLAN.md
 Resume file: None
