@@ -140,19 +140,19 @@ Plans:
 - [ ] 07-03-PLAN.md -- Admin panel page with user management, org rules, analytics, system health, admin routing
 
 ### Phase 8: Outlook Add-in
-**Goal**: Users can whitelist or blacklist senders and domains directly from within Outlook via context menu or taskpane, with actions syncing to the MSEDB backend and affecting automation rules in real time
+**Goal**: Users can whitelist or blacklist senders and domains directly from within Outlook via taskpane and ribbon buttons, with actions syncing to the MSEDB backend and affecting automation rules in real time
 **Depends on**: Phase 6 (whitelist API from SAFE-04, rule API from AUTO-02), Phase 2 (Azure AD app registration)
 **Requirements**: PLUG-01, PLUG-02, PLUG-03, PLUG-04
 **Success Criteria** (what must be TRUE):
-  1. Outlook Add-in loads via sideload with a taskpane and context menu commands, styled consistently with the MSEDB dashboard
-  2. User right-clicks an email (or uses taskpane) to mark a sender as "never delete" (whitelist) or "always delete" (blacklist), and the action syncs to the MSEDB backend whitelist and creates/updates automation rules within seconds
+  1. Outlook Add-in loads via sideload with a taskpane and ribbon buttons (MessageReadCommandSurface), styled consistently with the MSEDB dashboard
+  2. User opens taskpane to mark a sender as "never delete" (whitelist) or "always delete" (blacklist), and the action syncs to the MSEDB backend whitelist and creates/updates automation rules within seconds
   3. Same workflow works at the domain level -- user can whitelist or blacklist an entire domain (e.g., @newsletter.com)
-  4. Add-in authenticates via Azure AD SSO using `Office.js getAccessTokenAsync()` against the same Azure AD app registration, with the backend validating the token without requiring a separate login
-**Plans**: TBD
+  4. Add-in authenticates via Azure AD SSO using NAA (Nested App Authentication) with `@azure/msal-browser`, and the backend validates the token without requiring a separate login
+**Plans**: 2 plans
 
 Plans:
-- [ ] 08-01: Add-in scaffolding, manifest, Office.js setup, Azure AD SSO
-- [ ] 08-02: Sender/domain whitelist/blacklist actions, backend API integration
+- [ ] 08-01-PLAN.md -- Add-in scaffolding, manifest, webpack, NAA SSO auth, backend SSO middleware, CORS
+- [ ] 08-02-PLAN.md -- Taskpane UI with sender/domain whitelist/blacklist actions, mailbox resolution, item change handler
 
 ## Phase Ordering Rationale
 
@@ -186,5 +186,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 4. Frontend Shell & Observation UI | 3/3 | Complete | 2026-02-17 |
 | 5. Pattern Intelligence | 3/3 | Complete | 2026-02-17 |
 | 6. Automation & Safety | 6/6 | Complete | 2026-02-17 |
-| 7. Polish, Notifications & Admin | 0/3 | Complete    | 2026-02-18 |
+| 7. Polish, Notifications & Admin | 3/3 | Complete | 2026-02-18 |
 | 8. Outlook Add-in | 0/2 | Not started | - |
