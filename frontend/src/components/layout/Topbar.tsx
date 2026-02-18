@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MailboxSelector } from '@/components/shared/MailboxSelector';
 import { KillSwitch } from '@/components/layout/KillSwitch';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { useAuthStore } from '@/stores/authStore';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -42,6 +43,7 @@ export function Topbar() {
       <div className="flex flex-1 items-center justify-end gap-3">
         <MailboxSelector />
         <KillSwitch />
+        <NotificationBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

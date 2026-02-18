@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNotificationStore } from '@/stores/notificationStore';
 
 /**
  * Socket.IO connection hook.
@@ -32,6 +33,13 @@ export function useSocket() {
       // Invalidate staging queries to update badge and staging page in real-time
       queryClient.invalidateQueries({ queryKey: ['staging-count'] });
       queryClient.invalidateQueries({ queryKey: ['staging'] });
+    });
+
+    socket.on('notification:new', () => {
+      // Increment unread count immediately via Zustand store
+      useNotificationStore.getState().incrementUnread();
+      // Invalidate notification queries to refetch list
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     });
 
     socket.on('connect_error', (err) => {
