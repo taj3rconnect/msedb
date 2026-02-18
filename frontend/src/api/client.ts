@@ -44,7 +44,10 @@ export async function apiFetch<T>(
 
   if (response.status === 401) {
     // Session expired or not authenticated -- redirect to login
-    window.location.href = '/login';
+    // Skip redirect if already on login page to avoid reload loop
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
     throw new ApiError(401, 'Unauthorized');
   }
 

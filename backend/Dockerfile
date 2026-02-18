@@ -7,7 +7,8 @@ RUN npm run build
 
 FROM node:22-alpine
 RUN apk add --no-cache tini wget
-RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
+RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup \
+    && addgroup -g 988 -S docker && addgroup appuser docker
 WORKDIR /app
 COPY --from=builder --chown=appuser:appgroup /app/dist ./dist
 COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules

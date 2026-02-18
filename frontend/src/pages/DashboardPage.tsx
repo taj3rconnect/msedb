@@ -3,9 +3,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatsCards } from '@/components/dashboard/StatsCards';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import { PendingSuggestionsSection } from '@/components/dashboard/PendingSuggestionsSection';
+import { WebhookUrlCard } from '@/components/dashboard/WebhookUrlCard';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useDashboardStats, useDashboardActivity } from '@/hooks/useDashboard';
 import { useUiStore } from '@/stores/uiStore';
+import { useAuthStore } from '@/stores/authStore';
 
 /**
  * Dashboard page composing stats cards, pending suggestions, and activity feed.
@@ -14,12 +16,17 @@ import { useUiStore } from '@/stores/uiStore';
  */
 export function DashboardPage() {
   const selectedMailboxId = useUiStore((s) => s.selectedMailboxId);
+  const user = useAuthStore((s) => s.user);
   const stats = useDashboardStats(selectedMailboxId);
   const activity = useDashboardActivity(selectedMailboxId);
+  const isAdmin = user?.role === 'admin';
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+
+      {/* Webhook URL management (admin only) */}
+      {isAdmin && <WebhookUrlCard />}
 
       {/* Stats Cards */}
       {stats.isLoading ? (

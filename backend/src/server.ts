@@ -7,6 +7,7 @@ import { getRedisClient } from './config/redis.js';
 import { initializeSchedulers } from './jobs/schedulers.js';
 import { closeAllWorkers, closeAllQueues } from './jobs/queues.js';
 import { syncSubscriptionsOnStartup } from './services/subscriptionService.js';
+import { initializeTunnelConfig } from './services/tunnelService.js';
 import { configureSecurityMiddleware } from './middleware/security.js';
 import { createAuthLimiter, createApiLimiter } from './middleware/rateLimiter.js';
 import { globalErrorHandler } from './middleware/errorHandler.js';
@@ -103,20 +104,11 @@ async function startServer(): Promise<void> {
     // 4. Initialize BullMQ job schedulers
     await initializeSchedulers();
 
-    // 5. Sync webhook subscriptions for all connected mailboxes
-    if (!config.graphWebhookUrl) {
-      logger.warn('GRAPH_WEBHOOK_URL is not set -- webhook subscriptions will fail until configured');
-    }
-    try {
-      await syncSubscriptionsOnStartup();
-    } catch (err) {
-      // Log but do NOT prevent server start -- periodic renewal will retry
-      logger.error('Subscription sync failed on startup', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    // 5. Initialize tunnel config from DB / env / container detection
+    await initializeTunnelConfig();
 
-    // 6. Create Socket.IO server and start listening (only after all infrastructure is ready)
+    // 6. Create Socket.IO server and start listening BEFORE webhook sync
+    // (Graph validates webhook URL during subscription creation, so server must be listening)
     const { httpServer, io } = createSocketServer(app);
     app.set('io', io);
 
@@ -124,6 +116,16 @@ async function startServer(): Promise<void> {
       logger.info(`MSEDB backend started on port ${config.port}`, {
         environment: config.nodeEnv,
         port: config.port,
+      });
+
+      // 7. Sync webhook subscriptions AFTER server is listening
+      if (!config.graphWebhookUrl) {
+        logger.warn('No tunnel URL configured -- webhook subscriptions will fail until set via dashboard');
+      }
+      syncSubscriptionsOnStartup().catch((err) => {
+        logger.error('Subscription sync failed on startup', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
     });
   } catch (error) {

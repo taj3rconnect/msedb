@@ -64,6 +64,17 @@ export interface OrgRule {
   createdAt: string;
 }
 
+export interface TunnelStatus {
+  url: string;
+  isHealthy: boolean;
+  lastHealthCheck?: string;
+  subscriptionCount: number;
+}
+
+export interface TunnelRefreshResult extends TunnelStatus {
+  sync: { total: number; created: number; renewed: number; failed: number };
+}
+
 // --- API functions ---
 
 /**
@@ -150,5 +161,21 @@ export async function createOrgRule(data: {
 export async function deleteOrgRule(id: string): Promise<{ success: boolean }> {
   return apiFetch<{ success: boolean }>(`/admin/org-rules/${id}`, {
     method: 'DELETE',
+  });
+}
+
+/**
+ * Fetch the current tunnel status (URL, health, subscriptions).
+ */
+export async function fetchTunnelStatus(): Promise<TunnelStatus> {
+  return apiFetch<TunnelStatus>('/admin/tunnel-status');
+}
+
+/**
+ * Refresh the tunnel: restart cloudflared, detect new URL, re-sync subscriptions.
+ */
+export async function refreshTunnel(): Promise<TunnelRefreshResult> {
+  return apiFetch<TunnelRefreshResult>('/admin/tunnel-refresh', {
+    method: 'POST',
   });
 }

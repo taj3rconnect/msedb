@@ -1,6 +1,26 @@
 import 'dotenv/config';
 
-export const config = {
+interface AppConfig {
+  readonly port: number;
+  readonly nodeEnv: string;
+  readonly mongodbUri: string;
+  readonly redisHost: string;
+  readonly redisPort: number;
+  readonly logLevel: string;
+  readonly encryptionKey: string;
+  readonly jwtSecret: string;
+  readonly sessionSecret: string;
+  readonly azureAdTenantId: string;
+  readonly azureAdClientId: string;
+  readonly azureAdClientSecret: string;
+  readonly appUrl: string;
+  readonly addinUrl: string;
+  readonly apiUrl: string;
+  graphWebhookUrl: string; // mutable — updated via admin API
+  readonly adminEmail: string;
+}
+
+export const config: AppConfig = {
   port: parseInt(process.env.PORT || '8010', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
 
@@ -32,6 +52,6 @@ export const config = {
 
   // Admin
   adminEmail: process.env.ADMIN_EMAIL || '',
-} as const;
+};
 
-export type Config = typeof config;
+export type Config = AppConfig;

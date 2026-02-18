@@ -32,3 +32,6 @@ export type { INotification, INotificationRelatedEntity } from './Notification.j
 
 export { WebhookSubscription } from './WebhookSubscription.js';
 export type { IWebhookSubscription } from './WebhookSubscription.js';
+
+export { TunnelConfig, getTunnelConfig } from './TunnelConfig.js';
+export type { ITunnelConfig } from './TunnelConfig.js';

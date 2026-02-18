@@ -12,6 +12,7 @@ import {
   ConflictError,
 } from '../middleware/errorHandler.js';
 import logger from '../config/logger.js';
+import { getTunnelStatus, refreshTunnel } from '../services/tunnelService.js';
 
 const adminRouter = Router();
 
@@ -299,6 +300,28 @@ adminRouter.delete('/org-rules/:id', async (req: Request, res: Response) => {
   });
 
   res.json({ success: true });
+});
+
+/**
+ * GET /api/admin/tunnel-status
+ *
+ * Return the current tunnel URL, health status, and subscription count.
+ */
+adminRouter.get('/tunnel-status', async (_req: Request, res: Response) => {
+  const status = await getTunnelStatus();
+  res.json(status);
+});
+
+/**
+ * POST /api/admin/tunnel-refresh
+ *
+ * Restart the cloudflared tunnel container, detect the new URL,
+ * update DB and runtime config, and re-sync webhook subscriptions.
+ */
+adminRouter.post('/tunnel-refresh', async (req: Request, res: Response) => {
+  logger.info('Tunnel refresh requested', { requestedBy: req.user!.userId });
+  const result = await refreshTunnel();
+  res.json(result);
 });
 
 export default adminRouter;

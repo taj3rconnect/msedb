@@ -201,12 +201,9 @@ export async function syncSubscriptionsOnStartup() {
     }
   }
 
-  logger.info('Subscription sync completed', {
-    total: mailboxes.length,
-    created,
-    renewed,
-    failed,
-  });
+  const result = { total: mailboxes.length, created, renewed, failed };
+  logger.info('Subscription sync completed', result);
+  return result;
 }
 
 /**
