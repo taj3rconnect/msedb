@@ -17,6 +17,7 @@ interface AppConfig {
   readonly addinUrl: string;
   readonly apiUrl: string;
   graphWebhookUrl: string; // mutable — updated via admin API
+  readonly syncSinceDate: string;
   readonly adminEmail: string;
 }
 
@@ -49,6 +50,9 @@ export const config: AppConfig = {
   addinUrl: process.env.ADDIN_URL || 'https://localhost:3000',
   apiUrl: process.env.API_URL || 'http://localhost:8010',
   graphWebhookUrl: process.env.GRAPH_WEBHOOK_URL || '',
+
+  // Sync
+  syncSinceDate: process.env.SYNC_SINCE_DATE || '2026-01-01T00:00:00Z',
 
   // Admin
   adminEmail: process.env.ADMIN_EMAIL || '',

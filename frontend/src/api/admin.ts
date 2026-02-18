@@ -189,3 +189,24 @@ export async function updateTunnelUrl(url: string): Promise<TunnelRefreshResult>
     body: JSON.stringify({ url }),
   });
 }
+
+export interface SyncStatus {
+  lastSyncAt: string | null;
+  nextSyncAt: string | null;
+}
+
+/**
+ * Fetch sync timing info (last sync, next scheduled sync).
+ */
+export async function fetchSyncStatus(): Promise<SyncStatus> {
+  return apiFetch<SyncStatus>('/admin/sync-status');
+}
+
+/**
+ * Trigger an immediate delta sync for all connected mailboxes.
+ */
+export async function triggerSyncNow(): Promise<{ queued: boolean; jobId: string }> {
+  return apiFetch<{ queued: boolean; jobId: string }>('/admin/sync-now', {
+    method: 'POST',
+  });
+}

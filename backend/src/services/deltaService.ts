@@ -9,6 +9,7 @@ import { Types } from 'mongoose';
 import { Mailbox } from '../models/Mailbox.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import type { IEmailEvent } from '../models/EmailEvent.js';
+import { config } from '../config/index.js';
 import logger from '../config/logger.js';
 
 /**
@@ -91,9 +92,11 @@ export async function runDeltaSync(
   const storedDeltaLink = await getDeltaLink(mailboxId, folderId);
 
   // If exists, use it as starting URL; otherwise build initial delta URL
+  // The $filter on receivedDateTime limits initial sync to recent emails only.
+  // Once a deltaLink is stored, the filter is baked into it automatically.
   let url: string = storedDeltaLink
     ? storedDeltaLink
-    : `${GRAPH_BASE}/users/${mailboxEmail}/mailFolders/${folderId}/messages/delta?$select=${buildSelectParam('message')}`;
+    : `${GRAPH_BASE}/users/${mailboxEmail}/mailFolders/${folderId}/messages/delta?$select=${buildSelectParam('message')}&$filter=receivedDateTime ge ${config.syncSinceDate}`;
 
   // Get folder name for storing in EmailEvents
   const folderName = await getFolderName(mailboxEmail, folderId);

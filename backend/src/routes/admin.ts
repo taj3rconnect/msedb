@@ -13,6 +13,7 @@ import {
 } from '../middleware/errorHandler.js';
 import logger from '../config/logger.js';
 import { getTunnelStatus, refreshTunnel, updateTunnelUrl } from '../services/tunnelService.js';
+import { queues } from '../jobs/queues.js';
 
 const adminRouter = Router();
 
@@ -344,6 +345,44 @@ adminRouter.put('/tunnel-url', async (req: Request, res: Response) => {
 
   const result = await updateTunnelUrl(url.trim());
   res.json(result);
+});
+
+/**
+ * GET /api/admin/sync-status
+ *
+ * Return the last sync time (most recent mailbox lastSyncAt) and next scheduled sync time.
+ */
+adminRouter.get('/sync-status', async (_req: Request, res: Response) => {
+  // Last sync: most recent lastSyncAt across all connected mailboxes
+  const latestMailbox = await Mailbox.findOne({ isConnected: true })
+    .sort({ lastSyncAt: -1 })
+    .select('lastSyncAt')
+    .lean();
+
+  // Next sync: check the delta-sync scheduler's next run
+  const schedulers = await queues['delta-sync'].getJobSchedulers();
+  const deltaSched = schedulers.find((s) => s.id === 'delta-sync-schedule');
+  const nextSyncAt = deltaSched?.next ? new Date(deltaSched.next).toISOString() : null;
+
+  res.json({
+    lastSyncAt: latestMailbox?.lastSyncAt ?? null,
+    nextSyncAt,
+  });
+});
+
+/**
+ * POST /api/admin/sync-now
+ *
+ * Trigger an immediate delta sync for all connected mailboxes.
+ */
+adminRouter.post('/sync-now', async (req: Request, res: Response) => {
+  logger.info('Manual sync requested', { requestedBy: req.user!.userId });
+
+  const job = await queues['delta-sync'].add('run-delta-sync', {}, {
+    jobId: `manual-sync-${Date.now()}`,
+  });
+
+  res.json({ queued: true, jobId: job.id });
 });
 
 export default adminRouter;
