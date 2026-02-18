@@ -8,12 +8,13 @@ import { AppShell } from '@/components/layout/AppShell';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { ComingSoonPage } from '@/pages/ComingSoonPage';
 import { EmailActivityPage } from '@/pages/EmailActivityPage';
 import { PatternsPage } from '@/pages/PatternsPage';
 import { RulesPage } from '@/pages/RulesPage';
 import { StagingPage } from '@/pages/StagingPage';
 import { AuditLogPage } from '@/pages/AuditLogPage';
+import { SettingsPage } from '@/pages/SettingsPage';
+import { Toaster } from '@/components/ui/sonner';
 
 // --- Protected Layout ---
 
@@ -85,7 +86,7 @@ const router = createBrowserRouter([
           },
           {
             path: '/settings',
-            element: <ComingSoonPage title="Settings" />,
+            element: <SettingsPage />,
           },
         ],
       },
@@ -114,6 +115,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
+      <Toaster />
     </QueryClientProvider>
   );
 }
