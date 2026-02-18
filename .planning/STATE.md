@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-16)
 
 **Core value:** Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval -- and every action can be undone.
-**Current focus:** Phase 7 in progress -- Notification bell and Settings page complete, admin panel next
+**Current focus:** Phase 7 complete -- All 3 plans done (notification endpoints, bell/settings UI, admin panel)
 
 ## Current Position
 
 Phase: 7 of 8 (Polish, Notifications & Admin)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-18 -- Plan 07-02 complete (notification bell, settings page with 4 tabs)
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-18 -- Plan 07-03 complete (admin panel with user management, org rules, analytics, system health)
 
-Progress: [███████████████████░] ~92%
+Progress: [████████████████████] ~96%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 23
+- Total plans completed: 24
 - Average duration: 4min
-- Total execution time: 1.22 hours
+- Total execution time: 1.27 hours
 
 **By Phase:**
 
@@ -33,10 +33,10 @@ Progress: [███████████████████░] ~92%
 | 04-frontend-shell-observation-ui | 3/3 | 11min | 4min |
 | 05-pattern-intelligence | 3/3 | 9min | 3min |
 | 06-automation-safety | 6/6 | 27min | 5min |
-| 07-polish-notifications-admin | 2/3 | 8min | 4min |
+| 07-polish-notifications-admin | 3/3 | 11min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 06-05 (4min), 06-06 (5min), 06-fix (2min), 07-01 (3min), 07-02 (5min)
+- Last 5 plans: 06-06 (5min), 06-fix (2min), 07-01 (3min), 07-02 (5min), 07-03 (3min)
 - Trend: Steady
 
 ## Accumulated Context
@@ -137,6 +137,11 @@ Recent decisions affecting current work:
 - [Phase 07-02]: Sonner Toaster mounted in App.tsx (was missing) for toast feedback from settings mutations
 - [Phase 07-02]: updatePreferences widened to Partial<UserPreferences> for field-level PATCH from settings page
 - [Phase 07-02]: Export data uses native fetch (not apiFetch) for Blob response with temporary anchor download
+- [Phase 07-03]: AdminGuard is frontend-only convenience; backend requireAdmin middleware is the real security boundary
+- [Phase 07-03]: Self-protection prevents admin from demoting or deactivating themselves (checked via authStore user.id)
+- [Phase 07-03]: System health auto-refreshes every 60s via refetchInterval on useSystemHealth hook
+- [Phase 07-03]: 409 ConflictError from invite handled with specific "User already exists" toast (per decision 02-02)
+- [Phase 07-03]: Token time remaining visualized as Progress bar assuming 1-hour token lifetime
 
 ### Pending Todos
 
@@ -149,5 +154,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-18
-Stopped at: Completed 07-02-PLAN.md
+Stopped at: Completed 07-03-PLAN.md (Phase 07 complete)
 Resume file: None
