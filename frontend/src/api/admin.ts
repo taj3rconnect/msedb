@@ -179,3 +179,13 @@ export async function refreshTunnel(): Promise<TunnelRefreshResult> {
     method: 'POST',
   });
 }
+
+/**
+ * Manually set the tunnel URL.
+ */
+export async function updateTunnelUrl(url: string): Promise<TunnelRefreshResult> {
+  return apiFetch<TunnelRefreshResult>('/admin/tunnel-url', {
+    method: 'PUT',
+    body: JSON.stringify({ url }),
+  });
+}

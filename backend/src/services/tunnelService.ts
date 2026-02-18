@@ -249,6 +249,49 @@ export async function refreshTunnel() {
 }
 
 /**
+ * Manually set the tunnel URL, update DB + runtime config, health check, and re-sync subscriptions.
+ */
+export async function updateTunnelUrl(url: string) {
+  const tunnelConfig = await getTunnelConfig();
+  tunnelConfig.webhookUrl = url;
+  config.graphWebhookUrl = url;
+
+  const isHealthy = await checkTunnelHealth(url);
+  tunnelConfig.isHealthy = isHealthy;
+  tunnelConfig.lastHealthCheck = new Date();
+  await tunnelConfig.save();
+
+  let syncResult = { total: 0, created: 0, renewed: 0, failed: 0 };
+
+  if (isHealthy) {
+    // Expire old subscriptions and re-sync with new URL
+    await WebhookSubscription.updateMany(
+      { status: 'active' },
+      { status: 'expired' },
+    );
+    syncResult = await syncSubscriptionsOnStartup();
+  }
+
+  const subscriptionCount = await WebhookSubscription.countDocuments({
+    status: 'active',
+  });
+
+  logger.info('Tunnel URL manually updated', {
+    url,
+    isHealthy,
+    subscriptionCount,
+  });
+
+  return {
+    url,
+    isHealthy,
+    lastHealthCheck: tunnelConfig.lastHealthCheck,
+    subscriptionCount,
+    sync: syncResult,
+  };
+}
+
+/**
  * Initialize tunnel config on server startup.
  * Reads URL from DB, falls back to env, tries to detect from container.
  */

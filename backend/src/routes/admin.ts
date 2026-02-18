@@ -12,7 +12,7 @@ import {
   ConflictError,
 } from '../middleware/errorHandler.js';
 import logger from '../config/logger.js';
-import { getTunnelStatus, refreshTunnel } from '../services/tunnelService.js';
+import { getTunnelStatus, refreshTunnel, updateTunnelUrl } from '../services/tunnelService.js';
 
 const adminRouter = Router();
 
@@ -321,6 +321,28 @@ adminRouter.get('/tunnel-status', async (_req: Request, res: Response) => {
 adminRouter.post('/tunnel-refresh', async (req: Request, res: Response) => {
   logger.info('Tunnel refresh requested', { requestedBy: req.user!.userId });
   const result = await refreshTunnel();
+  res.json(result);
+});
+
+/**
+ * PUT /api/admin/tunnel-url
+ *
+ * Manually set the tunnel URL, update DB and runtime config,
+ * and re-sync webhook subscriptions.
+ */
+adminRouter.put('/tunnel-url', async (req: Request, res: Response) => {
+  const { url } = req.body as { url?: string };
+
+  if (!url || typeof url !== 'string' || !url.startsWith('https://')) {
+    throw new ValidationError('A valid HTTPS URL is required');
+  }
+
+  logger.info('Manual tunnel URL update', {
+    url,
+    updatedBy: req.user!.userId,
+  });
+
+  const result = await updateTunnelUrl(url.trim());
   res.json(result);
 });
 
