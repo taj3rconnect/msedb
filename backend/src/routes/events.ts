@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { requireAuth } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
+import { Mailbox } from '../models/Mailbox.js';
+import { getFolderName } from '../services/folderCache.js';
 
 const eventsRouter = Router();
 
@@ -15,7 +17,7 @@ eventsRouter.use(requireAuth);
  */
 eventsRouter.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const { mailboxId, eventType, senderDomain } = req.query;
+  const { mailboxId, eventType, senderDomain, search, excludeDeleted } = req.query;
 
   // Pagination
   let page = 1;
@@ -49,6 +51,27 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
   if (senderDomain && typeof senderDomain === 'string') {
     filter['sender.domain'] = senderDomain;
   }
+  if (search && typeof search === 'string' && search.trim()) {
+    const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = { $regex: escaped, $options: 'i' };
+    filter.$or = [
+      { 'sender.email': regex },
+      { 'sender.name': regex },
+      { subject: regex },
+    ];
+  }
+
+  // Exclude messages that have been deleted (have a corresponding 'deleted' event)
+  if (excludeDeleted === 'true') {
+    const deletedMessageIds = await EmailEvent.distinct('messageId', {
+      userId,
+      ...(mailboxId && typeof mailboxId === 'string' ? { mailboxId } : {}),
+      eventType: 'deleted',
+    });
+    if (deletedMessageIds.length > 0) {
+      filter.messageId = { $nin: deletedMessageIds };
+    }
+  }
 
   // Parallel query + count
   const [events, total] = await Promise.all([
@@ -57,14 +80,39 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
       .skip((page - 1) * limit)
       .limit(limit)
       .select(
-        'eventType sender subject timestamp mailboxId fromFolder toFolder importance hasAttachments categories isRead',
+        'eventType sender subject timestamp mailboxId messageId fromFolder toFolder importance hasAttachments categories isRead',
       )
       .lean(),
     EmailEvent.countDocuments(filter),
   ]);
 
+  // Resolve folder IDs to display names when filtered by mailbox
+  let resolvedEvents = events;
+  if (mailboxId && typeof mailboxId === 'string') {
+    const mb = await Mailbox.findById(mailboxId).select('email').lean();
+    if (mb?.email) {
+      const folderIds = new Set<string>();
+      for (const e of events) {
+        if (e.fromFolder) folderIds.add(e.fromFolder);
+        if (e.toFolder) folderIds.add(e.toFolder);
+      }
+      const nameMap = new Map<string, string>();
+      await Promise.all(
+        [...folderIds].map(async (id) => {
+          const name = await getFolderName(mb.email, id);
+          nameMap.set(id, name);
+        }),
+      );
+      resolvedEvents = events.map((e) => ({
+        ...e,
+        fromFolder: e.fromFolder ? nameMap.get(e.fromFolder) ?? e.fromFolder : e.fromFolder,
+        toFolder: e.toFolder ? nameMap.get(e.toFolder) ?? e.toFolder : e.toFolder,
+      }));
+    }
+  }
+
   res.json({
-    events,
+    events: resolvedEvents,
     pagination: {
       page,
       limit,

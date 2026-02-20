@@ -79,9 +79,12 @@ export function matchesConditions(
 ): boolean {
   const senderAddress = message.from?.emailAddress?.address?.toLowerCase() ?? '';
 
-  // senderEmail: case-insensitive exact match
+  // senderEmail: case-insensitive exact match (supports single string or array)
   if (conditions.senderEmail) {
-    if (senderAddress !== conditions.senderEmail.toLowerCase()) {
+    const senders = Array.isArray(conditions.senderEmail)
+      ? conditions.senderEmail
+      : [conditions.senderEmail];
+    if (!senders.some((s) => s.toLowerCase() === senderAddress)) {
       return false;
     }
   }
@@ -98,6 +101,14 @@ export function matchesConditions(
   if (conditions.subjectContains) {
     const subject = (message.subject ?? '').toLowerCase();
     if (!subject.includes(conditions.subjectContains.toLowerCase())) {
+      return false;
+    }
+  }
+
+  // bodyContains: case-insensitive substring match against bodyPreview
+  if (conditions.bodyContains) {
+    const body = (message.bodyPreview ?? '').toLowerCase();
+    if (!body.includes(conditions.bodyContains.toLowerCase())) {
       return false;
     }
   }

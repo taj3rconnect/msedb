@@ -15,7 +15,9 @@ import { StagingPage } from '@/pages/StagingPage';
 import { AuditLogPage } from '@/pages/AuditLogPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AdminPage } from '@/pages/AdminPage';
+import { InboxPage } from '@/pages/InboxPage';
 import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 // --- Protected Layout ---
 
@@ -78,6 +80,14 @@ const router = createBrowserRouter([
             element: <DashboardPage />,
           },
           {
+            path: '/inbox',
+            element: <InboxPage />,
+          },
+          {
+            path: '/inbox/:mailboxId',
+            element: <InboxPage />,
+          },
+          {
             path: '/activity',
             element: <EmailActivityPage />,
           },
@@ -131,7 +141,9 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <TooltipProvider>
+        <RouterProvider router={router} />
+      </TooltipProvider>
       <Toaster />
     </QueryClientProvider>
   );

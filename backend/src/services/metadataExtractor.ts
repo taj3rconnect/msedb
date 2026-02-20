@@ -2,7 +2,7 @@ import type { IEmailEvent } from '../models/EmailEvent.js';
 
 /**
  * Graph API message object shape (typed based on Graph API research).
- * Only includes fields we request via $select -- never body content.
+ * Includes bodyPreview for rule condition matching.
  */
 export interface GraphMessage {
   id: string;
@@ -17,6 +17,7 @@ export interface GraphMessage {
   parentFolderId?: string;
   internetMessageId?: string;
   internetMessageHeaders?: Array<{ name: string; value: string }>;
+  bodyPreview?: string;
   flag?: { flagStatus: string };
   '@removed'?: { reason: string };
 }

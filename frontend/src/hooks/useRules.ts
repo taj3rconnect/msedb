@@ -2,7 +2,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchRules,
   createRuleFromPattern,
+  updateRule,
   toggleRule,
+  runRule,
   reorderRules,
   deleteRule,
 } from '@/api/rules';
@@ -13,14 +15,16 @@ import type { RulesResponse } from '@/api/rules';
  */
 export function useRules(params?: {
   mailboxId?: string | null;
+  search?: string;
   page?: number;
   limit?: number;
 }) {
   return useQuery<RulesResponse>({
-    queryKey: ['rules', params?.mailboxId ?? null, params?.page ?? 1, params?.limit ?? 50],
+    queryKey: ['rules', params?.mailboxId ?? null, params?.search ?? '', params?.page ?? 1, params?.limit ?? 50],
     queryFn: () =>
       fetchRules({
         mailboxId: params?.mailboxId ?? undefined,
+        search: params?.search || undefined,
         page: params?.page,
         limit: params?.limit,
       }),
@@ -65,6 +69,35 @@ export function useReorderRules() {
   return useMutation({
     mutationFn: ({ mailboxId, ruleIds }: { mailboxId: string; ruleIds: string[] }) =>
       reorderRules(mailboxId, ruleIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+    },
+  });
+}
+
+/**
+ * Mutation hook to rename a rule.
+ * Invalidates rules cache on success.
+ */
+export function useRenameRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      updateRule(id, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+    },
+  });
+}
+
+/**
+ * Mutation hook to run a rule against the entire mailbox now.
+ * Invalidates rules cache on success (stats update).
+ */
+export function useRunRule() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => runRule(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
     },

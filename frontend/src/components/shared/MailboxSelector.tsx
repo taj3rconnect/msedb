@@ -31,7 +31,7 @@ export function MailboxSelector() {
         <SelectItem value="all">All Mailboxes</SelectItem>
         {mailboxes.map((mb) => (
           <SelectItem key={mb.id} value={mb.id}>
-            {mb.displayName || mb.email}
+            {mb.email}
           </SelectItem>
         ))}
       </SelectContent>

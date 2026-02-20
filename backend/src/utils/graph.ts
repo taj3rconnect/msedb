@@ -22,6 +22,7 @@ export const SELECT_FIELDS = {
     'internetMessageId',
     'parentFolderId',
     'internetMessageHeaders',
+    'bodyPreview',
   ],
   mailFolder: [
     'id',

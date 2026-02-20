@@ -13,6 +13,7 @@ export interface EventItem {
   subject?: string;
   timestamp: string;
   mailboxId: string;
+  messageId: string;
   fromFolder?: string;
   toFolder?: string;
   importance: string;
@@ -57,10 +58,12 @@ export interface FetchEventsParams {
   mailboxId?: string;
   eventType?: string;
   senderDomain?: string;
+  search?: string;
   page?: number;
   limit?: number;
   sortBy?: string;
   sortOrder?: string;
+  excludeDeleted?: boolean;
 }
 
 // --- API functions ---
@@ -73,10 +76,12 @@ export async function fetchEvents(params: FetchEventsParams): Promise<EventsResp
   if (params.mailboxId) searchParams.set('mailboxId', params.mailboxId);
   if (params.eventType) searchParams.set('eventType', params.eventType);
   if (params.senderDomain) searchParams.set('senderDomain', params.senderDomain);
+  if (params.search) searchParams.set('search', params.search);
   if (params.page) searchParams.set('page', String(params.page));
   if (params.limit) searchParams.set('limit', String(params.limit));
   if (params.sortBy) searchParams.set('sortBy', params.sortBy);
   if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+  if (params.excludeDeleted) searchParams.set('excludeDeleted', 'true');
   const qs = searchParams.toString();
   return apiFetch<EventsResponse>(`/events${qs ? `?${qs}` : ''}`);
 }

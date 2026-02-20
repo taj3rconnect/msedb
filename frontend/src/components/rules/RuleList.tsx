@@ -20,6 +20,10 @@ interface RuleListProps {
   rules: Rule[];
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  onRun: (id: string) => void;
+  onEdit: (rule: Rule) => void;
+  runningRuleId?: string | null;
   onReorder: (mailboxId: string, ruleIds: string[]) => void;
 }
 
@@ -29,7 +33,7 @@ interface RuleListProps {
  * Maintains local state for optimistic reorder updates and
  * calls onReorder with the new order of rule IDs on drag end.
  */
-export function RuleList({ rules, onToggle, onDelete, onReorder }: RuleListProps) {
+export function RuleList({ rules, onToggle, onDelete, onRename, onRun, onEdit, runningRuleId, onReorder }: RuleListProps) {
   // Local state for optimistic reorder
   const [localRules, setLocalRules] = useState(rules);
 
@@ -88,6 +92,10 @@ export function RuleList({ rules, onToggle, onDelete, onReorder }: RuleListProps
               rule={rule}
               onToggle={onToggle}
               onDelete={onDelete}
+              onRename={onRename}
+              onRun={onRun}
+              onEdit={onEdit}
+              isRunning={runningRuleId === rule._id}
             />
           ))}
         </div>

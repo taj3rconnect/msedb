@@ -3,8 +3,12 @@ import { Types } from 'mongoose';
 import { requireAuth } from '../auth/middleware.js';
 import { Rule } from '../models/Rule.js';
 import { Mailbox } from '../models/Mailbox.js';
+import { EmailEvent } from '../models/EmailEvent.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { convertPatternToRule } from '../services/ruleConverter.js';
+import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
+import { graphFetch } from '../services/graphClient.js';
+import logger from '../config/logger.js';
 import {
   NotFoundError,
   ValidationError,
@@ -43,9 +47,20 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
 
   // Build filter
   const filter: Record<string, unknown> = { userId };
-  const { mailboxId } = req.query;
+  const { mailboxId, search } = req.query;
   if (mailboxId && typeof mailboxId === 'string') {
     filter.mailboxId = mailboxId;
+  }
+  if (search && typeof search === 'string' && search.trim()) {
+    const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = { $regex: escaped, $options: 'i' };
+    filter.$or = [
+      { name: regex },
+      { 'conditions.senderEmail': regex },
+      { 'conditions.senderDomain': regex },
+      { 'conditions.subjectContains': regex },
+      { 'conditions.bodyContains': regex },
+    ];
   }
 
   // Parallel query + count
@@ -294,6 +309,236 @@ rulesRouter.patch('/:id/toggle', async (req: Request, res: Response) => {
   });
 
   res.json({ rule });
+});
+
+/**
+ * POST /api/rules/:id/run
+ *
+ * Run a rule against the entire mailbox now.
+ * Searches for matching messages via Graph API and applies the rule's actions.
+ * Returns stats: { matched, applied, failed }.
+ */
+rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+
+  const rule = await Rule.findOne({ _id: req.params.id, userId });
+  if (!rule) {
+    throw new NotFoundError('Rule not found');
+  }
+  if (!rule.mailboxId) {
+    throw new ValidationError('Rule has no associated mailbox');
+  }
+
+  const mailbox = await Mailbox.findOne({ _id: rule.mailboxId, userId });
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const email = mailbox.email;
+
+  // Build Graph API query from rule conditions
+  // Use $search (KQL) for case-insensitive matching across all folders
+  const { conditions } = rule;
+  const searchParts: string[] = [];
+  const filters: string[] = [];
+
+  if (conditions.senderEmail) {
+    const senders = Array.isArray(conditions.senderEmail)
+      ? conditions.senderEmail
+      : [conditions.senderEmail];
+    // KQL from: operator with quoted value for case-insensitive sender matching
+    if (senders.length === 1) {
+      searchParts.push(`from:"${senders[0].replace(/"/g, '')}"`);
+    } else {
+      const fromParts = senders.map((s) => `from:"${s.replace(/"/g, '')}"`);
+      searchParts.push(`(${fromParts.join(' OR ')})`);
+    }
+  }
+
+  if (conditions.subjectContains) {
+    searchParts.push(`subject:"${conditions.subjectContains.replace(/"/g, '')}"`);
+  }
+
+  if (conditions.bodyContains) {
+    searchParts.push(`body:"${conditions.bodyContains.replace(/"/g, '')}"`);
+  }
+
+  const searchStr = searchParts.length > 0
+    ? `&$search=${encodeURIComponent(searchParts.join(' AND '))}`
+    : '';
+
+  // If the only action is markRead, filter for unread emails only
+  const isMarkReadOnly = rule.actions.length > 0 && rule.actions.every((a) => a.actionType === 'markRead');
+  if (isMarkReadOnly) {
+    filters.push('isRead eq false');
+  }
+
+  // Need from address for senderDomain client-side filtering
+  const needsFrom = !!conditions.senderDomain;
+  const selectFields = needsFrom ? 'id,from' : 'id';
+
+  // $filter for conditions that $search can't handle + optimizations
+  const filterStr = filters.length > 0 ? `&$filter=${encodeURIComponent(filters.join(' and '))}` : '';
+
+  // Fetch all matching messages from the mailbox (paginated via @odata.nextLink)
+  const allMessages: { id: string; from?: { emailAddress: { address?: string } } }[] = [];
+  let nextUrl: string | null = `/users/${email}/messages?$select=${selectFields}&$top=100${filterStr}${searchStr}`;
+
+  while (nextUrl) {
+    const response = await graphFetch(nextUrl, accessToken);
+    const data = (await response.json()) as {
+      value: { id: string; from?: { emailAddress: { address?: string } } }[];
+      '@odata.nextLink'?: string;
+    };
+    for (const msg of data.value) {
+      allMessages.push(msg);
+    }
+    nextUrl = data['@odata.nextLink'] ?? null;
+  }
+
+  // Client-side filter for senderDomain (Graph API doesn't support endsWith)
+  let filteredMessages = allMessages;
+  if (conditions.senderDomain) {
+    const domainLower = conditions.senderDomain.toLowerCase();
+    filteredMessages = filteredMessages.filter((msg) => {
+      const addr = msg.from?.emailAddress?.address?.toLowerCase() ?? '';
+      const domain = addr.split('@')[1] ?? '';
+      return domain === domainLower;
+    });
+  }
+
+  const allMessageIds = filteredMessages.map((m) => m.id);
+  const matched = allMessageIds.length;
+
+  // Apply rule actions to each message
+  let applied = 0;
+  let failed = 0;
+
+  for (const msgId of allMessageIds) {
+    try {
+      for (const action of rule.actions) {
+        switch (action.actionType) {
+          case 'delete':
+            await graphFetch(
+              `/users/${email}/messages/${msgId}/move`,
+              accessToken,
+              {
+                method: 'POST',
+                body: JSON.stringify({ destinationId: 'deleteditems' }),
+              },
+            );
+            break;
+          case 'move':
+            if (action.toFolder) {
+              await graphFetch(
+                `/users/${email}/messages/${msgId}/move`,
+                accessToken,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({ destinationId: action.toFolder }),
+                },
+              );
+            }
+            break;
+          case 'markRead':
+            await graphFetch(
+              `/users/${email}/messages/${msgId}`,
+              accessToken,
+              {
+                method: 'PATCH',
+                body: JSON.stringify({ isRead: true }),
+              },
+            );
+            break;
+          case 'archive':
+            await graphFetch(
+              `/users/${email}/messages/${msgId}/move`,
+              accessToken,
+              {
+                method: 'POST',
+                body: JSON.stringify({ destinationId: 'archive' }),
+              },
+            );
+            break;
+        }
+      }
+      applied++;
+    } catch (err) {
+      failed++;
+      logger.warn('Failed to apply rule action to message', {
+        ruleId: rule._id?.toString(),
+        messageId: msgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Record 'deleted' EmailEvent records for messages that were deleted,
+  // so the excludeDeleted filter removes them from inbox listings.
+  const hasDeleteAction = rule.actions.some((a) => a.actionType === 'delete');
+  if (hasDeleteAction && applied > 0) {
+    const deletedMsgIds = allMessageIds.slice(0, applied); // approximate: first N succeeded
+    const bulkOps = deletedMsgIds.map((msgId) => ({
+      updateOne: {
+        filter: {
+          userId: new Types.ObjectId(userId),
+          mailboxId: rule.mailboxId,
+          messageId: msgId,
+          eventType: 'deleted' as const,
+        },
+        update: {
+          $setOnInsert: {
+            userId: new Types.ObjectId(userId),
+            mailboxId: rule.mailboxId,
+            messageId: msgId,
+            eventType: 'deleted' as const,
+            timestamp: new Date(),
+            sender: {},
+            importance: 'normal' as const,
+            hasAttachments: false,
+            categories: [],
+            isRead: false,
+            metadata: { automatedByRule: rule._id },
+          },
+        },
+        upsert: true,
+      },
+    }));
+    try {
+      await EmailEvent.bulkWrite(bulkOps);
+    } catch (err) {
+      logger.warn('Failed to record deleted events', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Update rule stats
+  rule.stats.totalExecutions += 1;
+  rule.stats.lastExecutedAt = new Date();
+  rule.stats.emailsProcessed += applied;
+  await rule.save();
+
+  // Audit log
+  await AuditLog.create({
+    userId,
+    mailboxId: rule.mailboxId,
+    action: 'rule_executed',
+    targetType: 'rule',
+    targetId: rule._id?.toString(),
+    details: { matched, applied, failed },
+    undoable: false,
+  });
+
+  logger.info('Rule executed manually', {
+    ruleId: rule._id?.toString(),
+    matched,
+    applied,
+    failed,
+  });
+
+  res.json({ matched, applied, failed });
 });
 
 /**

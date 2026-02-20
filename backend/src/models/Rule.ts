@@ -1,9 +1,10 @@
 import { Schema, model, type Document, type Types } from 'mongoose';
 
 export interface IRuleConditions {
-  senderEmail?: string;
+  senderEmail?: string | string[];
   senderDomain?: string;
   subjectContains?: string;
+  bodyContains?: string;
   fromFolder?: string;
 }
 
@@ -46,9 +47,10 @@ const ruleSchema = new Schema<IRule>(
     isEnabled: { type: Boolean, default: true },
     priority: { type: Number, default: 0 },
     conditions: {
-      senderEmail: { type: String },
+      senderEmail: { type: Schema.Types.Mixed },
       senderDomain: { type: String },
       subjectContains: { type: String },
+      bodyContains: { type: String },
       fromFolder: { type: String },
     },
     actions: [

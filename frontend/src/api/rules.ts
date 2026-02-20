@@ -3,9 +3,10 @@ import { apiFetch } from './client';
 // --- Types (mirror backend Rule model) ---
 
 export interface RuleConditions {
-  senderEmail?: string;
+  senderEmail?: string | string[];
   senderDomain?: string;
   subjectContains?: string;
+  bodyContains?: string;
   fromFolder?: string;
 }
 
@@ -57,11 +58,13 @@ export interface RulesResponse {
  */
 export async function fetchRules(params?: {
   mailboxId?: string;
+  search?: string;
   page?: number;
   limit?: number;
 }): Promise<RulesResponse> {
   const searchParams = new URLSearchParams();
   if (params?.mailboxId) searchParams.set('mailboxId', params.mailboxId);
+  if (params?.search) searchParams.set('search', params.search);
   if (params?.page) searchParams.set('page', String(params.page));
   if (params?.limit) searchParams.set('limit', String(params.limit));
   const qs = searchParams.toString();
@@ -125,6 +128,16 @@ export async function reorderRules(
   return apiFetch<void>('/rules/reorder', {
     method: 'PUT',
     body: JSON.stringify({ mailboxId, ruleIds }),
+  });
+}
+
+/**
+ * Run a rule against the entire mailbox now.
+ * Returns stats: matched, applied, failed.
+ */
+export async function runRule(id: string): Promise<{ matched: number; applied: number; failed: number }> {
+  return apiFetch<{ matched: number; applied: number; failed: number }>(`/rules/${id}/run`, {
+    method: 'POST',
   });
 }
 
