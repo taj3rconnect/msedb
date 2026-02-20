@@ -27,6 +27,7 @@ export interface IRule extends Document {
   name: string;
   sourcePatternId?: Types.ObjectId;
   isEnabled: boolean;
+  skipStaging: boolean;
   priority: number;
   conditions: IRuleConditions;
   actions: IRuleAction[];
@@ -45,6 +46,7 @@ const ruleSchema = new Schema<IRule>(
     name: { type: String, required: true },
     sourcePatternId: { type: Schema.Types.ObjectId, ref: 'Pattern' },
     isEnabled: { type: Boolean, default: true },
+    skipStaging: { type: Boolean, default: false },
     priority: { type: Number, default: 0 },
     conditions: {
       senderEmail: { type: Schema.Types.Mixed },

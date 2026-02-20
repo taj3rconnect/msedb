@@ -8,6 +8,7 @@ interface RuleEvaluationResult {
   matched: boolean;
   ruleId?: string;
   actions?: IRuleAction[];
+  skipStaging?: boolean;
 }
 
 /**
@@ -58,6 +59,7 @@ export async function evaluateRulesForMessage(
         matched: true,
         ruleId: rule._id.toString(),
         actions: rule.actions,
+        skipStaging: rule.skipStaging ?? false,
       };
     }
   }

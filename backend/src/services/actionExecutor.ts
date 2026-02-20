@@ -27,6 +27,7 @@ export async function executeActions(params: {
   mailboxId: Types.ObjectId;
   originalFolder: string;
   accessToken: string;
+  skipStaging?: boolean;
 }): Promise<void> {
   const {
     mailboxEmail,
@@ -37,6 +38,7 @@ export async function executeActions(params: {
     mailboxId,
     originalFolder,
     accessToken,
+    skipStaging = false,
   } = params;
 
   // Sort actions by order (ascending), nulls last
@@ -53,28 +55,41 @@ export async function executeActions(params: {
     try {
       switch (action.actionType) {
         case 'delete': {
-          // NEVER permanentDelete -- route through staging folder
-          const stagingFolderId = await ensureStagingFolder(
-            mailboxEmail,
-            accessToken,
-          );
-          await graphFetch(
-            `${userPath}/messages/${messageId}/move`,
-            accessToken,
-            {
-              method: 'POST',
-              body: JSON.stringify({ destinationId: stagingFolderId }),
-            },
-          );
-          await createStagedEmail({
-            userId,
-            mailboxId,
-            ruleId,
-            messageId,
-            originalFolder,
-            actions: [{ actionType: 'delete' }],
-          });
-          executedActions.push('delete (staged)');
+          if (skipStaging) {
+            // Direct delete — skip staging for user-initiated quick actions
+            await graphFetch(
+              `${userPath}/messages/${messageId}/move`,
+              accessToken,
+              {
+                method: 'POST',
+                body: JSON.stringify({ destinationId: 'deleteditems' }),
+              },
+            );
+            executedActions.push('delete (direct)');
+          } else {
+            // Route through staging folder for webhook-triggered automation
+            const stagingFolderId = await ensureStagingFolder(
+              mailboxEmail,
+              accessToken,
+            );
+            await graphFetch(
+              `${userPath}/messages/${messageId}/move`,
+              accessToken,
+              {
+                method: 'POST',
+                body: JSON.stringify({ destinationId: stagingFolderId }),
+              },
+            );
+            await createStagedEmail({
+              userId,
+              mailboxId,
+              ruleId,
+              messageId,
+              originalFolder,
+              actions: [{ actionType: 'delete' }],
+            });
+            executedActions.push('delete (staged)');
+          }
           break;
         }
 

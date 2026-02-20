@@ -66,7 +66,7 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
   // Parallel query + count
   const [rules, total] = await Promise.all([
     Rule.find(filter)
-      .sort({ priority: 1 })
+      .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
@@ -92,11 +92,12 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
  */
 rulesRouter.post('/', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const { mailboxId, name, conditions, actions } = req.body as {
+  const { mailboxId, name, conditions, actions, skipStaging } = req.body as {
     mailboxId?: string;
     name?: string;
     conditions?: Record<string, unknown>;
     actions?: Array<{ actionType: string; toFolder?: string; category?: string; order?: number }>;
+    skipStaging?: boolean;
   };
 
   // Validate required fields
@@ -119,6 +120,32 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
     throw new NotFoundError('Mailbox not found');
   }
 
+  // Deduplicate: if a rule with the same senderEmail AND same action types
+  // already exists, return it. Different action types get separate rules.
+  const senderEmail = conditions.senderEmail;
+  if (senderEmail && typeof senderEmail === 'string') {
+    const requestedTypes = actions.map((a) => a.actionType).sort().join(',');
+    const candidates = await Rule.find({
+      userId,
+      mailboxId,
+      'conditions.senderEmail': senderEmail,
+    });
+    const existing = candidates.find((r) => {
+      const existingTypes = r.actions.map((a) => a.actionType).sort().join(',');
+      return existingTypes === requestedTypes;
+    });
+    if (existing) {
+      // Same sender + same actions — return existing, re-enable if disabled
+      existing.name = name.trim();
+      if (skipStaging) existing.skipStaging = true;
+      existing.isEnabled = true;
+      await existing.save();
+
+      res.status(200).json({ rule: existing });
+      return;
+    }
+  }
+
   // Calculate next priority
   const highestPriorityRule = await Rule.findOne({ userId, mailboxId })
     .sort({ priority: -1 })
@@ -132,6 +159,7 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
     mailboxId,
     name: name.trim(),
     isEnabled: true,
+    skipStaging: skipStaging ?? false,
     priority,
     conditions,
     actions,
@@ -337,58 +365,48 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
   const email = mailbox.email;
 
-  // Build Graph API query from rule conditions
-  // Use $search (KQL) for case-insensitive matching across all folders
+  // Build Graph API query from rule conditions.
+  // NOTE: $search (KQL) and $filter CANNOT be combined for messages in Graph API.
+  // Strategy: use $search with KQL "from:email" for sender matching (case-insensitive),
+  // and do all other filtering (isRead, domain, subject, body) client-side.
   const { conditions } = rule;
-  const searchParts: string[] = [];
-  const filters: string[] = [];
 
-  if (conditions.senderEmail) {
-    const senders = Array.isArray(conditions.senderEmail)
+  const senders = conditions.senderEmail
+    ? Array.isArray(conditions.senderEmail)
       ? conditions.senderEmail
-      : [conditions.senderEmail];
-    // KQL from: operator with quoted value for case-insensitive sender matching
-    if (senders.length === 1) {
-      searchParts.push(`from:"${senders[0].replace(/"/g, '')}"`);
-    } else {
-      const fromParts = senders.map((s) => `from:"${s.replace(/"/g, '')}"`);
-      searchParts.push(`(${fromParts.join(' OR ')})`);
-    }
+      : [conditions.senderEmail]
+    : [];
+
+  // Build KQL $search for sender email(s)
+  // Graph API wraps $search value in outer quotes: $search="from:email"
+  // Do NOT add inner quotes — they cause nested quote parse errors.
+  let searchStr = '';
+  if (senders.length === 1) {
+    searchStr = `&$search="${encodeURIComponent(`from:${senders[0]}`)}"`;
+  } else if (senders.length > 1) {
+    const kql = senders.map((s) => `from:${s}`).join(' OR ');
+    searchStr = `&$search="${encodeURIComponent(kql)}"`;
   }
 
-  if (conditions.subjectContains) {
-    searchParts.push(`subject:"${conditions.subjectContains.replace(/"/g, '')}"`);
-  }
-
-  if (conditions.bodyContains) {
-    searchParts.push(`body:"${conditions.bodyContains.replace(/"/g, '')}"`);
-  }
-
-  const searchStr = searchParts.length > 0
-    ? `&$search=${encodeURIComponent(searchParts.join(' AND '))}`
-    : '';
-
-  // If the only action is markRead, filter for unread emails only
+  // markRead-only: we need isRead field for client-side filtering
   const isMarkReadOnly = rule.actions.length > 0 && rule.actions.every((a) => a.actionType === 'markRead');
-  if (isMarkReadOnly) {
-    filters.push('isRead eq false');
-  }
 
-  // Need from address for senderDomain client-side filtering
-  const needsFrom = !!conditions.senderDomain;
-  const selectFields = needsFrom ? 'id,from' : 'id';
-
-  // $filter for conditions that $search can't handle + optimizations
-  const filterStr = filters.length > 0 ? `&$filter=${encodeURIComponent(filters.join(' and '))}` : '';
+  // Select fields needed for client-side filtering
+  const selectParts = ['id', 'from'];
+  if (isMarkReadOnly) selectParts.push('isRead');
+  if (conditions.subjectContains || conditions.bodyContains) selectParts.push('subject', 'bodyPreview');
+  const selectFields = [...new Set(selectParts)].join(',');
 
   // Fetch all matching messages from the mailbox (paginated via @odata.nextLink)
-  const allMessages: { id: string; from?: { emailAddress: { address?: string } } }[] = [];
-  let nextUrl: string | null = `/users/${email}/messages?$select=${selectFields}&$top=100${filterStr}${searchStr}`;
+  const allMessages: { id: string; isRead?: boolean; from?: { emailAddress: { address?: string } }; subject?: string; bodyPreview?: string }[] = [];
+  const initialUrl = `/users/${email}/messages?$select=${selectFields}&$top=100${searchStr}`;
+  logger.info('RunRule: fetching messages', { initialUrl, senders, email });
+  let nextUrl: string | null = initialUrl;
 
   while (nextUrl) {
     const response = await graphFetch(nextUrl, accessToken);
     const data = (await response.json()) as {
-      value: { id: string; from?: { emailAddress: { address?: string } } }[];
+      value: typeof allMessages;
       '@odata.nextLink'?: string;
     };
     for (const msg of data.value) {
@@ -397,8 +415,26 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
     nextUrl = data['@odata.nextLink'] ?? null;
   }
 
-  // Client-side filter for senderDomain (Graph API doesn't support endsWith)
+  logger.info('RunRule: fetch complete', { totalFetched: allMessages.length, sampleFrom: allMessages.slice(0, 3).map((m) => m.from?.emailAddress?.address) });
+
+  // Client-side filtering — KQL $search is fuzzy, so we do exact matching here
   let filteredMessages = allMessages;
+
+  // Exact sender email match (KQL from: can return partial matches)
+  if (senders.length > 0) {
+    const senderSet = new Set(senders.map((s) => s.toLowerCase()));
+    filteredMessages = filteredMessages.filter((msg) => {
+      const addr = msg.from?.emailAddress?.address?.toLowerCase() ?? '';
+      return senderSet.has(addr);
+    });
+  }
+
+  // markRead-only: skip already-read messages
+  if (isMarkReadOnly) {
+    filteredMessages = filteredMessages.filter((msg) => !msg.isRead);
+  }
+
+  // senderDomain: client-side endsWith
   if (conditions.senderDomain) {
     const domainLower = conditions.senderDomain.toLowerCase();
     filteredMessages = filteredMessages.filter((msg) => {
@@ -406,6 +442,22 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
       const domain = addr.split('@')[1] ?? '';
       return domain === domainLower;
     });
+  }
+
+  // subjectContains: client-side case-insensitive
+  if (conditions.subjectContains) {
+    const needle = conditions.subjectContains.toLowerCase();
+    filteredMessages = filteredMessages.filter(
+      (msg) => (msg.subject ?? '').toLowerCase().includes(needle),
+    );
+  }
+
+  // bodyContains: client-side case-insensitive (uses bodyPreview)
+  if (conditions.bodyContains) {
+    const needle = conditions.bodyContains.toLowerCase();
+    filteredMessages = filteredMessages.filter(
+      (msg) => (msg.bodyPreview ?? '').toLowerCase().includes(needle),
+    );
   }
 
   const allMessageIds = filteredMessages.map((m) => m.id);

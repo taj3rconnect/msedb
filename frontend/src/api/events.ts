@@ -64,6 +64,10 @@ export interface FetchEventsParams {
   sortBy?: string;
   sortOrder?: string;
   excludeDeleted?: boolean;
+  inboxOnly?: boolean;
+  unreadOnly?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 // --- API functions ---
@@ -82,6 +86,10 @@ export async function fetchEvents(params: FetchEventsParams): Promise<EventsResp
   if (params.sortBy) searchParams.set('sortBy', params.sortBy);
   if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
   if (params.excludeDeleted) searchParams.set('excludeDeleted', 'true');
+  if (params.inboxOnly) searchParams.set('inboxOnly', 'true');
+  if (params.unreadOnly) searchParams.set('unreadOnly', 'true');
+  if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom);
+  if (params.dateTo) searchParams.set('dateTo', params.dateTo);
   const qs = searchParams.toString();
   return apiFetch<EventsResponse>(`/events${qs ? `?${qs}` : ''}`);
 }

@@ -17,6 +17,7 @@ import {
   useReorderRules,
 } from '@/hooks/useRules';
 import { useUiStore } from '@/stores/uiStore';
+import { useAuthStore } from '@/stores/authStore';
 
 /**
  * Rules page with drag-and-drop reordering, per-rule stats,
@@ -25,7 +26,11 @@ import { useUiStore } from '@/stores/uiStore';
  * Replaces the ComingSoonPage placeholder at /rules.
  */
 export function RulesPage() {
-  const selectedMailboxId = useUiStore((s) => s.selectedMailboxId);
+  const globalMailboxId = useUiStore((s) => s.selectedMailboxId);
+  const mailboxes = useAuthStore((s) => s.mailboxes);
+  // Default to first connected mailbox so rules aren't shown 3x
+  const firstConnected = mailboxes.find((m) => m.isConnected);
+  const selectedMailboxId = globalMailboxId ?? firstConnected?.id ?? null;
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');

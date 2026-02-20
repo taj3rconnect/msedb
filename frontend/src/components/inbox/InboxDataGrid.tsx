@@ -33,6 +33,7 @@ import {
   ArrowUp,
   ArrowDown,
   Ban,
+  MailOpen,
   MoreHorizontal,
   GripVertical,
   SlidersHorizontal,
@@ -137,6 +138,7 @@ interface InboxDataGridProps {
   onAction: (event: EventItem) => void;
   onQuickDelete: (event: EventItem) => void;
   onJustDelete: (event: EventItem) => void;
+  onQuickMarkRead: (event: EventItem) => void;
 }
 
 export function InboxDataGrid({
@@ -149,6 +151,7 @@ export function InboxDataGrid({
   onAction,
   onQuickDelete,
   onJustDelete,
+  onQuickMarkRead,
 }: InboxDataGridProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -233,6 +236,37 @@ export function InboxDataGrid({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>Always delete from this sender</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-blue-500 transition-all"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onQuickMarkRead(event);
+                      }}
+                      disabled={!event.sender.email}
+                    >
+                      <MailOpen className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Always mark read from this sender</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-foreground transition-all"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAction(event);
+                      }}
+                    >
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Create custom rule</TooltipContent>
                 </Tooltip>
                 <div className="min-w-0">
                   <div className="font-medium truncate">
@@ -368,7 +402,7 @@ export function InboxDataGrid({
         ),
       }),
     ],
-    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onQuickDelete, onJustDelete],
+    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onQuickDelete, onJustDelete, onQuickMarkRead],
   );
 
   const table = useReactTable({

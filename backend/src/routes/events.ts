@@ -3,6 +3,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { getFolderName } from '../services/folderCache.js';
+import { getRedisClient } from '../config/redis.js';
 
 const eventsRouter = Router();
 
@@ -17,7 +18,7 @@ eventsRouter.use(requireAuth);
  */
 eventsRouter.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const { mailboxId, eventType, senderDomain, search, excludeDeleted } = req.query;
+  const { mailboxId, eventType, senderDomain, search, excludeDeleted, inboxOnly, unreadOnly, dateFrom, dateTo } = req.query;
 
   // Pagination
   let page = 1;
@@ -61,6 +62,25 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     ];
   }
 
+  // Date range filter
+  if (dateFrom && typeof dateFrom === 'string') {
+    const from = new Date(dateFrom);
+    if (!isNaN(from.getTime())) {
+      filter.timestamp = { ...(filter.timestamp as Record<string, unknown> || {}), $gte: from };
+    }
+  }
+  if (dateTo && typeof dateTo === 'string') {
+    const to = new Date(dateTo);
+    if (!isNaN(to.getTime())) {
+      filter.timestamp = { ...(filter.timestamp as Record<string, unknown> || {}), $lte: to };
+    }
+  }
+
+  // Filter to unread messages only
+  if (unreadOnly === 'true') {
+    filter.isRead = false;
+  }
+
   // Exclude messages that have been deleted (have a corresponding 'deleted' event)
   if (excludeDeleted === 'true') {
     const deletedMessageIds = await EmailEvent.distinct('messageId', {
@@ -70,6 +90,23 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     });
     if (deletedMessageIds.length > 0) {
       filter.messageId = { $nin: deletedMessageIds };
+    }
+  }
+
+  // Filter to only Inbox folder messages
+  if (inboxOnly === 'true' && mailboxId && typeof mailboxId === 'string') {
+    const mb = await Mailbox.findById(mailboxId).select('email').lean();
+    if (mb?.email) {
+      const redis = getRedisClient();
+      const inboxFolderId = await redis.get(`folder:${mb.email}:wk:Inbox`);
+      // arrived events store destination as toFolder; also match display name "Inbox"
+      filter.$and = [
+        ...(filter.$and ? (filter.$and as Record<string, unknown>[]) : []),
+        { $or: [
+          ...(inboxFolderId ? [{ toFolder: inboxFolderId }] : []),
+          { toFolder: 'Inbox' },
+        ]},
+      ];
     }
   }
 

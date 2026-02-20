@@ -89,6 +89,7 @@ export async function createRule(data: {
   name: string;
   conditions: RuleConditions;
   actions: RuleAction[];
+  skipStaging?: boolean;
 }): Promise<{ rule: Rule }> {
   return apiFetch<{ rule: Rule }>('/rules', {
     method: 'POST',

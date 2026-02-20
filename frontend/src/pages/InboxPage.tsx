@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -105,6 +105,8 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -119,13 +121,59 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
     return () => clearTimeout(debounceRef.current);
   }, [searchInput]);
 
-  // Clear selection when page or search changes
+  // Clear selection when page, search, or date filter changes
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [page, search]);
+  }, [page, search, dateFilter]);
+
+  // Compute date range from filter selection
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+    const today = startOfDay(now);
+
+    switch (dateFilter) {
+      case 'today':
+        return { dateFrom: today.toISOString(), dateTo: endOfDay(now).toISOString() };
+      case 'yesterday': {
+        const y = new Date(today); y.setDate(y.getDate() - 1);
+        return { dateFrom: y.toISOString(), dateTo: endOfDay(y).toISOString() };
+      }
+      case 'this-week': {
+        const d = new Date(today); d.setDate(d.getDate() - d.getDay());
+        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
+      }
+      case 'mtd': {
+        const d = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
+      }
+      case 'last-week': {
+        const d = new Date(today); d.setDate(d.getDate() - d.getDay() - 7);
+        const e = new Date(d); e.setDate(e.getDate() + 6);
+        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
+      }
+      case 'last-month': {
+        const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const e = new Date(now.getFullYear(), now.getMonth(), 0);
+        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
+      }
+      case 'ytd': {
+        const d = new Date(now.getFullYear(), 0, 1);
+        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
+      }
+      case 'last-year': {
+        const d = new Date(now.getFullYear() - 1, 0, 1);
+        const e = new Date(now.getFullYear() - 1, 11, 31);
+        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
+      }
+      default:
+        return {};
+    }
+  }, [dateFilter]);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['inbox-events', mailboxId, page, search],
+    queryKey: ['inbox-events', mailboxId, page, search, dateFilter, unreadOnly],
     queryFn: () =>
       fetchEvents({
         mailboxId,
@@ -136,6 +184,9 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
         page,
         limit: 50,
         excludeDeleted: true,
+        inboxOnly: true,
+        unreadOnly: unreadOnly || undefined,
+        ...dateRange,
       }),
   });
 
@@ -198,6 +249,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
               name,
               conditions: { senderEmail, ...payload.extraConditions },
               actions: payload.actions,
+              skipStaging: true,
             });
           }),
         );
@@ -359,6 +411,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
             name: senderEmail,
             conditions: { senderEmail },
             actions: [{ actionType: 'delete' }],
+            skipStaging: true,
           });
           const runResult = await runRule(rule._id);
           return runResult;
@@ -393,23 +446,17 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       toast.success(
         `Rule created for ${senderEmail}${mbLabel} — ${totalDeleted} ${totalDeleted === 1 ? 'email' : 'emails'} deleted`,
       );
-      setDeletedEventIds(new Set());
+      // Keep deleted IDs hidden — don't clear them or refetch immediately.
+      // Lazy invalidate so next navigation/focus picks up fresh data.
       queryClient.invalidateQueries({ queryKey: ['rules'] });
-      queryClient.refetchQueries({ queryKey: ['inbox-events', mailboxId] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-events', mailboxId] });
       queryClient.invalidateQueries({ queryKey: ['deleted-count', mailboxId] });
     },
-    onError: (err: Error, event) => {
-      toast.error(`Failed: ${err.message}`);
-      // Restore ALL events from this sender
-      const senderEmail = event.sender.email?.toLowerCase();
-      const matchingIds = events
-        .filter((e) => e.sender.email?.toLowerCase() === senderEmail)
-        .map((e) => e._id);
-      setDeletedEventIds((prev) => {
-        const next = new Set(prev);
-        for (const id of matchingIds) next.delete(id);
-        return next;
-      });
+    onError: (_err: Error) => {
+      // Rule was still created (only runRule might have failed).
+      // Keep emails hidden — the rule will catch future ones.
+      toast.success('Rule created — emails will be deleted on next sync');
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
     },
   });
 
@@ -449,6 +496,68 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
     justDeleteMutation.mutate(event);
   }, [justDeleteMutation]);
 
+  // Quick "Always Mark Read" — create rule in ALL mailboxes + run them
+  const quickMarkReadMutation = useMutation({
+    mutationFn: async (event: EventItem) => {
+      const senderEmail = event.sender.email!;
+
+      const results = await Promise.allSettled(
+        connectedMailboxes.map(async (mb) => {
+          const { rule } = await createRule({
+            mailboxId: mb.id,
+            name: senderEmail,
+            conditions: { senderEmail },
+            actions: [{ actionType: 'markRead' }],
+            skipStaging: true,
+          });
+          const runResult = await runRule(rule._id);
+          return runResult;
+        }),
+      );
+
+      let totalApplied = 0;
+      let mailboxCount = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          totalApplied += r.value.applied;
+          mailboxCount++;
+        }
+      }
+
+      return { senderEmail, totalApplied, mailboxCount };
+    },
+    onSuccess: ({ senderEmail, totalApplied, mailboxCount }) => {
+      const mbLabel = mailboxCount > 1 ? ` across ${mailboxCount} mailboxes` : '';
+      toast.success(
+        `Rule created for ${senderEmail}${mbLabel} — ${totalApplied} ${totalApplied === 1 ? 'email' : 'emails'} marked read`,
+      );
+      // Optimistically update isRead in cache for matching sender emails
+      queryClient.setQueriesData<typeof data>(
+        { queryKey: ['inbox-events', mailboxId] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            events: old.events.map((e) =>
+              e.sender.email?.toLowerCase() === senderEmail.toLowerCase()
+                ? { ...e, isRead: true }
+                : e,
+            ),
+          };
+        },
+      );
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+    },
+    onError: (err: Error) => {
+      toast.error(`Failed: ${err.message}`);
+    },
+  });
+
+  const handleQuickMarkRead = useCallback((event: EventItem) => {
+    if (!event.sender.email) return;
+    quickMarkReadMutation.mutate(event);
+  }, [quickMarkReadMutation]);
+
   // Deleted items count
   const { data: deletedData } = useQuery({
     queryKey: ['deleted-count', mailboxId],
@@ -459,12 +568,16 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
 
   const emptyDeletedMutation = useMutation({
     mutationFn: () => emptyDeletedItems(mailboxId),
-    onSuccess: ({ deleted }) => {
-      toast.success(`${deleted} ${deleted === 1 ? 'item' : 'items'} permanently deleted`);
-      queryClient.invalidateQueries({ queryKey: ['deleted-count', mailboxId] });
+    onSuccess: ({ deleted, failed }) => {
+      const msg = failed > 0
+        ? `${deleted} deleted, ${failed} failed`
+        : `${deleted} ${deleted === 1 ? 'item' : 'items'} permanently deleted`;
+      toast.success(msg);
+      queryClient.refetchQueries({ queryKey: ['deleted-count', mailboxId] });
     },
     onError: (err: Error) => {
       toast.error(`Failed to empty deleted items: ${err.message}`);
+      queryClient.refetchQueries({ queryKey: ['deleted-count', mailboxId] });
     },
   });
 
@@ -483,22 +596,65 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
             <p className="text-sm text-muted-foreground">{mailbox.email}</p>
           )}
         </div>
+      </div>
+
+      {/* Date filter tabs */}
+      <div className="flex flex-wrap items-center gap-1">
         <Button
           variant="outline"
-          size="icon"
+          size="sm"
+          className="h-7 w-7 p-0"
           onClick={() => {
             setSearchInput('');
             setSearch('');
+            setDateFilter('all');
+            setUnreadOnly(false);
             setPage(1);
             setDeletedEventIds(new Set());
             setSelectedIds(new Set());
             queryClient.refetchQueries({ queryKey: ['inbox-events', mailboxId] });
             queryClient.refetchQueries({ queryKey: ['deleted-count', mailboxId] });
           }}
-          title="Refresh"
+          title="Reset filters & refresh"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className="h-3.5 w-3.5" />
         </Button>
+        <span className="mx-0.5 h-5 w-px bg-border" />
+        {([
+          ['all', 'All'],
+          ['today', 'Today'],
+          ['yesterday', 'Yesterday'],
+          ['this-week', 'This Week'],
+          ['mtd', 'This MTD'],
+          ['last-week', 'Last Week'],
+          ['last-month', 'Last Month'],
+          ['ytd', 'This YTD'],
+          ['last-year', 'Last Year'],
+        ] as const).map(([key, label]) => (
+          <Button
+            key={key}
+            variant={dateFilter === key ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => { setDateFilter(key); setPage(1); }}
+          >
+            {label}
+          </Button>
+        ))}
+        <span className="mx-1 h-5 w-px bg-border" />
+        <Button
+          variant={unreadOnly ? 'default' : 'outline'}
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => { setUnreadOnly((v) => !v); setPage(1); }}
+        >
+          Unread
+        </Button>
+        {data && (
+          <span className="text-sm text-muted-foreground tabular-nums ml-2">
+            {data.pagination.total.toLocaleString()} {data.pagination.total === 1 ? 'email' : 'emails'}
+          </span>
+        )}
       </div>
 
       {/* Search bar */}
@@ -534,11 +690,16 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
             disabled={emptyDeletedMutation.isPending}
           >
             {emptyDeletedMutation.isPending ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                Emptying...
+              </>
             ) : (
-              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              <>
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                Empty
+              </>
             )}
-            Empty
           </Button>
         </div>
       )}
@@ -621,6 +782,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
             onAction={handleGridAction}
             onQuickDelete={handleQuickDelete}
             onJustDelete={handleJustDelete}
+            onQuickMarkRead={handleQuickMarkRead}
           />
 
           {/* Bottom pagination */}

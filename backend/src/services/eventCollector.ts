@@ -270,6 +270,7 @@ async function handleCreated(
         ruleId: result.ruleId,
         messageId,
         actionsCount: result.actions.length,
+        skipStaging: result.skipStaging,
       });
 
       await executeActions({
@@ -281,6 +282,7 @@ async function handleCreated(
         mailboxId: mailboxId as Types.ObjectId,
         originalFolder: graphMessage.parentFolderId ?? '',
         accessToken,
+        skipStaging: result.skipStaging,
       });
     }
   } catch (err) {

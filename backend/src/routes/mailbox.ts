@@ -447,38 +447,42 @@ mailboxRouter.post('/:id/empty-deleted', async (req: Request, res: Response) => 
 
   let deleted = 0;
   let failed = 0;
-  let nextUrl: string | null = `/users/${email}/mailFolders/deleteditems/messages?$select=id&$top=100`;
+  const CONCURRENCY = 20;
+  const FETCH_SIZE = 200;
 
-  // Fetch and permanently delete in batches
-  while (nextUrl) {
-    const response = await graphFetch(nextUrl, accessToken);
+  // Fetch and permanently delete in parallel batches
+  let hasMore = true;
+  while (hasMore) {
+    const response = await graphFetch(
+      `/users/${email}/mailFolders/deleteditems/messages?$select=id&$top=${FETCH_SIZE}`,
+      accessToken,
+    );
     const data = (await response.json()) as {
       value: { id: string }[];
-      '@odata.nextLink'?: string;
     };
 
     if (data.value.length === 0) break;
 
-    for (const msg of data.value) {
-      try {
-        await graphFetch(
-          `/users/${email}/messages/${msg.id}`,
-          accessToken,
-          { method: 'DELETE' },
-        );
-        deleted++;
-      } catch {
-        failed++;
+    // Delete in parallel batches of CONCURRENCY
+    for (let i = 0; i < data.value.length; i += CONCURRENCY) {
+      const batch = data.value.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map((msg) =>
+          graphFetch(`/users/${email}/messages/${msg.id}`, accessToken, {
+            method: 'DELETE',
+          }),
+        ),
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') deleted++;
+        else failed++;
       }
     }
 
-    // After deleting, re-fetch from the start (messages shift)
-    nextUrl = data.value.length > 0
-      ? `/users/${email}/mailFolders/deleteditems/messages?$select=id&$top=100`
-      : null;
-
-    // Safety: break if we're only failing
+    // If all failed this round, stop
     if (failed > 0 && deleted === 0) break;
+
+    hasMore = data.value.length === FETCH_SIZE;
   }
 
   logger.info('Emptied deleted items', {
