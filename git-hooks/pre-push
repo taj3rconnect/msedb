@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Auto-increment version and update build date on every push.
+# Bumps version, commits it, pushes everything (including the bump),
+# then cancels the original push to avoid double-push.
+#
+# SETUP: Copy this file to your project's .git/hooks/pre-push
+#   cp git-hooks/pre-push .git/hooks/pre-push
+#   chmod +x .git/hooks/pre-push
+#
+# REQUIRES: A version.json at the repo root (auto-created if missing):
+#   { "version": "v1.01", "buildDate": "" }
+
+VERSION_FILE="$(git rev-parse --show-toplevel)/version.json"
+REMOTE="$1"
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+if [ ! -f "$VERSION_FILE" ]; then
+  echo '{ "version": "v1.01", "buildDate": "" }' > "$VERSION_FILE"
+fi
+
+# Read current version number (e.g., "v1.01" -> 1.01)
+CURRENT=$(grep -oP '"version":\s*"v\K[0-9.]+' "$VERSION_FILE")
+if [ -z "$CURRENT" ]; then
+  CURRENT="1.00"
+fi
+
+# Increment by 0.01 using awk for floating point
+NEW_VERSION=$(awk "BEGIN { printf \"%.2f\", $CURRENT + 0.01 }")
+
+# Get current date/time in MM-DD-YY--HH:MM AM/PM format
+BUILD_DATE=$(date +"%m-%d-%y--%-I:%M %p")
+
+# Write updated version.json
+cat > "$VERSION_FILE" << EOF
+{
+  "version": "v${NEW_VERSION}",
+  "buildDate": "${BUILD_DATE}"
+}
+EOF
+
+# Create version bump commit
+git add "$VERSION_FILE"
+git commit --no-verify -m "bump v${NEW_VERSION}"
+
+# Push everything (original commits + bump) bypassing this hook
+git push --no-verify "$REMOTE" "$BRANCH"
+PUSH_EXIT=$?
+
+if [ $PUSH_EXIT -eq 0 ]; then
+  echo "Pushed with version bump to v${NEW_VERSION}"
+  # Exit 1 cancels the original (now stale) push — our push already succeeded
+  exit 1
+else
+  echo "Push failed!"
+  exit 1
+fi
