@@ -98,6 +98,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [contentType, setContentType] = useState<'all' | 'emails' | 'files' | 'contacts'>('all');
 
   // Resizable panel layout persistence
   const panelLayoutRight = useDefaultLayout({
@@ -194,21 +195,21 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
         const d = new Date(today); d.setDate(d.getDate() - d.getDay());
         return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
       }
-      case 'mtd': {
-        const d = new Date(now.getFullYear(), now.getMonth(), 1);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
-      }
       case 'last-week': {
         const d = new Date(today); d.setDate(d.getDate() - d.getDay() - 7);
         const e = new Date(d); e.setDate(e.getDate() + 6);
         return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
+      }
+      case 'this-month': {
+        const d = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
       }
       case 'last-month': {
         const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const e = new Date(now.getFullYear(), now.getMonth(), 0);
         return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
       }
-      case 'ytd': {
+      case 'this-year': {
         const d = new Date(now.getFullYear(), 0, 1);
         return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
       }
@@ -716,8 +717,30 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
   const selectedCount = selectedIds.size;
   const totalPages = data?.pagination.totalPages ?? 0;
 
+  const showEmailContent = contentType === 'all' || contentType === 'emails';
+
   return (
     <div className="space-y-4">
+      {/* Content type tags */}
+      <div className="flex items-center gap-1">
+        {(['all', 'emails', 'files', 'contacts'] as const).map((type) => (
+          <Button
+            key={type}
+            variant={contentType === type ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-xs capitalize"
+            onClick={() => setContentType(type)}
+          >
+            {type}
+          </Button>
+        ))}
+      </div>
+
+      {!showEmailContent ? (
+        <div className="flex items-center justify-center py-24 text-muted-foreground">
+          Coming soon
+        </div>
+      ) : (<>
       {/* Date filter tabs */}
       <div className="flex flex-wrap items-center gap-1">
         <Button
@@ -761,10 +784,10 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
           ['today', 'Today'],
           ['yesterday', 'Yesterday'],
           ['this-week', 'This Week'],
-          ['mtd', 'This MTD'],
           ['last-week', 'Last Week'],
+          ['this-month', 'This Month'],
           ['last-month', 'Last Month'],
-          ['ytd', 'This YTD'],
+          ['this-year', 'This Year'],
           ['last-year', 'Last Year'],
         ] as const).map(([key, label]) => (
           <Button
@@ -1019,6 +1042,8 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
           )}
         </PanelGroup>
       )}
+
+      </>)}
 
       <RuleActionsDialog
         open={dialogOpen}
