@@ -14,6 +14,7 @@ WORKDIR /app
 COPY --from=builder --chown=appuser:appgroup /app/dist ./dist
 COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules
 COPY --from=builder --chown=appuser:appgroup /app/package.json ./
+COPY --from=builder --chown=appuser:appgroup /app/version.json ./
 RUN mkdir -p /app/logs && chown appuser:appgroup /app/logs
 USER appuser
 EXPOSE 8010
