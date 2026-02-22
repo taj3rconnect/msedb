@@ -209,7 +209,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
         const e = new Date(now.getFullYear(), now.getMonth(), 0);
         return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
       }
-      case 'this-year': {
+      case 'ytd': {
         const d = new Date(now.getFullYear(), 0, 1);
         return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
       }
@@ -787,7 +787,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
           ['last-week', 'Last Week'],
           ['this-month', 'This Month'],
           ['last-month', 'Last Month'],
-          ['this-year', 'This Year'],
+          ['ytd', 'YTD'],
           ['last-year', 'Last Year'],
         ] as const).map(([key, label]) => (
           <Button
