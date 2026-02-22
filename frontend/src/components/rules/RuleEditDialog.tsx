@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
   ChevronsUpDown,
+  FlaskConical,
   Folder,
   FolderPlus,
   Loader2,
@@ -10,6 +11,9 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useSimulateRule } from '@/hooks/useRules';
+import type { SimulationResult } from '@/api/rules';
+import { SimulationResultPanel } from '@/components/shared/SimulationResultPanel';
 import { useAuthStore } from '@/stores/authStore';
 import { fetchMailboxFolders, createMailboxFolder } from '@/api/mailboxes';
 import { updateRule } from '@/api/rules';
@@ -74,6 +78,16 @@ export function RuleEditDialog({
   // Sender emails state (editable)
   const [senderEmails, setSenderEmails] = useState<string[]>([]);
   const [newSenderEmail, setNewSenderEmail] = useState('');
+
+  // Simulation state
+  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
+  const [simDateRange, setSimDateRange] = useState<'30d' | '60d' | '90d'>('30d');
+  const simulateMutation = useSimulateRule();
+
+  // Clear simulation when conditions change
+  useEffect(() => {
+    setSimulationResult(null);
+  }, [senderEmails, senderDomain, subjectContains, bodyContains]);
 
   // Pre-fill from rule when dialog opens
   useEffect(() => {
@@ -233,6 +247,27 @@ export function RuleEditDialog({
     setSenderEmails((prev) => prev.filter((e) => e !== email));
   }
 
+  function handleSimulate(dateRange?: '30d' | '60d' | '90d') {
+    const range = dateRange ?? simDateRange;
+    setSimDateRange(range);
+
+    if (!rule.mailboxId) return;
+
+    const conditions: Record<string, unknown> = {};
+    if (senderEmails.length === 1) conditions.senderEmail = senderEmails[0];
+    else if (senderEmails.length > 1) conditions.senderEmail = senderEmails;
+    if (senderDomain.trim()) conditions.senderDomain = senderDomain.trim();
+    if (subjectContains.trim()) conditions.subjectContains = subjectContains.trim();
+    if (bodyContains.trim()) conditions.bodyContains = bodyContains.trim();
+
+    if (Object.keys(conditions).length === 0) return;
+
+    simulateMutation.mutate(
+      { mailboxId: rule.mailboxId, conditions, dateRange: range },
+      { onSuccess: (result) => setSimulationResult(result) },
+    );
+  }
+
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
       setFolderSearch('');
@@ -241,6 +276,8 @@ export function RuleEditDialog({
       setMailboxSearch('');
       setMailboxSearchOpen(false);
       setNewSenderEmail('');
+      setSimulationResult(null);
+      setSimDateRange('30d');
     }
     onOpenChange(nextOpen);
   }
@@ -617,22 +654,47 @@ export function RuleEditDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        {/* Simulation results */}
+        {(simulationResult || simulateMutation.isPending) && (
+          <SimulationResultPanel
+            result={simulationResult}
+            isLoading={simulateMutation.isPending}
+            currentDateRange={simDateRange}
+            onDateRangeChange={(range) => handleSimulate(range)}
+          />
+        )}
+
+        <DialogFooter className="flex justify-between gap-2 sm:justify-between">
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleSimulate()}
+            disabled={simulateMutation.isPending}
+            className="text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-950/50"
           >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => saveMutation.mutate()}
-            disabled={!hasActions || saveMutation.isPending}
-          >
-            {saveMutation.isPending ? (
+            {simulateMutation.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : null}
-            Save Changes
+            ) : (
+              <FlaskConical className="mr-2 h-4 w-4" />
+            )}
+            Test Rule
           </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => saveMutation.mutate()}
+              disabled={!hasActions || saveMutation.isPending}
+            >
+              {saveMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save Changes
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

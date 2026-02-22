@@ -1,6 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronsUpDown, Folder, FolderPlus, Loader2, Search, X } from 'lucide-react';
+import { Check, ChevronsUpDown, FlaskConical, Folder, FolderPlus, Loader2, Search, X } from 'lucide-react';
+import { useSimulateRule } from '@/hooks/useRules';
+import type { SimulationResult } from '@/api/rules';
+import { SimulationResultPanel } from '@/components/shared/SimulationResultPanel';
 import { useAuthStore } from '@/stores/authStore';
 import { fetchMailboxFolders, createMailboxFolder } from '@/api/mailboxes';
 import { fetchRules } from '@/api/rules';
@@ -71,6 +74,16 @@ export function RuleActionsDialog({
   const [subjectContains, setSubjectContains] = useState('');
   const [bodyContains, setBodyContains] = useState('');
   const [runNow, setRunNow] = useState(true);
+
+  // Simulation state
+  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
+  const [simDateRange, setSimDateRange] = useState<'30d' | '60d' | '90d'>('30d');
+  const simulateMutation = useSimulateRule();
+
+  // Clear simulation when conditions change
+  useEffect(() => {
+    setSimulationResult(null);
+  }, [deleteChecked, moveChecked, markReadChecked, senderDomain, subjectContains, bodyContains, selectedExistingRuleId]);
 
   // Auto-fill conditions when dialog opens
   useEffect(() => {
@@ -208,6 +221,27 @@ export function RuleActionsDialog({
     onConfirm(actions, actionLabel, name, existingId, Object.keys(extraConditions).length > 0 ? extraConditions : undefined, runNow);
   }
 
+  function handleSimulate(dateRange?: '30d' | '60d' | '90d') {
+    const range = dateRange ?? simDateRange;
+    setSimDateRange(range);
+
+    const conditions: Record<string, unknown> = {};
+    const uniqueSenders = [...new Set(senderEmails)];
+    if (uniqueSenders.length > 0) {
+      conditions.senderEmail = uniqueSenders.length === 1 ? uniqueSenders[0] : uniqueSenders;
+    }
+    if (senderDomain.trim()) conditions.senderDomain = senderDomain.trim();
+    if (subjectContains.trim()) conditions.subjectContains = subjectContains.trim();
+    if (bodyContains.trim()) conditions.bodyContains = bodyContains.trim();
+
+    if (Object.keys(conditions).length === 0) return;
+
+    simulateMutation.mutate(
+      { mailboxId, conditions, dateRange: range },
+      { onSuccess: (result) => setSimulationResult(result) },
+    );
+  }
+
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
       setDeleteChecked(false);
@@ -226,6 +260,8 @@ export function RuleActionsDialog({
       setSubjectContains('');
       setBodyContains('');
       setRunNow(true);
+      setSimulationResult(null);
+      setSimDateRange('30d');
     }
     onOpenChange(nextOpen);
   }
@@ -623,6 +659,16 @@ export function RuleActionsDialog({
           </div>
         </div>
 
+        {/* Simulation results */}
+        {(simulationResult || simulateMutation.isPending) && (
+          <SimulationResultPanel
+            result={simulationResult}
+            isLoading={simulateMutation.isPending}
+            currentDateRange={simDateRange}
+            onDateRangeChange={(range) => handleSimulate(range)}
+          />
+        )}
+
         <DialogFooter className="flex-col gap-3 sm:flex-col">
           <div className="flex items-center space-x-2 self-start">
             <Checkbox
@@ -634,20 +680,33 @@ export function RuleActionsDialog({
               Run now on selected emails
             </Label>
           </div>
-          <div className="flex justify-end gap-2 w-full">
-          <Button
-            onClick={handleConfirm}
-            disabled={!hasSelection || isPending}
-          >
-            {isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : null}
-            {selectedExistingRuleId
-              ? 'Update Rule'
-              : isBulk
-                ? `Create ${uniqueSenders.length} Rules`
-                : 'Create Rule'}
-          </Button>
+          <div className="flex justify-between gap-2 w-full">
+            <Button
+              variant="outline"
+              onClick={() => handleSimulate()}
+              disabled={simulateMutation.isPending}
+              className="text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-300 dark:border-amber-700 dark:hover:bg-amber-950/50"
+            >
+              {simulateMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FlaskConical className="mr-2 h-4 w-4" />
+              )}
+              Simulate
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              disabled={!hasSelection || isPending}
+            >
+              {isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              {selectedExistingRuleId
+                ? 'Update Rule'
+                : isBulk
+                  ? `Create ${uniqueSenders.length} Rules`
+                  : 'Create Rule'}
+            </Button>
           </div>
         </DialogFooter>
       </DialogContent>

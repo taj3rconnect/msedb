@@ -252,6 +252,128 @@ rulesRouter.post('/sync-to-graph', async (req: Request, res: Response) => {
 });
 
 /**
+ * Shared simulation helper: runs a read-only query against EmailEvent
+ * to estimate how many historical emails would match given conditions.
+ */
+async function runSimulation(
+  userId: string,
+  mailboxId: string,
+  conditions: {
+    senderEmail?: string | string[];
+    senderDomain?: string;
+    subjectContains?: string;
+    bodyContains?: string;
+    fromFolder?: string;
+  },
+  dateRange?: '30d' | '60d' | '90d',
+) {
+  const days = dateRange === '60d' ? 60 : dateRange === '90d' ? 90 : 30;
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  // Base filter: arrived events only, not automated by rules
+  const baseFilter: Record<string, unknown> = {
+    userId: new Types.ObjectId(userId),
+    mailboxId: new Types.ObjectId(mailboxId),
+    eventType: 'arrived',
+    'metadata.automatedByRule': { $exists: false },
+    timestamp: { $gte: since },
+  };
+
+  // Build condition-specific filter
+  const filter: Record<string, unknown> = { ...baseFilter };
+
+  // senderEmail — case-insensitive match
+  const senders = conditions.senderEmail
+    ? Array.isArray(conditions.senderEmail)
+      ? conditions.senderEmail
+      : [conditions.senderEmail]
+    : [];
+  if (senders.length > 0) {
+    filter['sender.email'] = {
+      $in: senders.map((s) => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')),
+    };
+  }
+
+  // senderDomain — exact match
+  if (conditions.senderDomain) {
+    filter['sender.domain'] = conditions.senderDomain.toLowerCase();
+  }
+
+  // subjectContains — case-insensitive regex
+  if (conditions.subjectContains) {
+    const escaped = conditions.subjectContains.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    filter.subject = { $regex: escaped, $options: 'i' };
+  }
+
+  // fromFolder — exact match
+  if (conditions.fromFolder) {
+    filter.fromFolder = conditions.fromFolder;
+  }
+
+  // bodyContains is skipped — EmailEvent doesn't store body text
+  const bodyContainsSkipped = !!conditions.bodyContains;
+
+  // Run 3 parallel queries
+  const [totalMatched, emails, scannedCount] = await Promise.all([
+    EmailEvent.countDocuments(filter),
+    EmailEvent.find(filter)
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .select('sender subject timestamp fromFolder isRead importance')
+      .lean(),
+    EmailEvent.countDocuments(baseFilter),
+  ]);
+
+  return {
+    totalMatched,
+    emails: emails.map((e) => ({
+      _id: e._id.toString(),
+      sender: e.sender,
+      subject: e.subject,
+      timestamp: e.timestamp,
+      fromFolder: e.fromFolder,
+      isRead: e.isRead,
+      importance: e.importance,
+    })),
+    dateRange: `${days}d`,
+    scannedCount,
+    ...(bodyContainsSkipped ? { bodyContainsSkipped: true } : {}),
+  };
+}
+
+/**
+ * POST /api/rules/simulate
+ *
+ * Simulate a rule against historical emails without saving or executing.
+ * Body: { mailboxId, conditions, dateRange? }
+ */
+rulesRouter.post('/simulate', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { mailboxId, conditions, dateRange } = req.body as {
+    mailboxId?: string;
+    conditions?: Record<string, unknown>;
+    dateRange?: '30d' | '60d' | '90d';
+  };
+
+  if (!mailboxId) {
+    throw new ValidationError('mailboxId is required');
+  }
+  if (!conditions || Object.keys(conditions).length === 0) {
+    throw new ValidationError('At least one condition is required');
+  }
+
+  // Validate mailbox belongs to user
+  const mailbox = await Mailbox.findOne({ _id: mailboxId, userId });
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const result = await runSimulation(userId, mailboxId, conditions as Parameters<typeof runSimulation>[2], dateRange);
+  res.json(result);
+});
+
+/**
  * PUT /api/rules/reorder
  *
  * Reorder rules by priority via drag-and-drop.
@@ -677,6 +799,35 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
   });
 
   res.json({ matched, applied, failed });
+});
+
+/**
+ * POST /api/rules/:id/simulate
+ *
+ * Simulate a saved rule against historical emails.
+ * Body: { dateRange? } — optional override (default 30d)
+ */
+rulesRouter.post('/:id/simulate', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+
+  const rule = await Rule.findOne({ _id: req.params.id, userId });
+  if (!rule) {
+    throw new NotFoundError('Rule not found');
+  }
+  if (!rule.mailboxId) {
+    throw new ValidationError('Rule has no associated mailbox');
+  }
+
+  const { dateRange } = req.body as { dateRange?: '30d' | '60d' | '90d' };
+
+  const result = await runSimulation(
+    userId,
+    rule.mailboxId.toString(),
+    rule.conditions,
+    dateRange,
+  );
+
+  res.json(result);
 });
 
 /**

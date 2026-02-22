@@ -1,4 +1,4 @@
-import { LogOut } from 'lucide-react';
+import { HelpCircle, LogOut } from 'lucide-react';
 import { useLocation, useParams, useNavigate } from 'react-router';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
@@ -12,6 +12,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { MailboxSelector } from '@/components/shared/MailboxSelector';
 import { KillSwitch } from '@/components/layout/KillSwitch';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
@@ -92,6 +97,19 @@ export function Topbar() {
         <MailboxSelector />
         <KillSwitch />
         <NotificationBell />
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => useUiStore.getState().toggleShortcutsHelp()}
+              className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              aria-label="Keyboard shortcuts"
+            >
+              <HelpCircle className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Keyboard shortcuts (?)</TooltipContent>
+        </Tooltip>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

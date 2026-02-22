@@ -7,8 +7,10 @@ import {
   runRule,
   reorderRules,
   deleteRule,
+  simulateRuleByConditions,
+  simulateRule,
 } from '@/api/rules';
-import type { RulesResponse } from '@/api/rules';
+import type { RulesResponse, RuleConditions, SimulationResult } from '@/api/rules';
 
 /**
  * TanStack Query hook for fetching rules with optional filters.
@@ -114,6 +116,26 @@ export function useDeleteRule() {
     mutationFn: (id: string) => deleteRule(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+    },
+  });
+}
+
+/**
+ * Mutation hook to simulate a rule against historical emails.
+ * Accepts either a saved rule ID or anonymous conditions.
+ */
+export function useSimulateRule() {
+  return useMutation<
+    SimulationResult,
+    Error,
+    | { ruleId: string; dateRange?: '30d' | '60d' | '90d' }
+    | { mailboxId: string; conditions: RuleConditions; dateRange?: '30d' | '60d' | '90d' }
+  >({
+    mutationFn: (params) => {
+      if ('ruleId' in params) {
+        return simulateRule(params.ruleId, params.dateRange);
+      }
+      return simulateRuleByConditions(params);
     },
   });
 }

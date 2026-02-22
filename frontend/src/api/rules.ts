@@ -151,6 +151,53 @@ export async function deleteRule(id: string): Promise<void> {
   });
 }
 
+// --- Simulation types & API ---
+
+export interface SimulationEmail {
+  _id: string;
+  sender: { name?: string; email?: string; domain?: string };
+  subject?: string;
+  timestamp: string;
+  fromFolder?: string;
+  isRead: boolean;
+  importance: string;
+}
+
+export interface SimulationResult {
+  totalMatched: number;
+  emails: SimulationEmail[];
+  dateRange: string;
+  scannedCount: number;
+  bodyContainsSkipped?: boolean;
+}
+
+/**
+ * Simulate a rule by conditions (no saved rule needed).
+ */
+export async function simulateRuleByConditions(data: {
+  mailboxId: string;
+  conditions: RuleConditions;
+  dateRange?: '30d' | '60d' | '90d';
+}): Promise<SimulationResult> {
+  return apiFetch<SimulationResult>('/rules/simulate', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Simulate a saved rule against historical emails.
+ */
+export async function simulateRule(
+  id: string,
+  dateRange?: '30d' | '60d' | '90d',
+): Promise<SimulationResult> {
+  return apiFetch<SimulationResult>(`/rules/${id}/simulate`, {
+    method: 'POST',
+    body: JSON.stringify({ dateRange }),
+  });
+}
+
 export async function deleteRulesBySender(
   senderEmail: string,
 ): Promise<{ deleted: number; failed: number; total: number }> {

@@ -4,10 +4,18 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { SimulationResultPanel } from '@/components/shared/SimulationResultPanel';
 import { RuleList } from '@/components/rules/RuleList';
 import { RuleEditDialog } from '@/components/rules/RuleEditDialog';
 import type { Rule } from '@/api/rules';
+import type { SimulationResult } from '@/api/rules';
 import {
   useRules,
   useToggleRule,
@@ -15,6 +23,7 @@ import {
   useRenameRule,
   useRunRule,
   useReorderRules,
+  useSimulateRule,
 } from '@/hooks/useRules';
 import { useUiStore } from '@/stores/uiStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -36,6 +45,12 @@ export function RulesPage() {
   const [search, setSearch] = useState('');
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
+
+  // Simulation state
+  const [simulatingRule, setSimulatingRule] = useState<Rule | null>(null);
+  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
+  const [simDateRange, setSimDateRange] = useState<'30d' | '60d' | '90d'>('30d');
+  const simulateMutation = useSimulateRule();
 
   // Debounce search input by 300ms
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -129,6 +144,28 @@ export function RulesPage() {
     setEditingRule(rule);
   }, []);
 
+  const handleSimulate = useCallback(
+    (rule: Rule, dateRange?: '30d' | '60d' | '90d') => {
+      const range = dateRange ?? simDateRange;
+      setSimulatingRule(rule);
+      setSimDateRange(range);
+      simulateMutation.mutate(
+        { ruleId: rule._id, dateRange: range },
+        { onSuccess: (result) => setSimulationResult(result) },
+      );
+    },
+    [simulateMutation, simDateRange],
+  );
+
+  const handleSimDateRangeChange = useCallback(
+    (range: '30d' | '60d' | '90d') => {
+      if (simulatingRule) {
+        handleSimulate(simulatingRule, range);
+      }
+    },
+    [simulatingRule, handleSimulate],
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -198,6 +235,8 @@ export function RulesPage() {
             onRename={handleRename}
             onRun={handleRun}
             onEdit={handleEdit}
+            onSimulate={(rule) => handleSimulate(rule)}
+            simulatingRuleId={simulateMutation.isPending ? simulatingRule?._id ?? null : null}
             runningRuleId={runningRuleId}
             onReorder={handleReorder}
           />
@@ -239,6 +278,34 @@ export function RulesPage() {
           rule={editingRule}
         />
       )}
+
+      {/* Simulation sheet */}
+      <Sheet
+        open={!!simulatingRule}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSimulatingRule(null);
+            setSimulationResult(null);
+            setSimDateRange('30d');
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-[400px] sm:w-[450px]">
+          <SheetHeader>
+            <SheetTitle className="truncate">
+              Simulate: {simulatingRule?.name}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-4">
+            <SimulationResultPanel
+              result={simulationResult}
+              isLoading={simulateMutation.isPending}
+              currentDateRange={simDateRange}
+              onDateRangeChange={handleSimDateRangeChange}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

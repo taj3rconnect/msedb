@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useLocation } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useKeyboardShortcuts, type Shortcut } from '@/hooks/useKeyboardShortcuts';
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle, useDefaultLayout } from 'react-resizable-panels';
 import {
   Inbox,
@@ -99,6 +100,15 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [contentType, setContentType] = useState<'all' | 'emails' | 'files' | 'contacts'>('all');
+
+  // Keyboard navigation
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Reset focused index when data changes
+  useEffect(() => {
+    setFocusedIndex(-1);
+  }, [page, search, dateFilter, folderFilter]);
 
   // Resizable panel layout persistence
   const panelLayoutRight = useDefaultLayout({
@@ -719,6 +729,161 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
 
   const showEmailContent = contentType === 'all' || contentType === 'emails';
 
+  // Keyboard shortcuts for inbox
+  const location = useLocation();
+  const isInboxActive = location.pathname.startsWith('/inbox');
+
+  const inboxShortcuts = useMemo<Shortcut[]>(() => {
+    if (!isInboxActive || !showEmailContent) return [];
+    return [
+      // J — next email
+      {
+        key: 'j',
+        action: () => {
+          setFocusedIndex((prev) => {
+            const max = visibleEvents.length - 1;
+            return prev < max ? prev + 1 : max;
+          });
+        },
+      },
+      // K — previous email
+      {
+        key: 'k',
+        action: () => {
+          setFocusedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+        },
+      },
+      // Enter / O — open preview for focused email
+      {
+        key: 'Enter',
+        action: () => {
+          if (focusedIndex >= 0 && focusedIndex < visibleEvents.length) {
+            setPreviewEvent(visibleEvents[focusedIndex]);
+          }
+        },
+      },
+      {
+        key: 'o',
+        action: () => {
+          if (focusedIndex >= 0 && focusedIndex < visibleEvents.length) {
+            setPreviewEvent(visibleEvents[focusedIndex]);
+          }
+        },
+      },
+      // X — toggle selection
+      {
+        key: 'x',
+        action: () => {
+          if (focusedIndex >= 0 && focusedIndex < visibleEvents.length) {
+            toggleSelect(visibleEvents[focusedIndex]._id);
+          }
+        },
+      },
+      // E — archive/mark read
+      {
+        key: 'e',
+        action: () => {
+          const target = focusedIndex >= 0 && focusedIndex < visibleEvents.length
+            ? visibleEvents[focusedIndex]
+            : null;
+          if (target?.sender.email) {
+            handleQuickMarkRead(target);
+          }
+        },
+      },
+      // # — delete focused/selected email(s)
+      {
+        key: '#',
+        action: () => {
+          if (selectedIds.size > 0) {
+            // Delete all selected
+            for (const id of selectedIds) {
+              const ev = visibleEvents.find((e) => e._id === id);
+              if (ev) handleJustDelete(ev);
+            }
+          } else if (focusedIndex >= 0 && focusedIndex < visibleEvents.length) {
+            handleJustDelete(visibleEvents[focusedIndex]);
+          }
+        },
+      },
+      // Shift+D — always delete (create rule)
+      {
+        key: 'D',
+        action: () => {
+          const target = focusedIndex >= 0 && focusedIndex < visibleEvents.length
+            ? visibleEvents[focusedIndex]
+            : null;
+          if (target?.sender.email) {
+            handleQuickDelete(target);
+          }
+        },
+      },
+      // Shift+I — mark as read
+      {
+        key: 'I',
+        action: () => {
+          const target = focusedIndex >= 0 && focusedIndex < visibleEvents.length
+            ? visibleEvents[focusedIndex]
+            : null;
+          if (target?.sender.email) {
+            handleQuickMarkRead(target);
+          }
+        },
+      },
+      // R — reply (opens preview)
+      {
+        key: 'r',
+        action: () => {
+          if (focusedIndex >= 0 && focusedIndex < visibleEvents.length) {
+            setPreviewEvent(visibleEvents[focusedIndex]);
+          }
+        },
+      },
+      // F — forward (opens preview)
+      {
+        key: 'f',
+        action: () => {
+          if (focusedIndex >= 0 && focusedIndex < visibleEvents.length) {
+            setPreviewEvent(visibleEvents[focusedIndex]);
+          }
+        },
+      },
+      // / — focus search
+      {
+        key: '/',
+        action: () => {
+          searchInputRef.current?.focus();
+        },
+      },
+      // Escape — close preview / deselect
+      {
+        key: 'Escape',
+        action: () => {
+          if (previewEvent) {
+            setPreviewEvent(null);
+          } else if (selectedIds.size > 0) {
+            setSelectedIds(new Set());
+          } else {
+            setFocusedIndex(-1);
+          }
+        },
+      },
+    ];
+  }, [
+    isInboxActive,
+    showEmailContent,
+    visibleEvents,
+    focusedIndex,
+    previewEvent,
+    selectedIds,
+    toggleSelect,
+    handleQuickMarkRead,
+    handleJustDelete,
+    handleQuickDelete,
+  ]);
+
+  useKeyboardShortcuts(inboxShortcuts);
+
   return (
     <div className="space-y-4">
       {/* Content type tags */}
@@ -847,6 +1012,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          ref={searchInputRef}
           placeholder="Search by sender, name, or subject..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
@@ -923,6 +1089,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
                 onUndelete={handleUndelete}
                 onRowClick={handleRowClick}
                 activeEventId={previewEvent?._id}
+                focusedEventId={focusedIndex >= 0 && focusedIndex < visibleEvents.length ? visibleEvents[focusedIndex]._id : undefined}
                 folderFilter={folderFilter}
                 searchQuery={search}
                 toolbarSlot={

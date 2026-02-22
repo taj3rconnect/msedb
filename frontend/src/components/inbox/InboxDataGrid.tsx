@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -157,6 +157,7 @@ interface InboxDataGridProps {
   onUndelete?: (event: EventItem) => void;
   onRowClick?: (event: EventItem) => void;
   activeEventId?: string;
+  focusedEventId?: string;
   folderFilter?: 'inbox' | 'deleted';
   showFilters?: boolean;
   onToggleFilters?: (show: boolean) => void;
@@ -181,6 +182,7 @@ export function InboxDataGrid({
   onUndelete,
   onRowClick,
   activeEventId,
+  focusedEventId,
   folderFilter = 'inbox',
   showFilters: showFiltersProp,
   onToggleFilters,
@@ -525,6 +527,16 @@ export function InboxDataGrid({
   const headerGroups = table.getHeaderGroups();
   const rows = table.getRowModel().rows;
 
+  // Scroll focused row into view
+  const tableRef = useRef<HTMLTableElement>(null);
+  useEffect(() => {
+    if (!focusedEventId || !tableRef.current) return;
+    const row = tableRef.current.querySelector(`[data-focused="true"]`);
+    if (row) {
+      row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [focusedEventId]);
+
   // Columns that can be toggled
   const toggleableColumns = table
     .getAllLeafColumns()
@@ -597,7 +609,7 @@ export function InboxDataGrid({
           collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
-          <table className="w-full caption-bottom text-sm">
+          <table ref={tableRef} className="w-full caption-bottom text-sm">
             <thead className="[&_tr]:border-b">
               {headerGroups.map((headerGroup) => (
                 <tr key={headerGroup.id} className="border-b transition-colors">
@@ -656,9 +668,10 @@ export function InboxDataGrid({
                         ? 'selected'
                         : undefined
                     }
+                    data-focused={focusedEventId === row.original._id ? 'true' : undefined}
                     className={`group/row border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted ${
                       row.original.isRead ? '' : 'bg-muted/30'
-                    } ${activeEventId === row.original._id ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''} ${onRowClick ? 'cursor-pointer' : ''}`}
+                    } ${activeEventId === row.original._id ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''} ${focusedEventId === row.original._id && activeEventId !== row.original._id ? 'ring-1 ring-inset ring-dashed ring-primary/30 bg-primary/[0.02]' : ''} ${onRowClick ? 'cursor-pointer' : ''}`}
                     onClick={() => onRowClick?.(row.original)}
                   >
                     {row.getVisibleCells().map((cell) => (

@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { GripVertical, Loader2, Pencil, Play, Settings, Trash2, Clock, Zap, Mail } from 'lucide-react';
+import { FlaskConical, GripVertical, Loader2, Pencil, Play, Settings, Trash2, Clock, Zap, Mail } from 'lucide-react';
 import { formatRelativeTime, formatNumber } from '@/lib/formatters';
 import type { Rule } from '@/api/rules';
 
@@ -32,7 +32,9 @@ interface RuleCardProps {
   onRename: (id: string, name: string) => void;
   onRun: (id: string) => void;
   onEdit: (rule: Rule) => void;
+  onSimulate?: (rule: Rule) => void;
   isRunning?: boolean;
+  isSimulating?: boolean;
 }
 
 const ACTION_COLORS: Record<string, string> = {
@@ -63,7 +65,7 @@ function formatActionLabel(action: Rule['actions'][number]): string {
   }
 }
 
-export function RuleCard({ rule, onToggle, onDelete, onRename, onRun, onEdit, isRunning }: RuleCardProps) {
+export function RuleCard({ rule, onToggle, onDelete, onRename, onRun, onEdit, onSimulate, isRunning, isSimulating }: RuleCardProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(rule.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -244,6 +246,27 @@ export function RuleCard({ rule, onToggle, onDelete, onRename, onRun, onEdit, is
 
         {/* Action buttons */}
         <div className="flex items-center gap-1 shrink-0">
+          {onSimulate && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                  onClick={() => onSimulate(rule)}
+                  disabled={isSimulating}
+                >
+                  {isSimulating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FlaskConical className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Simulate rule</TooltipContent>
+            </Tooltip>
+          )}
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
