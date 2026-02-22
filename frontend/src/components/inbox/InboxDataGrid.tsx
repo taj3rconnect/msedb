@@ -130,6 +130,18 @@ function SortableHeaderCell({
 }
 
 // --- Main Component ---
+/**
+ * Highlight search terms in text by wrapping matches in <mark> tags.
+ */
+function highlightText(text: string, query: string): string {
+  if (!query || !text) return text;
+  const words = query.split(/\s+/).filter((w) => w.length >= 2);
+  if (!words.length) return text;
+  const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+  return text.replace(pattern, '<mark class="bg-yellow-200 dark:bg-yellow-500/30 rounded-sm px-0.5">$1</mark>');
+}
+
 interface InboxDataGridProps {
   data: EventItem[];
   selectedIds: Set<string>;
@@ -151,6 +163,7 @@ interface InboxDataGridProps {
   toolbarSlot?: React.ReactNode;
   hideToolbar?: boolean;
   renderToolbar?: (toolbarNode: React.ReactNode) => void;
+  searchQuery?: string;
 }
 
 export function InboxDataGrid({
@@ -173,6 +186,7 @@ export function InboxDataGrid({
   onToggleFilters,
   toolbarSlot,
   hideToolbar,
+  searchQuery = '',
 }: InboxDataGridProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -330,13 +344,13 @@ export function InboxDataGrid({
                   </>
                 )}
                 <div className="min-w-0">
-                  <div className="font-medium truncate">
-                    {event.sender.name || event.sender.email}
-                  </div>
+                  <div className="font-medium truncate" dangerouslySetInnerHTML={{
+                    __html: highlightText(event.sender.name || event.sender.email || '', searchQuery),
+                  }} />
                   {event.sender.name && event.sender.email && (
-                    <div className="text-xs text-muted-foreground truncate">
-                      {event.sender.email}
-                    </div>
+                    <div className="text-xs text-muted-foreground truncate" dangerouslySetInnerHTML={{
+                      __html: highlightText(event.sender.email, searchQuery),
+                    }} />
                   )}
                 </div>
               </div>
@@ -351,9 +365,9 @@ export function InboxDataGrid({
         size: 300,
         filterFn: 'includesString',
         cell: ({ getValue }) => (
-          <span className="truncate block max-w-xs">
-            {getValue() || '(no subject)'}
-          </span>
+          <span className="truncate block max-w-xs" dangerouslySetInnerHTML={{
+            __html: highlightText(getValue() || '(no subject)', searchQuery),
+          }} />
         ),
       }),
       // Folder

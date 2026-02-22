@@ -924,6 +924,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
                 onRowClick={handleRowClick}
                 activeEventId={previewEvent?._id}
                 folderFilter={folderFilter}
+                searchQuery={search}
                 toolbarSlot={
                   <>
                     {/* Deleted items inline */}
@@ -1035,6 +1036,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
                     onQuickDelete={handleQuickDelete}
                     onQuickMarkRead={handleQuickMarkRead}
                     onAction={handleGridAction}
+                    searchQuery={search}
                   />
                 </div>
               </Panel>
@@ -1058,6 +1060,17 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
   );
 }
 
+// --- Highlight utility ---
+
+function highlightText(text: string, query: string): string {
+  if (!query || !text) return text;
+  const words = query.split(/\s+/).filter((w) => w.length >= 2);
+  if (!words.length) return text;
+  const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+  return text.replace(pattern, '<mark class="bg-yellow-200 dark:bg-yellow-500/30 rounded-sm px-0.5">$1</mark>');
+}
+
 // --- Email Preview Pane ---
 
 interface EmailPreviewPaneProps {
@@ -1068,6 +1081,7 @@ interface EmailPreviewPaneProps {
   onQuickDelete: (event: EventItem) => void;
   onQuickMarkRead: (event: EventItem) => void;
   onAction: (event: EventItem) => void;
+  searchQuery?: string;
 }
 
 function EmailPreviewPane({
@@ -1078,6 +1092,7 @@ function EmailPreviewPane({
   onQuickDelete,
   onQuickMarkRead,
   onAction,
+  searchQuery = '',
 }: EmailPreviewPaneProps) {
   const d = new Date(event.timestamp);
   const timeStr = d.toLocaleString(undefined, {
@@ -1177,9 +1192,9 @@ function EmailPreviewPane({
     <Card className={containerClass}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base leading-snug break-words">
-            {event.subject || '(no subject)'}
-          </CardTitle>
+          <CardTitle className="text-base leading-snug break-words" dangerouslySetInnerHTML={{
+            __html: highlightText(event.subject || '(no subject)', searchQuery),
+          }} />
           <Button
             variant="ghost"
             size="icon"
@@ -1197,11 +1212,13 @@ function EmailPreviewPane({
             <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
             <div className="min-w-0">
               {event.sender.name && (
-                <div className="font-medium text-sm truncate">{event.sender.name}</div>
+                <div className="font-medium text-sm truncate" dangerouslySetInnerHTML={{
+                  __html: highlightText(event.sender.name, searchQuery),
+                }} />
               )}
-              <div className="text-xs text-muted-foreground truncate">
-                {event.sender.email || 'Unknown sender'}
-              </div>
+              <div className="text-xs text-muted-foreground truncate" dangerouslySetInnerHTML={{
+                __html: highlightText(event.sender.email || 'Unknown sender', searchQuery),
+              }} />
             </div>
           </div>
         </div>
