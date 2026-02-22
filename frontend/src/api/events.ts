@@ -66,6 +66,7 @@ export interface FetchEventsParams {
   excludeDeleted?: boolean;
   inboxOnly?: boolean;
   unreadOnly?: boolean;
+  folder?: string;
   dateFrom?: string;
   dateTo?: string;
 }
@@ -88,6 +89,7 @@ export async function fetchEvents(params: FetchEventsParams): Promise<EventsResp
   if (params.excludeDeleted) searchParams.set('excludeDeleted', 'true');
   if (params.inboxOnly) searchParams.set('inboxOnly', 'true');
   if (params.unreadOnly) searchParams.set('unreadOnly', 'true');
+  if (params.folder) searchParams.set('folder', params.folder);
   if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom);
   if (params.dateTo) searchParams.set('dateTo', params.dateTo);
   const qs = searchParams.toString();

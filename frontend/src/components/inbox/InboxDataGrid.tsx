@@ -33,11 +33,13 @@ import {
   ArrowUp,
   ArrowDown,
   Ban,
+  CheckCircle,
   MailOpen,
   MoreHorizontal,
   GripVertical,
   SlidersHorizontal,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react';
 import {
@@ -136,9 +138,19 @@ interface InboxDataGridProps {
   allSelected: boolean;
   someSelected: boolean;
   onAction: (event: EventItem) => void;
+  onClearRules: (event: EventItem) => void;
   onQuickDelete: (event: EventItem) => void;
   onJustDelete: (event: EventItem) => void;
   onQuickMarkRead: (event: EventItem) => void;
+  onUndelete?: (event: EventItem) => void;
+  onRowClick?: (event: EventItem) => void;
+  activeEventId?: string;
+  folderFilter?: 'inbox' | 'deleted';
+  showFilters?: boolean;
+  onToggleFilters?: (show: boolean) => void;
+  toolbarSlot?: React.ReactNode;
+  hideToolbar?: boolean;
+  renderToolbar?: (toolbarNode: React.ReactNode) => void;
 }
 
 export function InboxDataGrid({
@@ -149,14 +161,25 @@ export function InboxDataGrid({
   allSelected,
   someSelected,
   onAction,
+  onClearRules,
   onQuickDelete,
   onJustDelete,
   onQuickMarkRead,
+  onUndelete,
+  onRowClick,
+  activeEventId,
+  folderFilter = 'inbox',
+  showFilters: showFiltersProp,
+  onToggleFilters,
+  toolbarSlot,
+  hideToolbar,
 }: InboxDataGridProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFiltersInternal, setShowFiltersInternal] = useState(false);
+  const showFilters = showFiltersProp ?? showFiltersInternal;
+  const setShowFilters = onToggleFilters ?? setShowFiltersInternal;
 
   // Default column order
   const defaultColumnOrder = [
@@ -206,68 +229,106 @@ export function InboxDataGrid({
             const event = row.original;
             return (
               <div className="flex items-center gap-0.5 min-w-0">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onJustDelete(event);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete this email</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onQuickDelete(event);
-                      }}
-                      disabled={!event.sender.email}
-                    >
-                      <Ban className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Always delete from this sender</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-blue-500 transition-all"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onQuickMarkRead(event);
-                      }}
-                      disabled={!event.sender.email}
-                    >
-                      <MailOpen className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Always mark read from this sender</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-foreground transition-all"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAction(event);
-                      }}
-                    >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Create custom rule</TooltipContent>
-                </Tooltip>
+                {folderFilter === 'deleted' ? (
+                  /* Deleted folder: only show Undelete button */
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-green-600 hover:!text-green-500 transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUndelete?.(event);
+                        }}
+                      >
+                        <Undo2 className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Undelete & remove rules for this sender</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  /* Inbox: show all action buttons */
+                  <>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-green-600 hover:!text-green-500 transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onClearRules(event);
+                          }}
+                          disabled={!event.sender.email}
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Remove all rules for this sender</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onJustDelete(event);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Delete this email</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onQuickDelete(event);
+                          }}
+                          disabled={!event.sender.email}
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Always delete from this sender</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-blue-500 transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onQuickMarkRead(event);
+                          }}
+                          disabled={!event.sender.email}
+                        >
+                          <MailOpen className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Always mark read from this sender</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-foreground transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAction(event);
+                          }}
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>Create custom rule</TooltipContent>
+                    </Tooltip>
+                  </>
+                )}
                 <div className="min-w-0">
                   <div className="font-medium truncate">
                     {event.sender.name || event.sender.email}
@@ -378,14 +439,14 @@ export function InboxDataGrid({
           );
         },
       }),
-      // Actions
-      columnHelper.display({
+      // Actions (hidden in deleted folder view)
+      ...(folderFilter !== 'deleted' ? [columnHelper.display({
         id: 'actions',
         size: 60,
         enableSorting: false,
         enableColumnFilter: false,
         header: '',
-        cell: ({ row }) => (
+        cell: ({ row }: { row: { original: EventItem } }) => (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -400,9 +461,9 @@ export function InboxDataGrid({
             <TooltipContent>Create rule</TooltipContent>
           </Tooltip>
         ),
-      }),
+      })] : []),
     ],
-    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onQuickDelete, onJustDelete, onQuickMarkRead],
+    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onClearRules, onQuickDelete, onJustDelete, onQuickMarkRead, onUndelete, folderFilter],
   );
 
   const table = useReactTable({
@@ -458,59 +519,62 @@ export function InboxDataGrid({
   return (
     <div className="space-y-2">
       {/* Toolbar */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant={showFilters ? 'secondary' : 'outline'}
-          size="sm"
-          onClick={() => setShowFilters(!showFilters)}
-          className="h-8 text-xs"
-        >
-          <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
-          Filters
-          {activeFilterCount > 0 && (
-            <span className="ml-1.5 rounded-full bg-primary text-primary-foreground px-1.5 text-[10px]">
-              {activeFilterCount}
-            </span>
-          )}
-        </Button>
-
-        {activeFilterCount > 0 && (
+      {!hideToolbar && (
+        <div className="flex items-center gap-2">
+          {toolbarSlot}
           <Button
-            variant="ghost"
+            variant={showFilters ? 'secondary' : 'outline'}
             size="sm"
+            onClick={() => setShowFilters(!showFilters)}
             className="h-8 text-xs"
-            onClick={() => setColumnFilters([])}
           >
-            Clear filters
-            <X className="ml-1 h-3.5 w-3.5" />
+            <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-1.5 rounded-full bg-primary text-primary-foreground px-1.5 text-[10px]">
+                {activeFilterCount}
+              </span>
+            )}
           </Button>
-        )}
 
-        {/* Column visibility */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="ml-auto h-8 text-xs">
-              Columns
+          {activeFilterCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setColumnFilters([])}
+            >
+              Clear filters
+              <X className="ml-1 h-3.5 w-3.5" />
             </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-[180px] p-2">
-            <div className="space-y-1">
-              {toggleableColumns.map((column) => (
-                <label
-                  key={column.id}
-                  className="flex items-center gap-2 px-2 py-1 text-sm rounded hover:bg-muted cursor-pointer"
-                >
-                  <Checkbox
-                    checked={column.getIsVisible()}
-                    onCheckedChange={(v) => column.toggleVisibility(!!v)}
-                  />
-                  {String(column.columnDef.header || column.id)}
-                </label>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
+          )}
+
+          {/* Column visibility */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="ml-auto h-8 text-xs">
+                Columns
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[180px] p-2">
+              <div className="space-y-1">
+                {toggleableColumns.map((column) => (
+                  <label
+                    key={column.id}
+                    className="flex items-center gap-2 px-2 py-1 text-sm rounded hover:bg-muted cursor-pointer"
+                  >
+                    <Checkbox
+                      checked={column.getIsVisible()}
+                      onCheckedChange={(v) => column.toggleVisibility(!!v)}
+                    />
+                    {String(column.columnDef.header || column.id)}
+                  </label>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-md border overflow-x-auto">
@@ -580,7 +644,8 @@ export function InboxDataGrid({
                     }
                     className={`group/row border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted ${
                       row.original.isRead ? '' : 'bg-muted/30'
-                    }`}
+                    } ${activeEventId === row.original._id ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''} ${onRowClick ? 'cursor-pointer' : ''}`}
+                    onClick={() => onRowClick?.(row.original)}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td key={cell.id} className="px-3 py-2 align-middle">

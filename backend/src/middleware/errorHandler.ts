@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
 import logger from '../config/logger.js';
+import { GraphApiError } from '../services/graphClient.js';
 
 /**
  * Custom error classes for structured error handling.
@@ -61,7 +62,13 @@ export function globalErrorHandler(
     statusCode = err.statusCode;
   }
 
-  // Log the error with context
+  // Sanitize error message — never leak Graph API response bodies (may contain credentials/keys)
+  let safeMessage = err.message;
+  if (err instanceof GraphApiError) {
+    safeMessage = `Graph API error ${err.status} on ${err.path}`;
+  }
+
+  // Log the error with context (full details in logs only)
   logger.error('Request error', {
     error: err.message,
     stack: err.stack,
@@ -71,28 +78,15 @@ export function globalErrorHandler(
     userId: (req as unknown as Record<string, unknown>).userId ?? undefined,
   });
 
-  // Build response
+  // Build response — never leak internal details to client
   const timestamp = new Date().toISOString();
+  const clientMessage = statusCode === 500 ? 'Internal server error' : safeMessage;
 
-  if (config.nodeEnv === 'development') {
-    // In development: include full error details
-    res.status(statusCode).json({
-      error: {
-        message: err.message,
-        status: statusCode,
-        timestamp,
-        stack: err.stack,
-      },
-    });
-  } else {
-    // In production: generic message for 500 errors (do not leak internals)
-    const message = statusCode === 500 ? 'Internal server error' : err.message;
-    res.status(statusCode).json({
-      error: {
-        message,
-        status: statusCode,
-        timestamp,
-      },
-    });
-  }
+  res.status(statusCode).json({
+    error: {
+      message: clientMessage,
+      status: statusCode,
+      timestamp,
+    },
+  });
 }

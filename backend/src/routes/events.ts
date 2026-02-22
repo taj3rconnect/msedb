@@ -18,7 +18,7 @@ eventsRouter.use(requireAuth);
  */
 eventsRouter.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const { mailboxId, eventType, senderDomain, search, excludeDeleted, inboxOnly, unreadOnly, dateFrom, dateTo } = req.query;
+  const { mailboxId, eventType, senderDomain, search, excludeDeleted, inboxOnly, unreadOnly, dateFrom, dateTo, folder } = req.query;
 
   // Pagination
   let page = 1;
@@ -93,18 +93,37 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     }
   }
 
-  // Filter to only Inbox folder messages
-  if (inboxOnly === 'true' && mailboxId && typeof mailboxId === 'string') {
+  // Filter by folder: supports 'inbox', 'deleted', or well-known folder names
+  const folderParam = typeof folder === 'string' ? folder : (inboxOnly === 'true' ? 'inbox' : null);
+  if (folderParam && mailboxId && typeof mailboxId === 'string') {
     const mb = await Mailbox.findById(mailboxId).select('email').lean();
     if (mb?.email) {
       const redis = getRedisClient();
-      const inboxFolderId = await redis.get(`folder:${mb.email}:wk:Inbox`);
-      // arrived events store destination as toFolder; also match display name "Inbox"
+      const folderAliasMap: Record<string, string> = {
+        inbox: 'Inbox',
+        deleted: 'DeletedItems',
+        sent: 'SentItems',
+        drafts: 'Drafts',
+        junk: 'JunkEmail',
+        archive: 'Archive',
+      };
+      const wellKnownAlias = folderAliasMap[folderParam.toLowerCase()] || folderParam;
+      const cachedFolderId = await redis.get(`folder:${mb.email}:wk:${wellKnownAlias}`);
+      const displayNameMap: Record<string, string> = {
+        Inbox: 'Inbox',
+        DeletedItems: 'Deleted Items',
+        SentItems: 'Sent Items',
+        Drafts: 'Drafts',
+        JunkEmail: 'Junk Email',
+        Archive: 'Archive',
+      };
+      const displayName = displayNameMap[wellKnownAlias] || wellKnownAlias;
       filter.$and = [
         ...(filter.$and ? (filter.$and as Record<string, unknown>[]) : []),
         { $or: [
-          ...(inboxFolderId ? [{ toFolder: inboxFolderId }] : []),
-          { toFolder: 'Inbox' },
+          ...(cachedFolderId ? [{ toFolder: cachedFolderId }] : []),
+          { toFolder: displayName },
+          { toFolder: wellKnownAlias },
         ]},
       ];
     }
