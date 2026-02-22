@@ -1,9 +1,22 @@
 import { Router, type Request, type Response } from 'express';
 import mongoose from 'mongoose';
 import { type Redis } from 'ioredis';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { queues } from '../jobs/queues.js';
 import { WebhookSubscription, User } from '../models/index.js';
 import logger from '../config/logger.js';
+
+// Read version info once at startup
+let versionInfo = { version: 'v1.01', buildDate: '' };
+try {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const versionPath = resolve(__dirname, '../../../version.json');
+  versionInfo = JSON.parse(readFileSync(versionPath, 'utf-8'));
+} catch {
+  logger.warn('Could not read version.json');
+}
 
 const router = Router();
 
@@ -68,11 +81,23 @@ router.get('/api/health', async (req: Request, res: Response) => {
   // Compute overall health (only MongoDB and Redis are gates)
   const healthy = mongoStatus === 'connected' && redisStatus === 'connected';
 
+  // Extract MongoDB host (sanitized — no credentials)
+  let mongoHost = 'unknown';
+  try {
+    const uri = mongoose.connection.host;
+    const port = mongoose.connection.port;
+    mongoHost = uri ? `${uri}:${port}` : 'unknown';
+  } catch {
+    // ignore
+  }
+
   res.status(healthy ? 200 : 503).json({
     status: healthy ? 'healthy' : 'degraded',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
+    version: versionInfo.version,
+    buildDate: versionInfo.buildDate,
+    mongoHost,
     services: {
       mongodb: mongoStatus,
       redis: redisStatus,

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router';
-import { Mail } from 'lucide-react';
+import { Mail, Database } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -12,9 +12,15 @@ import {
   SidebarGroupLabel,
 } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { NAV_ITEMS, ROUTE_PATHS } from '@/lib/constants';
 import { useAuthStore } from '@/stores/authStore';
 import { useStagingCount } from '@/hooks/useStaging';
+import { useHealth } from '@/hooks/useHealth';
 
 /**
  * Application sidebar with logo and navigation links.
@@ -26,6 +32,7 @@ export function AppSidebar() {
   const user = useAuthStore((s) => s.user);
   const { data: countData } = useStagingCount();
   const stagingCount = countData?.count ?? 0;
+  const { isHealthy, mongoStatus, mongoHost, version, buildDate } = useHealth();
 
   const visibleItems = NAV_ITEMS.filter(
     (item) => !item.adminOnly || user?.role === 'admin',
@@ -37,6 +44,23 @@ export function AppSidebar() {
         <div className="flex items-center gap-2">
           <Mail className="h-6 w-6 text-primary" />
           <span className="text-lg font-bold">MSEDB</span>
+          {version && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {version} {buildDate}
+            </span>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Database
+                className={`h-4 w-4 shrink-0 ${
+                  isHealthy ? 'text-green-500' : 'text-red-500'
+                }`}
+              />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>MongoDB: {mongoStatus === 'connected' ? mongoHost : 'disconnected'}</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </SidebarHeader>
       <SidebarContent>
