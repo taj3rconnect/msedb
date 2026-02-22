@@ -8,14 +8,18 @@ import { queues } from '../jobs/queues.js';
 import { WebhookSubscription, User } from '../models/index.js';
 import logger from '../config/logger.js';
 
-// Read version info once at startup
+// Read version info once at startup (try multiple paths for local dev vs Docker)
 let versionInfo = { version: 'v1.01', buildDate: '' };
-try {
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const versionPath = resolve(__dirname, '../../../version.json');
-  versionInfo = JSON.parse(readFileSync(versionPath, 'utf-8'));
-} catch {
-  logger.warn('Could not read version.json');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const versionPaths = [
+  resolve(__dirname, '../../../version.json'),  // local dev (from backend/src/routes/)
+  resolve(__dirname, '../../version.json'),      // Docker (from dist/routes/)
+];
+for (const vp of versionPaths) {
+  try {
+    versionInfo = JSON.parse(readFileSync(vp, 'utf-8'));
+    break;
+  } catch { /* try next */ }
 }
 
 const router = Router();

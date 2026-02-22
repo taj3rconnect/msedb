@@ -15,6 +15,7 @@ export interface MailboxInfo {
   email: string;
   displayName: string;
   isConnected: boolean;
+  lastSyncAt?: string;
 }
 
 interface AuthMeResponse {

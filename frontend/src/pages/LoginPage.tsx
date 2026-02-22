@@ -9,11 +9,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/authStore';
-import { useHealth } from '@/hooks/useHealth';
+
+declare const __APP_VERSION__: string;
+declare const __APP_BUILD_DATE__: string;
 
 export function LoginPage() {
   const { isAuthenticated, isLoading } = useAuthStore();
-  const { version, buildDate } = useHealth();
   const [searchParams] = useSearchParams();
   const error = searchParams.get('error');
 
@@ -38,9 +39,9 @@ export function LoginPage() {
           <CardDescription>
             Microsoft Email Dashboard
           </CardDescription>
-          {version && (
+          {__APP_VERSION__ && (
             <p className="text-xs text-muted-foreground mt-1">
-              {version} | {buildDate}
+              {__APP_VERSION__} | {__APP_BUILD_DATE__}
             </p>
           )}
         </CardHeader>

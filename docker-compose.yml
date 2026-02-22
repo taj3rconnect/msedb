@@ -1,8 +1,8 @@
 services:
   msedb-backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: msedb-backend
     ports:
       - "8010:8010"
@@ -33,13 +33,14 @@ services:
 
   msedb-frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
     container_name: msedb-frontend
     ports:
       - "3010:8080"
     volumes:
       - ./certs:/etc/nginx/certs:ro
+      - ./addin/dist:/usr/share/nginx/addin:ro
     depends_on:
       msedb-backend:
         condition: service_healthy
@@ -105,9 +106,11 @@ services:
   msedb-tunnel:
     image: cloudflare/cloudflared:latest
     container_name: msedb-tunnel
-    command: ["tunnel", "--no-autoupdate", "--url", "http://msedb-backend:8010"]
+    command: ["tunnel", "--no-autoupdate", "run", "acdd721a-a650-44c3-824f-6ff106899581"]
+    volumes:
+      - ./.cloudflared:/home/nonroot/.cloudflared:ro
     depends_on:
-      msedb-backend:
+      msedb-frontend:
         condition: service_healthy
     networks:
       - msedb-network

@@ -21,6 +21,10 @@ import { NAV_ITEMS, ROUTE_PATHS } from '@/lib/constants';
 import { useAuthStore } from '@/stores/authStore';
 import { useStagingCount } from '@/hooks/useStaging';
 import { useHealth } from '@/hooks/useHealth';
+import { useMailboxes } from '@/hooks/useMailboxes';
+
+declare const __APP_VERSION__: string;
+declare const __APP_BUILD_DATE__: string;
 
 /**
  * Application sidebar with logo and navigation links.
@@ -32,7 +36,25 @@ export function AppSidebar() {
   const user = useAuthStore((s) => s.user);
   const { data: countData } = useStagingCount();
   const stagingCount = countData?.count ?? 0;
-  const { isHealthy, mongoStatus, mongoHost, version, buildDate } = useHealth();
+  const { isHealthy, mongoStatus, mongoHost } = useHealth();
+  const { mailboxes } = useMailboxes();
+
+  // Most recent sync across all mailboxes
+  const lastSyncAt = mailboxes
+    .map((m) => m.lastSyncAt)
+    .filter(Boolean)
+    .sort()
+    .pop();
+
+  const formatSyncTime = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000);
+    if (diffSec < 60) return `${diffSec}s ago`;
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return d.toLocaleDateString();
+  };
 
   const visibleItems = NAV_ITEMS.filter(
     (item) => !item.adminOnly || user?.role === 'admin',
@@ -44,9 +66,9 @@ export function AppSidebar() {
         <div className="flex items-center gap-2">
           <Mail className="h-6 w-6 text-primary" />
           <span className="text-lg font-bold">MSEDB</span>
-          {version && (
+          {__APP_VERSION__ && (
             <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {version} {buildDate}
+              {__APP_VERSION__} {__APP_BUILD_DATE__}
             </span>
           )}
           <Tooltip>
@@ -62,6 +84,11 @@ export function AppSidebar() {
             </TooltipContent>
           </Tooltip>
         </div>
+        {lastSyncAt && (
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Last synced: {formatSyncTime(lastSyncAt)}
+          </p>
+        )}
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
