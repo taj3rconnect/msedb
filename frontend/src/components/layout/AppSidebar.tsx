@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router';
+import { NavLink, useNavigate } from 'react-router';
 import { Mail, Database } from 'lucide-react';
 import {
   Sidebar,
@@ -33,6 +33,7 @@ declare const __APP_BUILD_DATE__: string;
  * Collapsible on mobile via SidebarTrigger in the Topbar.
  */
 export function AppSidebar() {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const { data: countData } = useStagingCount();
   const stagingCount = countData?.count ?? 0;
@@ -63,7 +64,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="border-b px-4 py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
           <Mail className="h-6 w-6 text-primary" />
           <span className="text-lg font-bold">MSEDB</span>
           {__APP_VERSION__ && (
