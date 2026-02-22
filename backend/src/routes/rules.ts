@@ -8,6 +8,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { convertPatternToRule } from '../services/ruleConverter.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { graphFetch } from '../services/graphClient.js';
+import { syncRuleToGraph, deleteGraphRule, syncAllRulesToGraph } from '../services/graphRuleSync.js';
 import logger from '../config/logger.js';
 import {
   NotFoundError,
@@ -141,6 +142,17 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
       existing.isEnabled = true;
       await existing.save();
 
+      // Ensure Graph inbox rule exists / is re-enabled
+      try {
+        const accessToken = await getAccessTokenForMailbox(mailboxId);
+        await syncRuleToGraph(existing._id.toString(), mailbox.email, accessToken);
+      } catch (err) {
+        logger.warn('Failed to sync existing rule to Graph inbox', {
+          ruleId: existing._id?.toString(),
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       res.status(200).json({ rule: existing });
       return;
     }
@@ -181,6 +193,17 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
     undoable: false,
   });
 
+  // Sync to Graph inbox rule (server-side, so future emails are processed before reaching client)
+  try {
+    const accessToken = await getAccessTokenForMailbox(mailboxId);
+    await syncRuleToGraph(rule._id.toString(), mailbox.email, accessToken);
+  } catch (err) {
+    logger.warn('Failed to sync new rule to Graph inbox', {
+      ruleId: rule._id?.toString(),
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   res.status(201).json({ rule });
 });
 
@@ -201,6 +224,31 @@ rulesRouter.post('/from-pattern', async (req: Request, res: Response) => {
   const rule = await convertPatternToRule(patternId, new Types.ObjectId(userId));
 
   res.status(201).json({ rule });
+});
+
+/**
+ * POST /api/rules/sync-to-graph
+ *
+ * Bulk-sync all enabled rules for a mailbox to Graph inbox rules.
+ * Body: { mailboxId }
+ */
+rulesRouter.post('/sync-to-graph', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { mailboxId } = req.body as { mailboxId?: string };
+
+  if (!mailboxId) {
+    throw new ValidationError('mailboxId is required');
+  }
+
+  const mailbox = await Mailbox.findOne({ _id: mailboxId, userId });
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const accessToken = await getAccessTokenForMailbox(mailboxId);
+  const result = await syncAllRulesToGraph(userId, mailboxId, mailbox.email, accessToken);
+
+  res.json(result);
 });
 
 /**
@@ -325,6 +373,22 @@ rulesRouter.patch('/:id/toggle', async (req: Request, res: Response) => {
   rule.isEnabled = !rule.isEnabled;
   await rule.save();
 
+  // Sync enable/disable to Graph inbox rule
+  if (rule.mailboxId) {
+    try {
+      const mailbox = await Mailbox.findById(rule.mailboxId);
+      if (mailbox) {
+        const accessToken = await getAccessTokenForMailbox(rule.mailboxId.toString());
+        await syncRuleToGraph(rule._id.toString(), mailbox.email, accessToken);
+      }
+    } catch (err) {
+      logger.warn('Failed to sync toggle to Graph inbox rule', {
+        ruleId: rule._id?.toString(),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // Audit log
   await AuditLog.create({
     userId,
@@ -388,17 +452,13 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
     searchStr = `&$search="${encodeURIComponent(kql)}"`;
   }
 
-  // markRead-only: we need isRead field for client-side filtering
-  const isMarkReadOnly = rule.actions.length > 0 && rule.actions.every((a) => a.actionType === 'markRead');
-
   // Select fields needed for client-side filtering
   const selectParts = ['id', 'from'];
-  if (isMarkReadOnly) selectParts.push('isRead');
   if (conditions.subjectContains || conditions.bodyContains) selectParts.push('subject', 'bodyPreview');
   const selectFields = [...new Set(selectParts)].join(',');
 
   // Fetch all matching messages from the mailbox (paginated via @odata.nextLink)
-  const allMessages: { id: string; isRead?: boolean; from?: { emailAddress: { address?: string } }; subject?: string; bodyPreview?: string }[] = [];
+  const allMessages: { id: string; from?: { emailAddress: { address?: string } }; subject?: string; bodyPreview?: string }[] = [];
   const initialUrl = `/users/${email}/messages?$select=${selectFields}&$top=100${searchStr}`;
   logger.info('RunRule: fetching messages', { initialUrl, senders, email });
   let nextUrl: string | null = initialUrl;
@@ -427,11 +487,6 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
       const addr = msg.from?.emailAddress?.address?.toLowerCase() ?? '';
       return senderSet.has(addr);
     });
-  }
-
-  // markRead-only: skip already-read messages
-  if (isMarkReadOnly) {
-    filteredMessages = filteredMessages.filter((msg) => !msg.isRead);
   }
 
   // senderDomain: client-side endsWith
@@ -502,6 +557,11 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
                 body: JSON.stringify({ isRead: true }),
               },
             );
+            // Update our DB so inbox page reflects the change
+            await EmailEvent.updateMany(
+              { userId: new Types.ObjectId(userId), mailboxId: rule.mailboxId, messageId: msgId },
+              { $set: { isRead: true } },
+            );
             break;
           case 'archive':
             await graphFetch(
@@ -566,6 +626,32 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
     }
   }
 
+  // Bulk-update isRead in our DB for markRead rules — mark ALL emails from this sender
+  const hasMarkReadAction = rule.actions.some((a) => a.actionType === 'markRead');
+  if (hasMarkReadAction) {
+    const senderFilter: Record<string, unknown> = {
+      userId: new Types.ObjectId(userId),
+      mailboxId: rule.mailboxId,
+      isRead: false,
+    };
+    // Match by sender email(s) from rule conditions
+    if (senders.length === 1) {
+      senderFilter['sender.email'] = { $regex: `^${senders[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' };
+    } else if (senders.length > 1) {
+      senderFilter['sender.email'] = {
+        $in: senders.map((s) => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')),
+      };
+    }
+    try {
+      const result = await EmailEvent.updateMany(senderFilter, { $set: { isRead: true } });
+      logger.info('Bulk updated isRead in DB', { modified: result.modifiedCount });
+    } catch (err) {
+      logger.warn('Failed to bulk update isRead', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // Update rule stats
   rule.stats.totalExecutions += 1;
   rule.stats.lastExecutedAt = new Date();
@@ -594,6 +680,79 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/rules/delete-by-sender
+ *
+ * Delete all rules matching a sender email across all connected mailboxes.
+ * Body: { senderEmail: string }
+ */
+rulesRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { senderEmail } = req.body as { senderEmail?: string };
+
+  if (!senderEmail) throw new ValidationError('senderEmail is required');
+
+  const senderLower = senderEmail.toLowerCase();
+
+  // Find all rules for this user that match this sender
+  const rules = await Rule.find({ userId });
+  const matching = rules.filter((rule) => {
+    const cond = rule.conditions.senderEmail;
+    if (!cond) return false;
+    const emails = Array.isArray(cond) ? cond : [cond];
+    return emails.some((e) => e.toLowerCase() === senderLower);
+  });
+
+  let deleted = 0;
+  let failed = 0;
+
+  for (const rule of matching) {
+    try {
+      // Delete Graph inbox rule
+      if (rule.graphRuleId && rule.mailboxId) {
+        try {
+          const mailbox = await Mailbox.findById(rule.mailboxId);
+          if (mailbox) {
+            const accessToken = await getAccessTokenForMailbox(rule.mailboxId.toString());
+            await deleteGraphRule(rule._id.toString(), mailbox.email, accessToken);
+          }
+        } catch (err) {
+          logger.warn('Failed to delete Graph inbox rule during bulk sender delete', {
+            ruleId: rule._id?.toString(),
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      await Rule.deleteOne({ _id: rule._id });
+
+      await AuditLog.create({
+        userId,
+        mailboxId: rule.mailboxId,
+        action: 'rule_deleted',
+        targetType: 'rule',
+        targetId: rule._id?.toString(),
+        details: { name: rule.name, conditions: rule.conditions, actions: rule.actions },
+        undoable: false,
+      });
+
+      deleted++;
+    } catch {
+      failed++;
+    }
+  }
+
+  logger.info('Deleted rules by sender', {
+    userId,
+    senderEmail: senderLower,
+    deleted,
+    failed,
+    total: matching.length,
+  });
+
+  res.json({ deleted, failed, total: matching.length });
+});
+
+/**
  * DELETE /api/rules/:id
  *
  * Delete a rule.
@@ -614,6 +773,23 @@ rulesRouter.delete('/:id', async (req: Request, res: Response) => {
     priority: rule.priority,
     mailboxId: rule.mailboxId,
   };
+
+  // Delete the Graph inbox rule first
+  if (rule.graphRuleId && rule.mailboxId) {
+    try {
+      const mailbox = await Mailbox.findById(rule.mailboxId);
+      if (mailbox) {
+        const accessToken = await getAccessTokenForMailbox(rule.mailboxId.toString());
+        await deleteGraphRule(rule._id.toString(), mailbox.email, accessToken);
+      }
+    } catch (err) {
+      logger.warn('Failed to delete Graph inbox rule', {
+        ruleId: rule._id?.toString(),
+        graphRuleId: rule.graphRuleId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   await Rule.deleteOne({ _id: rule._id });
 

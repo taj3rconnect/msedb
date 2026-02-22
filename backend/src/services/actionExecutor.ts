@@ -2,6 +2,7 @@ import type { Types } from 'mongoose';
 import { graphFetch, GraphApiError } from './graphClient.js';
 import { createStagedEmail, ensureStagingFolder } from './stagingManager.js';
 import { Rule, type IRuleAction } from '../models/Rule.js';
+import { EmailEvent } from '../models/EmailEvent.js';
 import { AuditLog } from '../models/AuditLog.js';
 import logger from '../config/logger.js';
 
@@ -121,6 +122,11 @@ export async function executeActions(params: {
               method: 'PATCH',
               body: JSON.stringify({ isRead: true }),
             },
+          );
+          // Update our DB so the inbox page reflects the change
+          await EmailEvent.updateMany(
+            { userId, mailboxId, messageId },
+            { $set: { isRead: true } },
           );
           executedActions.push('markRead');
           break;

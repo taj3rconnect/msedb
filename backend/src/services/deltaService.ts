@@ -175,6 +175,20 @@ export async function runDeltaSync(
         } else {
           counters.skipped++;
         }
+
+        // Sync isRead from Graph to DB for existing events
+        // (handles emails read in Outlook that we already have)
+        if (msg.isRead !== undefined) {
+          await EmailEvent.updateMany(
+            {
+              messageId: msg.id,
+              userId: new Types.ObjectId(userId),
+              mailboxId: new Types.ObjectId(mailboxId),
+              isRead: { $ne: msg.isRead },
+            },
+            { $set: { isRead: msg.isRead } },
+          );
+        }
       }
     }
 

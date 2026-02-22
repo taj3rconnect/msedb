@@ -354,6 +354,12 @@ async function handleUpdated(
 
     await saveEmailEvent(readEvent);
     eventCreated = true;
+
+    // Update isRead on ALL events for this message so inbox page reflects the change
+    await EmailEvent.updateMany(
+      { messageId, userId, mailboxId },
+      { $set: { isRead: true } },
+    );
   }
 
   // Detect flag change: flag status changed to 'flagged'

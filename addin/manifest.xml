@@ -11,10 +11,10 @@
   <ProviderName>MSEDB</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="MSEDB Email Manager" />
-  <Description DefaultValue="Manage email whitelist and blacklist rules from Outlook" />
-  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
-  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-80.png" />
-  <SupportUrl DefaultValue="https://msedb.yourdomain.com/help" />
+  <Description DefaultValue="Always Delete, Always Mark Read, or Whitelist senders and domains" />
+  <IconUrl DefaultValue="https://msedb.aptask.com/addin/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://msedb.aptask.com/addin/assets/icon-80.png" />
+  <SupportUrl DefaultValue="https://msedb.aptask.com" />
 
   <Hosts>
     <Host Name="Mailbox" />
@@ -29,7 +29,7 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://localhost:3000/taskpane.html" />
+        <SourceLocation DefaultValue="https://msedb.aptask.com/addin/taskpane.html" />
         <RequestedHeight>250</RequestedHeight>
       </DesktopSettings>
     </Form>
@@ -83,32 +83,23 @@
 
       <Resources>
         <bt:Images>
-          <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png" />
-          <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3000/assets/icon-32.png" />
-          <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3000/assets/icon-80.png" />
+          <bt:Image id="Icon.16x16" DefaultValue="https://msedb.aptask.com/addin/assets/icon-16.png" />
+          <bt:Image id="Icon.32x32" DefaultValue="https://msedb.aptask.com/addin/assets/icon-32.png" />
+          <bt:Image id="Icon.80x80" DefaultValue="https://msedb.aptask.com/addin/assets/icon-80.png" />
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="Commands.Url" DefaultValue="https://localhost:3000/commands.html" />
-          <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html" />
+          <bt:Url id="Commands.Url" DefaultValue="https://msedb.aptask.com/addin/commands.html" />
+          <bt:Url id="Taskpane.Url" DefaultValue="https://msedb.aptask.com/addin/taskpane.html" />
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="GroupLabel" DefaultValue="MSEDB" />
           <bt:String id="TaskpaneLabel" DefaultValue="Email Manager" />
         </bt:ShortStrings>
         <bt:LongStrings>
-          <bt:String id="TaskpaneTip" DefaultValue="Open MSEDB to whitelist or blacklist this sender" />
+          <bt:String id="TaskpaneTip" DefaultValue="Always Delete, Mark Read, or Whitelist this sender" />
         </bt:LongStrings>
       </Resources>
 
-      <!-- Replace YOUR_AZURE_AD_CLIENT_ID with your actual Azure AD app registration client ID -->
-      <WebApplicationInfo>
-        <Id>YOUR_AZURE_AD_CLIENT_ID</Id>
-        <Resource>api://localhost:3000/YOUR_AZURE_AD_CLIENT_ID</Resource>
-        <Scopes>
-          <Scope>openid</Scope>
-          <Scope>profile</Scope>
-        </Scopes>
-      </WebApplicationInfo>
     </VersionOverrides>
   </VersionOverrides>
 </OfficeApp>

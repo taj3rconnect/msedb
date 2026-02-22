@@ -494,6 +494,150 @@ mailboxRouter.post('/:id/empty-deleted', async (req: Request, res: Response) => 
   res.json({ deleted, failed });
 });
 
+// ---- Fetch individual message (body) ----
+
+/**
+ * GET /api/mailboxes/:id/messages/:messageId
+ *
+ * Fetches an individual message from Graph API including its body content.
+ */
+mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const response = await graphFetch(
+    `/users/${mailbox.email}/messages/${req.params.messageId}?$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,isRead,importance,hasAttachments,categories,flag`,
+    accessToken,
+  );
+
+  const message = (await response.json()) as {
+    id: string;
+    subject?: string;
+    body?: { contentType: string; content: string };
+    bodyPreview?: string;
+    from?: { emailAddress: { name?: string; address?: string } };
+    toRecipients?: { emailAddress: { name?: string; address?: string } }[];
+    ccRecipients?: { emailAddress: { name?: string; address?: string } }[];
+    receivedDateTime?: string;
+    isRead?: boolean;
+    importance?: string;
+    hasAttachments?: boolean;
+    categories?: string[];
+  };
+
+  res.json({ message });
+});
+
+// ---- Reply & Forward ----
+
+/**
+ * POST /api/mailboxes/:id/reply
+ *
+ * Send a reply to a message using Graph API one-step reply.
+ * Body: { messageId, body, contentType? }
+ */
+mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
+  const { messageId, body, contentType } = req.body as {
+    messageId?: string;
+    body?: string;
+    contentType?: string;
+  };
+
+  if (!messageId) throw new ValidationError('messageId is required');
+  if (!body || !body.trim()) throw new ValidationError('body is required');
+
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+
+  await graphFetch(
+    `/users/${mailbox.email}/messages/${messageId}/reply`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        message: {
+          body: {
+            contentType: contentType || 'text',
+            content: body.trim(),
+          },
+        },
+        comment: body.trim(),
+      }),
+    },
+  );
+
+  logger.info('Reply sent', {
+    mailboxId: req.params.id,
+    messageId,
+    userId: req.user!.userId,
+  });
+
+  res.json({ success: true });
+});
+
+/**
+ * POST /api/mailboxes/:id/forward
+ *
+ * Forward a message using Graph API one-step forward.
+ * Body: { messageId, toRecipients: [{email, name?}], body, contentType? }
+ */
+mailboxRouter.post('/:id/forward', async (req: Request, res: Response) => {
+  const { messageId, toRecipients, body, contentType } = req.body as {
+    messageId?: string;
+    toRecipients?: { email: string; name?: string }[];
+    body?: string;
+    contentType?: string;
+  };
+
+  if (!messageId) throw new ValidationError('messageId is required');
+  if (!toRecipients || !Array.isArray(toRecipients) || toRecipients.length === 0) {
+    throw new ValidationError('toRecipients is required and must be a non-empty array');
+  }
+  if (!body || !body.trim()) throw new ValidationError('body is required');
+
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+
+  await graphFetch(
+    `/users/${mailbox.email}/messages/${messageId}/forward`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        toRecipients: toRecipients.map((r) => ({
+          emailAddress: { address: r.email, name: r.name || r.email },
+        })),
+        comment: body.trim(),
+      }),
+    },
+  );
+
+  logger.info('Message forwarded', {
+    mailboxId: req.params.id,
+    messageId,
+    toRecipients: toRecipients.map((r) => r.email),
+    userId: req.user!.userId,
+  });
+
+  res.json({ success: true });
+});
+
 // ---- Per-mailbox whitelist endpoints ----
 
 /**

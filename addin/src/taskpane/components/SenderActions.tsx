@@ -1,15 +1,24 @@
 import React from 'react';
-import { ShieldCheck, Trash2 } from 'lucide-react';
-import type { SenderInfo, WhitelistAction, ActionScope } from '../../types/index';
+import { Ban, MailOpen, ShieldCheck } from 'lucide-react';
+import type { SenderInfo } from '../../types/index';
 
 interface SenderActionsProps {
   sender: SenderInfo;
-  onAction: (action: WhitelistAction, scope: ActionScope) => void;
+  onAlwaysDelete: (email: string) => void;
+  onAlwaysMarkRead: (email: string) => void;
+  onWhitelist: (email: string) => void;
   loading: boolean;
   disabled: boolean;
 }
 
-export default function SenderActions({ sender, onAction, loading, disabled }: SenderActionsProps) {
+export default function SenderActions({
+  sender,
+  onAlwaysDelete,
+  onAlwaysMarkRead,
+  onWhitelist,
+  loading,
+  disabled,
+}: SenderActionsProps) {
   const isDisabled = loading || disabled;
 
   return (
@@ -19,7 +28,27 @@ export default function SenderActions({ sender, onAction, loading, disabled }: S
         <p className="text-xs text-gray-500 truncate">{sender.email}</p>
       </div>
       <button
-        onClick={() => onAction('whitelist', 'sender')}
+        onClick={() => onAlwaysDelete(sender.email)}
+        disabled={isDisabled}
+        className={`w-full py-2 px-4 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 border-red-500 text-red-700 hover:bg-red-50 ${
+          isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+        }`}
+      >
+        <Ban className="w-4 h-4" />
+        Always Delete Sender
+      </button>
+      <button
+        onClick={() => onAlwaysMarkRead(sender.email)}
+        disabled={isDisabled}
+        className={`w-full py-2 px-4 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 border-blue-500 text-blue-700 hover:bg-blue-50 ${
+          isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+        }`}
+      >
+        <MailOpen className="w-4 h-4" />
+        Always Mark Read
+      </button>
+      <button
+        onClick={() => onWhitelist(sender.email)}
         disabled={isDisabled}
         className={`w-full py-2 px-4 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 border-green-500 text-green-700 hover:bg-green-50 ${
           isDisabled ? 'opacity-50 cursor-not-allowed' : ''
@@ -27,16 +56,6 @@ export default function SenderActions({ sender, onAction, loading, disabled }: S
       >
         <ShieldCheck className="w-4 h-4" />
         Never Delete Sender
-      </button>
-      <button
-        onClick={() => onAction('blacklist', 'sender')}
-        disabled={isDisabled}
-        className={`w-full py-2 px-4 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 border-red-500 text-red-700 hover:bg-red-50 ${
-          isDisabled ? 'opacity-50 cursor-not-allowed' : ''
-        }`}
-      >
-        <Trash2 className="w-4 h-4" />
-        Always Delete Sender
       </button>
     </div>
   );

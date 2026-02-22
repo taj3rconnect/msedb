@@ -1,5 +1,5 @@
 import { getAccessToken } from '../auth/authHelper.js';
-import type { MailboxInfo } from '../types/index.js';
+import type { MailboxInfo, CreateRuleResponse, RunRuleResult } from '../types/index.js';
 
 /* Webpack DefinePlugin global */
 declare const BACKEND_URL: string;
@@ -7,11 +7,6 @@ declare const BACKEND_URL: string;
 /**
  * Make an authenticated API request to the MSEDB backend.
  * Automatically acquires and attaches a Bearer token.
- *
- * @param path - API path (e.g., '/auth/me', '/api/rules')
- * @param options - Additional fetch options
- * @returns Parsed JSON response
- * @throws Error if request fails or response is not ok
  */
 export async function apiRequest<T>(
   path: string,
@@ -71,16 +66,27 @@ export async function updateWhitelist(
 }
 
 /**
- * Create a new automation rule.
+ * Create a new automation rule. Returns the created rule with its _id.
  */
 export async function createRule(data: {
   mailboxId: string;
   name: string;
   conditions: Record<string, unknown>;
   actions: Array<{ actionType: string }>;
-}): Promise<void> {
-  await apiRequest('/api/rules', {
+  skipStaging?: boolean;
+}): Promise<CreateRuleResponse> {
+  return apiRequest<CreateRuleResponse>('/api/rules', {
     method: 'POST',
     body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Run a rule against the entire mailbox now.
+ * Returns stats: matched, applied, failed.
+ */
+export async function runRule(ruleId: string): Promise<RunRuleResult> {
+  return apiRequest<RunRuleResult>(`/api/rules/${ruleId}/run`, {
+    method: 'POST',
   });
 }

@@ -83,6 +83,71 @@ export async function emptyDeletedItems(
   );
 }
 
+/**
+ * Trigger an immediate delta sync to pull recent emails from Microsoft Graph.
+ */
+export async function triggerSync(): Promise<{ queued: boolean; jobId: string }> {
+  return apiFetch<{ queued: boolean; jobId: string }>('/admin/sync-now', {
+    method: 'POST',
+  });
+}
+
+export interface MessageBody {
+  id: string;
+  subject?: string;
+  body?: { contentType: string; content: string };
+  bodyPreview?: string;
+  from?: { emailAddress: { name?: string; address?: string } };
+  toRecipients?: { emailAddress: { name?: string; address?: string } }[];
+  ccRecipients?: { emailAddress: { name?: string; address?: string } }[];
+  receivedDateTime?: string;
+  isRead?: boolean;
+  importance?: string;
+  hasAttachments?: boolean;
+  categories?: string[];
+}
+
+/**
+ * Fetch a single message including its body from Graph API.
+ */
+export async function fetchMessageBody(
+  mailboxId: string,
+  messageId: string,
+): Promise<{ message: MessageBody }> {
+  return apiFetch<{ message: MessageBody }>(
+    `/mailboxes/${mailboxId}/messages/${messageId}`,
+  );
+}
+
+/**
+ * Reply to a message via Graph API.
+ */
+export async function replyToMessage(
+  mailboxId: string,
+  messageId: string,
+  body: string,
+): Promise<void> {
+  await apiFetch(`/mailboxes/${mailboxId}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ messageId, body }),
+  });
+}
+
+/**
+ * Forward a message via Graph API.
+ */
+export async function forwardMessage(
+  mailboxId: string,
+  messageId: string,
+  toRecipients: Array<{ email: string; name?: string }>,
+  body: string,
+): Promise<void> {
+  await apiFetch(`/mailboxes/${mailboxId}/forward`, {
+    method: 'POST',
+    body: JSON.stringify({ messageId, toRecipients, body }),
+  });
+}
+
 export async function applyActionsToMessages(
   mailboxId: string,
   messageIds: string[],

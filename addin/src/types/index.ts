@@ -19,3 +19,13 @@ export interface ActionResult {
   success: boolean;
   message: string;
 }
+
+export interface CreateRuleResponse {
+  rule: { _id: string };
+}
+
+export interface RunRuleResult {
+  matched: number;
+  applied: number;
+  failed: number;
+}

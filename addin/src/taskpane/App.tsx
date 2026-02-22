@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Shield } from 'lucide-react';
 import { checkNaaSupport, getAccessToken } from '../auth/authHelper';
-import { getMailboxes, getWhitelist, updateWhitelist, createRule } from '../api/backendClient';
-import type { SenderInfo, WhitelistAction, ActionScope } from '../types/index';
+import { getMailboxes, getWhitelist, updateWhitelist, createRule, runRule } from '../api/backendClient';
+import type { SenderInfo, MailboxInfo } from '../types/index';
 import SenderActions from './components/SenderActions';
 import DomainActions from './components/DomainActions';
 import StatusBanner from './components/StatusBanner';
@@ -17,14 +17,14 @@ interface StatusState {
 
 export default function App() {
   const [sender, setSender] = useState<SenderInfo | null>(null);
-  const [mailboxId, setMailboxId] = useState<string | null>(null);
+  const [allMailboxes, setAllMailboxes] = useState<MailboxInfo[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusState | null>(null);
   const [loading, setLoading] = useState(false);
   const [isComposeView, setIsComposeView] = useState(false);
 
-  const mailboxIdRef = useRef<string | null>(null);
+  const mailboxesResolved = useRef(false);
 
   /**
    * Read sender info from the currently selected Outlook item.
@@ -39,7 +39,6 @@ export default function App() {
         return;
       }
 
-      // Check if this is a compose view (item.from is a method in compose, object in read)
       if (typeof item.from === 'function' || !item.from) {
         setSender(null);
         setIsComposeView(true);
@@ -60,8 +59,7 @@ export default function App() {
   }, []);
 
   /**
-   * Authenticate and resolve MSEDB mailbox.
-   * Mailbox resolution only happens once; result is cached.
+   * Authenticate and resolve ALL connected mailboxes.
    */
   const authenticateAndResolve = useCallback(async () => {
     setAuthError(null);
@@ -79,42 +77,27 @@ export default function App() {
       return;
     }
 
-    // Only resolve mailbox once
-    if (mailboxIdRef.current) {
-      setMailboxId(mailboxIdRef.current);
-      return;
-    }
+    if (mailboxesResolved.current) return;
 
     try {
       const mailboxes = await getMailboxes();
-      const userEmail = Office.context.mailbox.userProfile.emailAddress.toLowerCase();
-      const match = mailboxes.find(
-        (mb) => mb.email.toLowerCase() === userEmail
-      );
+      const connected = mailboxes.filter((mb) => mb.isConnected);
+      setAllMailboxes(connected);
+      mailboxesResolved.current = true;
 
-      if (match) {
-        mailboxIdRef.current = match.id;
-        setMailboxId(match.id);
-      } else {
-        setAuthError(`No matching mailbox found in MSEDB for ${userEmail}`);
+      if (connected.length === 0) {
+        setAuthError('No connected mailboxes found in MSEDB');
       }
     } catch (err) {
-      setAuthError(`Failed to resolve mailbox: ${err instanceof Error ? err.message : String(err)}`);
+      setAuthError(`Failed to resolve mailboxes: ${err instanceof Error ? err.message : String(err)}`);
     }
   }, []);
 
-  /**
-   * Initialize: read sender info, authenticate, and resolve mailbox.
-   */
   useEffect(() => {
     readSenderInfo();
     authenticateAndResolve();
   }, [readSenderInfo, authenticateAndResolve]);
 
-  /**
-   * Register ItemChanged handler so the taskpane updates when the user selects
-   * a different email in Outlook.
-   */
   useEffect(() => {
     const onItemChanged = () => {
       readSenderInfo();
@@ -134,58 +117,203 @@ export default function App() {
   }, [readSenderInfo]);
 
   /**
-   * Handle whitelist/blacklist actions for sender or domain.
+   * Create rule + run it across ALL connected mailboxes.
    */
-  const handleAction = useCallback(
-    async (action: WhitelistAction, scope: ActionScope) => {
-      if (!sender || !mailboxId) return;
+  const createAndRunInAllMailboxes = useCallback(
+    async (
+      name: string,
+      conditions: Record<string, unknown>,
+      actions: Array<{ actionType: string }>,
+    ) => {
+      const results = await Promise.allSettled(
+        allMailboxes.map(async (mb) => {
+          const { rule } = await createRule({
+            mailboxId: mb.id,
+            name,
+            conditions,
+            actions,
+            skipStaging: true,
+          });
+          const result = await runRule(rule._id);
+          return result;
+        }),
+      );
 
+      let totalApplied = 0;
+      let mailboxCount = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          totalApplied += r.value.applied;
+          mailboxCount++;
+        }
+      }
+
+      return { totalApplied, mailboxCount };
+    },
+    [allMailboxes]
+  );
+
+  /**
+   * Always Delete — by sender email
+   */
+  const handleAlwaysDeleteSender = useCallback(
+    async (email: string) => {
       setLoading(true);
       setStatus(null);
-
-      const value = scope === 'sender' ? sender.email : sender.domain;
-
       try {
-        if (action === 'whitelist') {
-          const current = await getWhitelist(mailboxId);
-          const key = scope === 'sender' ? 'senders' : 'domains';
-          const existing = current[key] || [];
-          const updatedList = [...new Set([...existing, value])];
-          await updateWhitelist(mailboxId, { [key]: updatedList });
-          setStatus({
-            type: 'success',
-            message: `Added ${value} to whitelist (never delete)`,
-          });
-        } else {
-          await createRule({
-            mailboxId,
-            name: `Always delete: ${value}`,
-            conditions:
-              scope === 'sender'
-                ? { senderEmail: value }
-                : { senderDomain: value },
-            actions: [{ actionType: 'delete' }],
-          });
-          setStatus({
-            type: 'success',
-            message: `Created delete rule for ${value}`,
-          });
-        }
-      } catch (err) {
+        const { totalApplied, mailboxCount } = await createAndRunInAllMailboxes(
+          email,
+          { senderEmail: email },
+          [{ actionType: 'delete' }],
+        );
+        const mbLabel = mailboxCount > 1 ? ` across ${mailboxCount} mailboxes` : '';
         setStatus({
-          type: 'error',
-          message: err instanceof Error ? err.message : String(err),
+          type: 'success',
+          message: `Rule created for ${email}${mbLabel} — ${totalApplied} emails deleted`,
         });
+      } catch (err) {
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : String(err) });
       } finally {
         setLoading(false);
       }
     },
-    [sender, mailboxId]
+    [createAndRunInAllMailboxes]
+  );
+
+  /**
+   * Always Mark Read — by sender email
+   */
+  const handleAlwaysMarkReadSender = useCallback(
+    async (email: string) => {
+      setLoading(true);
+      setStatus(null);
+      try {
+        const { totalApplied, mailboxCount } = await createAndRunInAllMailboxes(
+          email,
+          { senderEmail: email },
+          [{ actionType: 'markRead' }],
+        );
+        const mbLabel = mailboxCount > 1 ? ` across ${mailboxCount} mailboxes` : '';
+        setStatus({
+          type: 'success',
+          message: `Rule created for ${email}${mbLabel} — ${totalApplied} emails marked read`,
+        });
+      } catch (err) {
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [createAndRunInAllMailboxes]
+  );
+
+  /**
+   * Whitelist sender — add to whitelist on all mailboxes
+   */
+  const handleWhitelistSender = useCallback(
+    async (email: string) => {
+      setLoading(true);
+      setStatus(null);
+      try {
+        for (const mb of allMailboxes) {
+          const current = await getWhitelist(mb.id);
+          const existing = current.senders || [];
+          const updated = [...new Set([...existing, email])];
+          await updateWhitelist(mb.id, { senders: updated });
+        }
+        setStatus({ type: 'success', message: `Added ${email} to whitelist` });
+      } catch (err) {
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [allMailboxes]
+  );
+
+  /**
+   * Always Delete — by domain
+   */
+  const handleAlwaysDeleteDomain = useCallback(
+    async (domain: string) => {
+      setLoading(true);
+      setStatus(null);
+      try {
+        const { totalApplied, mailboxCount } = await createAndRunInAllMailboxes(
+          `Always delete @${domain}`,
+          { senderDomain: domain },
+          [{ actionType: 'delete' }],
+        );
+        const mbLabel = mailboxCount > 1 ? ` across ${mailboxCount} mailboxes` : '';
+        setStatus({
+          type: 'success',
+          message: `Rule created for @${domain}${mbLabel} — ${totalApplied} emails deleted`,
+        });
+      } catch (err) {
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [createAndRunInAllMailboxes]
+  );
+
+  /**
+   * Always Mark Read — by domain
+   */
+  const handleAlwaysMarkReadDomain = useCallback(
+    async (domain: string) => {
+      setLoading(true);
+      setStatus(null);
+      try {
+        const { totalApplied, mailboxCount } = await createAndRunInAllMailboxes(
+          `Always mark read @${domain}`,
+          { senderDomain: domain },
+          [{ actionType: 'markRead' }],
+        );
+        const mbLabel = mailboxCount > 1 ? ` across ${mailboxCount} mailboxes` : '';
+        setStatus({
+          type: 'success',
+          message: `Rule created for @${domain}${mbLabel} — ${totalApplied} emails marked read`,
+        });
+      } catch (err) {
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [createAndRunInAllMailboxes]
+  );
+
+  /**
+   * Whitelist domain
+   */
+  const handleWhitelistDomain = useCallback(
+    async (domain: string) => {
+      setLoading(true);
+      setStatus(null);
+      try {
+        for (const mb of allMailboxes) {
+          const current = await getWhitelist(mb.id);
+          const existing = current.domains || [];
+          const updated = [...new Set([...existing, domain])];
+          await updateWhitelist(mb.id, { domains: updated });
+        }
+        setStatus({ type: 'success', message: `Added @${domain} to whitelist` });
+      } catch (err) {
+        setStatus({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [allMailboxes]
   );
 
   const retryAuth = useCallback(() => {
     authenticateAndResolve();
   }, [authenticateAndResolve]);
+
+  const hasMailboxes = allMailboxes.length > 0;
 
   return (
     <div className="taskpane-container">
@@ -194,6 +322,11 @@ export default function App() {
         <h1 className="text-base font-semibold text-gray-900">
           MSEDB Email Manager
         </h1>
+        {hasMailboxes && (
+          <span className="ml-auto text-xs text-gray-400">
+            {allMailboxes.length} mailbox{allMailboxes.length !== 1 ? 'es' : ''}
+          </span>
+        )}
       </header>
 
       {authError && (
@@ -224,16 +357,20 @@ export default function App() {
 
           <SenderActions
             sender={sender}
-            onAction={handleAction}
+            onAlwaysDelete={handleAlwaysDeleteSender}
+            onAlwaysMarkRead={handleAlwaysMarkReadSender}
+            onWhitelist={handleWhitelistSender}
             loading={loading}
-            disabled={!mailboxId || !isAuthReady}
+            disabled={!hasMailboxes || !isAuthReady}
           />
 
           <DomainActions
             domain={sender.domain}
-            onAction={handleAction}
+            onAlwaysDelete={handleAlwaysDeleteDomain}
+            onAlwaysMarkRead={handleAlwaysMarkReadDomain}
+            onWhitelist={handleWhitelistDomain}
             loading={loading}
-            disabled={!mailboxId || !isAuthReady}
+            disabled={!hasMailboxes || !isAuthReady}
           />
         </div>
       )}

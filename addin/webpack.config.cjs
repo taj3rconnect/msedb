@@ -86,7 +86,7 @@ module.exports = async (_env, options) => {
       }),
       new DefinePlugin({
         BACKEND_URL: JSON.stringify(
-          process.env.MSEDB_BACKEND_URL || "http://172.16.219.222:8010"
+          process.env.MSEDB_BACKEND_URL || "https://msedb.aptask.com"
         ),
         AZURE_AD_CLIENT_ID: JSON.stringify(
           process.env.AZURE_AD_CLIENT_ID || "YOUR_CLIENT_ID"
@@ -95,7 +95,7 @@ module.exports = async (_env, options) => {
           process.env.AZURE_AD_TENANT_ID || "YOUR_TENANT_ID"
         ),
         ADDIN_DOMAIN: JSON.stringify(
-          process.env.ADDIN_DOMAIN || "localhost:3000"
+          process.env.ADDIN_DOMAIN || "msedb.aptask.com"
         ),
       }),
     ],

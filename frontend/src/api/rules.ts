@@ -150,3 +150,15 @@ export async function deleteRule(id: string): Promise<void> {
     method: 'DELETE',
   });
 }
+
+export async function deleteRulesBySender(
+  senderEmail: string,
+): Promise<{ deleted: number; failed: number; total: number }> {
+  return apiFetch<{ deleted: number; failed: number; total: number }>(
+    '/rules/delete-by-sender',
+    {
+      method: 'POST',
+      body: JSON.stringify({ senderEmail }),
+    },
+  );
+}

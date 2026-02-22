@@ -3,6 +3,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { Pattern } from '../models/Pattern.js';
+import { Rule } from '../models/Rule.js';
 
 const dashboardRouter = Router();
 
@@ -59,11 +60,31 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
   }
   const patternsPending = await Pattern.countDocuments(patternFilter);
 
+  // Aggregate rules fired (total emails processed by rules)
+  const ruleFilter: Record<string, unknown> = { userId };
+  if (mailboxId && typeof mailboxId === 'string') {
+    ruleFilter.mailboxId = mailboxId;
+  }
+  const ruleStatsAgg = await Rule.aggregate([
+    { $match: ruleFilter },
+    {
+      $group: {
+        _id: null,
+        totalFired: { $sum: '$stats.emailsProcessed' },
+        stagingCount: {
+          $sum: { $cond: [{ $eq: ['$status', 'staging'] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+  const rulesFired = ruleStatsAgg[0]?.totalFired ?? 0;
+  const stagingCount = ruleStatsAgg[0]?.stagingCount ?? 0;
+
   res.json({
     emailsProcessed,
-    rulesFired: 0,
+    rulesFired,
     patternsPending,
-    stagingCount: 0,
+    stagingCount,
     perMailbox,
   });
 });
