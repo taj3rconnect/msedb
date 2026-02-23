@@ -22,6 +22,7 @@ import {
   Star,
   Tag,
   Reply,
+  ReplyAll,
   Forward,
   Send,
 } from 'lucide-react';
@@ -32,7 +33,7 @@ import { fetchEvents } from '@/api/events';
 import type { EventItem } from '@/api/events';
 import { createRule, updateRule, fetchRules, runRule, deleteRulesBySender } from '@/api/rules';
 import type { RuleAction, RuleConditions } from '@/api/rules';
-import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, fetchMessageBody, replyToMessage, forwardMessage } from '@/api/mailboxes';
+import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, fetchMessageBody, replyToMessage, replyAllToMessage, forwardMessage } from '@/api/mailboxes';
 import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
 import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -1293,8 +1294,8 @@ function EmailPreviewPane({
     second: '2-digit',
   });
 
-  // Compose mode: reply, forward, or null
-  const [composeMode, setComposeMode] = useState<'reply' | 'forward' | null>(null);
+  // Compose mode: reply, replyAll, forward, or null
+  const [composeMode, setComposeMode] = useState<'reply' | 'replyAll' | 'forward' | null>(null);
   const [composeBody, setComposeBody] = useState('');
   const [forwardTo, setForwardTo] = useState('');
 
@@ -1315,6 +1316,19 @@ function EmailPreviewPane({
     },
     onError: (err: Error) => {
       toast.error(`Reply failed: ${err.message}`);
+    },
+  });
+
+  // Reply All mutation
+  const replyAllMutation = useMutation({
+    mutationFn: () => replyAllToMessage(mailboxId, event.messageId, composeBody),
+    onSuccess: () => {
+      toast.success('Reply-all sent');
+      setComposeMode(null);
+      setComposeBody('');
+    },
+    onError: (err: Error) => {
+      toast.error(`Reply-all failed: ${err.message}`);
     },
   });
 
@@ -1373,7 +1387,7 @@ function EmailPreviewPane({
     r.actions.some((a) => a.actionType === 'markRead'),
   );
 
-  const isSending = replyMutation.isPending || forwardMutation.isPending;
+  const isSending = replyMutation.isPending || replyAllMutation.isPending || forwardMutation.isPending;
 
   const containerClass = 'h-full border-0 shadow-none rounded-none';
 
@@ -1476,6 +1490,19 @@ function EmailPreviewPane({
           </Button>
           <Button
             size="sm"
+            variant={composeMode === 'replyAll' ? 'default' : 'outline'}
+            className="h-7 text-xs"
+            onClick={() => {
+              setComposeMode(composeMode === 'replyAll' ? null : 'replyAll');
+              setComposeBody('');
+              setForwardTo('');
+            }}
+          >
+            <ReplyAll className="mr-1.5 h-3 w-3" />
+            Reply All
+          </Button>
+          <Button
+            size="sm"
             variant={composeMode === 'forward' ? 'default' : 'outline'}
             className="h-7 text-xs"
             onClick={() => {
@@ -1523,12 +1550,12 @@ function EmailPreviewPane({
         {composeMode && (
           <div className="border rounded-md p-3 space-y-3 bg-muted/30">
             <div className="text-sm font-medium">
-              {composeMode === 'reply' ? 'Reply' : 'Forward'}
+              {composeMode === 'reply' ? 'Reply' : composeMode === 'replyAll' ? 'Reply All' : 'Forward'}
             </div>
 
-            {composeMode === 'reply' && (
+            {(composeMode === 'reply' || composeMode === 'replyAll') && (
               <div className="text-xs text-muted-foreground">
-                To: {event.sender.email || 'Unknown'}
+                To: {composeMode === 'replyAll' ? 'All recipients' : (event.sender.email || 'Unknown')}
               </div>
             )}
 
@@ -1542,7 +1569,7 @@ function EmailPreviewPane({
             )}
 
             <Textarea
-              placeholder={composeMode === 'reply' ? 'Write your reply...' : 'Add a message (optional)...'}
+              placeholder={composeMode === 'forward' ? 'Add a message (optional)...' : 'Write your reply...'}
               value={composeBody}
               onChange={(e) => setComposeBody(e.target.value)}
               rows={4}
@@ -1561,6 +1588,8 @@ function EmailPreviewPane({
                 onClick={() => {
                   if (composeMode === 'reply') {
                     replyMutation.mutate();
+                  } else if (composeMode === 'replyAll') {
+                    replyAllMutation.mutate();
                   } else {
                     forwardMutation.mutate();
                   }

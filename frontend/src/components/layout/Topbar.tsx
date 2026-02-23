@@ -1,5 +1,6 @@
 import { HelpCircle, LogOut } from 'lucide-react';
 import { useLocation, useParams, useNavigate } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -20,6 +21,7 @@ import {
 import { MailboxSelector } from '@/components/shared/MailboxSelector';
 import { KillSwitch } from '@/components/layout/KillSwitch';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { fetchMailboxCounts } from '@/api/events';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -44,6 +46,14 @@ export function Topbar() {
   const inboxFolder = useUiStore((s) => s.inboxFolder);
   const setInboxFolder = useUiStore((s) => s.setInboxFolder);
 
+  const { data: countsData } = useQuery({
+    queryKey: ['mailbox-counts'],
+    queryFn: fetchMailboxCounts,
+    enabled: isInboxPage && connectedMailboxes.length > 0,
+    refetchInterval: 60000,
+  });
+  const mailboxCounts = countsData?.counts ?? {};
+
   const initials = user?.displayName
     ? user.displayName
         .split(' ')
@@ -54,7 +64,7 @@ export function Topbar() {
     : user?.email?.charAt(0).toUpperCase() ?? '?';
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+    <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-4" />
 
@@ -65,20 +75,30 @@ export function Topbar() {
             {connectedMailboxes.length >= 2 && (
               <Badge
                 variant={activeMailboxId === null ? 'default' : 'outline'}
-                className="cursor-pointer text-xs px-2.5 py-0.5"
+                className="cursor-pointer text-xs px-2.5 py-1 h-auto"
                 onClick={() => navigate('/inbox')}
               >
-                Unified MB
+                <div className="flex flex-col items-start">
+                  <span>Unified MB</span>
+                  <span className="text-[10px] opacity-70 tabular-nums">
+                    {Object.values(mailboxCounts).reduce((a, b) => a + b, 0).toLocaleString()}
+                  </span>
+                </div>
               </Badge>
             )}
             {connectedMailboxes.map((mb) => (
               <Badge
                 key={mb.id}
                 variant={mb.id === activeMailboxId ? 'default' : 'outline'}
-                className="cursor-pointer text-xs px-2.5 py-0.5"
+                className="cursor-pointer text-xs px-2.5 py-1 h-auto"
                 onClick={() => navigate(`/inbox/${mb.id}`)}
               >
-                {mb.email}
+                <div className="flex flex-col items-start">
+                  <span>{mb.email}</span>
+                  <span className="text-[10px] opacity-70 tabular-nums">
+                    {(mailboxCounts[mb.id] ?? 0).toLocaleString()}
+                  </span>
+                </div>
               </Badge>
             ))}
           </div>

@@ -141,6 +141,20 @@ export async function replyToMessage(
 }
 
 /**
+ * Reply-all to a message via Graph API.
+ */
+export async function replyAllToMessage(
+  mailboxId: string,
+  messageId: string,
+  body: string,
+): Promise<void> {
+  await apiFetch(`/mailboxes/${mailboxId}/reply-all`, {
+    method: 'POST',
+    body: JSON.stringify({ messageId, body }),
+  });
+}
+
+/**
  * Forward a message via Graph API.
  */
 export async function forwardMessage(

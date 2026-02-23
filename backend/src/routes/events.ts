@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { Types } from 'mongoose';
 import { requireAuth } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
@@ -280,6 +281,27 @@ eventsRouter.get('/timeline', async (req: Request, res: Response) => {
   ]);
 
   res.json({ timeline, range });
+});
+
+/**
+ * GET /api/events/mailbox-counts
+ *
+ * Returns total indexed event counts grouped by mailboxId.
+ */
+eventsRouter.get('/mailbox-counts', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+
+  const counts = await EmailEvent.aggregate([
+    { $match: { userId: new Types.ObjectId(userId), eventType: 'arrived' } },
+    { $group: { _id: '$mailboxId', count: { $sum: 1 } } },
+  ]);
+
+  const result: Record<string, number> = {};
+  for (const c of counts) {
+    result[c._id.toString()] = c.count;
+  }
+
+  res.json({ counts: result });
 });
 
 export { eventsRouter };

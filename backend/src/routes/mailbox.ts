@@ -597,18 +597,56 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
     {
       method: 'POST',
       body: JSON.stringify({
-        message: {
-          body: {
-            contentType: contentType || 'text',
-            content: body.trim(),
-          },
-        },
         comment: body.trim(),
       }),
     },
   );
 
   logger.info('Reply sent', {
+    mailboxId: req.params.id,
+    messageId,
+    userId: req.user!.userId,
+  });
+
+  res.json({ success: true });
+});
+
+/**
+ * POST /api/mailboxes/:id/reply-all
+ *
+ * Send a reply-all to a message using Graph API one-step replyAll.
+ * Body: { messageId, body, contentType? }
+ */
+mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
+  const { messageId, body, contentType } = req.body as {
+    messageId?: string;
+    body?: string;
+    contentType?: string;
+  };
+
+  if (!messageId) throw new ValidationError('messageId is required');
+  if (!body || !body.trim()) throw new ValidationError('body is required');
+
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+
+  await graphFetch(
+    `/users/${mailbox.email}/messages/${messageId}/replyAll`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        comment: body.trim(),
+      }),
+    },
+  );
+
+  logger.info('Reply-all sent', {
     mailboxId: req.params.id,
     messageId,
     userId: req.user!.userId,

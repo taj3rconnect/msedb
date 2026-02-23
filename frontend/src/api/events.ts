@@ -117,3 +117,10 @@ export async function fetchEventTimeline(
   const qs = searchParams.toString();
   return apiFetch<TimelineResponse>(`/events/timeline${qs ? `?${qs}` : ''}`);
 }
+
+/**
+ * Fetch total indexed event counts grouped by mailboxId.
+ */
+export async function fetchMailboxCounts(): Promise<{ counts: Record<string, number> }> {
+  return apiFetch<{ counts: Record<string, number> }>('/events/mailbox-counts');
+}
