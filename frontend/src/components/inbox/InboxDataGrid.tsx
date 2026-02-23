@@ -235,7 +235,7 @@ export function InboxDataGrid({
       }),
       // Sender
       columnHelper.accessor(
-        (row) => row.sender.name || row.sender.email || '',
+        (row) => row.sender?.name || row.sender?.email || '',
         {
           id: 'sender',
           header: 'Sender',
@@ -274,7 +274,7 @@ export function InboxDataGrid({
                             e.stopPropagation();
                             onClearRules(event);
                           }}
-                          disabled={!event.sender.email}
+                          disabled={!event.sender?.email}
                         >
                           <CheckCircle className="h-3.5 w-3.5" />
                         </button>
@@ -305,7 +305,7 @@ export function InboxDataGrid({
                             e.stopPropagation();
                             onQuickDelete(event);
                           }}
-                          disabled={!event.sender.email}
+                          disabled={!event.sender?.email}
                         >
                           <Ban className="h-3.5 w-3.5" />
                         </button>
@@ -321,7 +321,7 @@ export function InboxDataGrid({
                             e.stopPropagation();
                             onQuickMarkRead(event);
                           }}
-                          disabled={!event.sender.email}
+                          disabled={!event.sender?.email}
                         >
                           <MailOpen className="h-3.5 w-3.5" />
                         </button>
@@ -347,9 +347,9 @@ export function InboxDataGrid({
                 )}
                 <div className="min-w-0">
                   <div className="font-medium truncate" dangerouslySetInnerHTML={{
-                    __html: highlightText(event.sender.name || event.sender.email || '', searchQuery),
+                    __html: highlightText(event.sender?.name || event.sender?.email || '', searchQuery),
                   }} />
-                  {event.sender.name && event.sender.email && (
+                  {event.sender?.name && event.sender?.email && (
                     <div className="text-xs text-muted-foreground truncate" dangerouslySetInnerHTML={{
                       __html: highlightText(event.sender.email, searchQuery),
                     }} />
