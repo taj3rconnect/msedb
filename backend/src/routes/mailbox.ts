@@ -405,6 +405,37 @@ mailboxRouter.post(
 );
 
 /**
+ * GET /api/mailboxes/deleted-count-all
+ *
+ * Returns the total number of messages in Deleted Items across all connected mailboxes.
+ */
+mailboxRouter.get('/deleted-count-all', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const mailboxes = await Mailbox.find({ userId, isConnected: true }).select('email').lean();
+
+  let total = 0;
+  const results = await Promise.allSettled(
+    mailboxes.map(async (mb) => {
+      const accessToken = await getAccessTokenForMailbox(mb._id.toString());
+      const response = await graphFetch(
+        `/users/${mb.email}/mailFolders/deleteditems?$select=totalItemCount`,
+        accessToken,
+      );
+      const data = (await response.json()) as { totalItemCount?: number };
+      return data.totalItemCount ?? 0;
+    }),
+  );
+
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      total += r.value;
+    }
+  }
+
+  res.json({ count: total });
+});
+
+/**
  * GET /api/mailboxes/:id/deleted-count
  *
  * Returns the number of messages in the Deleted Items folder.

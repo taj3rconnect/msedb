@@ -165,6 +165,8 @@ interface InboxDataGridProps {
   hideToolbar?: boolean;
   renderToolbar?: (toolbarNode: React.ReactNode) => void;
   searchQuery?: string;
+  isUnifiedMode?: boolean;
+  mailboxEmailMap?: Map<string, string>;
 }
 
 export function InboxDataGrid({
@@ -189,6 +191,8 @@ export function InboxDataGrid({
   toolbarSlot,
   hideToolbar,
   searchQuery = '',
+  isUnifiedMode = false,
+  mailboxEmailMap,
 }: InboxDataGridProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -201,6 +205,7 @@ export function InboxDataGrid({
   const defaultColumnOrder = [
     'select',
     'sender',
+    ...(isUnifiedMode ? ['mailbox'] : []),
     'subject',
     'time',
     'folder',
@@ -360,6 +365,30 @@ export function InboxDataGrid({
           },
         },
       ),
+      // Mailbox (unified mode only)
+      ...(isUnifiedMode ? [columnHelper.accessor(
+        (row) => mailboxEmailMap?.get(row.mailboxId) || row.mailboxId,
+        {
+          id: 'mailbox',
+          header: 'Mailbox',
+          size: 180,
+          filterFn: 'includesString',
+          cell: ({ getValue }) => {
+            const email = getValue();
+            const truncated = email.length > 20 ? email.slice(0, 20) + '...' : email;
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-sm text-muted-foreground truncate block max-w-[160px]">
+                    {truncated}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{email}</TooltipContent>
+              </Tooltip>
+            );
+          },
+        },
+      )] : []),
       // Subject
       columnHelper.accessor('subject', {
         id: 'subject',
@@ -479,7 +508,7 @@ export function InboxDataGrid({
         ),
       })] : []),
     ],
-    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onClearRules, onQuickDelete, onJustDelete, onQuickMarkRead, onUndelete, folderFilter],
+    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onClearRules, onQuickDelete, onJustDelete, onQuickMarkRead, onUndelete, folderFilter, isUnifiedMode, mailboxEmailMap],
   );
 
   const table = useReactTable({

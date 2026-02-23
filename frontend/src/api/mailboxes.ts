@@ -72,6 +72,13 @@ export async function fetchDeletedCount(
 }
 
 /**
+ * Get aggregated count of messages in Deleted Items across all connected mailboxes.
+ */
+export async function fetchDeletedCountAll(): Promise<{ count: number }> {
+  return apiFetch<{ count: number }>('/mailboxes/deleted-count-all');
+}
+
+/**
  * Permanently delete all messages in the Deleted Items folder.
  */
 export async function emptyDeletedItems(

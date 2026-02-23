@@ -95,38 +95,49 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
 
   // Filter by folder: supports 'inbox', 'deleted', or well-known folder names
   const folderParam = typeof folder === 'string' ? folder : (inboxOnly === 'true' ? 'inbox' : null);
-  if (folderParam && mailboxId && typeof mailboxId === 'string') {
-    const mb = await Mailbox.findById(mailboxId).select('email').lean();
-    if (mb?.email) {
-      const redis = getRedisClient();
-      const folderAliasMap: Record<string, string> = {
-        inbox: 'Inbox',
-        deleted: 'DeletedItems',
-        sent: 'SentItems',
-        drafts: 'Drafts',
-        junk: 'JunkEmail',
-        archive: 'Archive',
-      };
-      const wellKnownAlias = folderAliasMap[folderParam.toLowerCase()] || folderParam;
-      const cachedFolderId = await redis.get(`folder:${mb.email}:wk:${wellKnownAlias}`);
-      const displayNameMap: Record<string, string> = {
-        Inbox: 'Inbox',
-        DeletedItems: 'Deleted Items',
-        SentItems: 'Sent Items',
-        Drafts: 'Drafts',
-        JunkEmail: 'Junk Email',
-        Archive: 'Archive',
-      };
-      const displayName = displayNameMap[wellKnownAlias] || wellKnownAlias;
-      filter.$and = [
-        ...(filter.$and ? (filter.$and as Record<string, unknown>[]) : []),
-        { $or: [
-          ...(cachedFolderId ? [{ toFolder: cachedFolderId }] : []),
-          { toFolder: displayName },
-          { toFolder: wellKnownAlias },
-        ]},
-      ];
+  if (folderParam) {
+    const folderAliasMap: Record<string, string> = {
+      inbox: 'Inbox',
+      deleted: 'DeletedItems',
+      sent: 'SentItems',
+      drafts: 'Drafts',
+      junk: 'JunkEmail',
+      archive: 'Archive',
+    };
+    const wellKnownAlias = folderAliasMap[folderParam.toLowerCase()] || folderParam;
+    const displayNameMap: Record<string, string> = {
+      Inbox: 'Inbox',
+      DeletedItems: 'Deleted Items',
+      SentItems: 'Sent Items',
+      Drafts: 'Drafts',
+      JunkEmail: 'Junk Email',
+      Archive: 'Archive',
+    };
+    const displayName = displayNameMap[wellKnownAlias] || wellKnownAlias;
+
+    // Determine which mailboxes to resolve folder IDs for
+    const mailboxesToResolve = mailboxId && typeof mailboxId === 'string'
+      ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
+      : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
+
+    const redis = getRedisClient();
+    const folderOrConditions: Record<string, unknown>[] = [
+      { toFolder: displayName },
+      { toFolder: wellKnownAlias },
+    ];
+    for (const mb of mailboxesToResolve) {
+      if (mb.email) {
+        const cachedFolderId = await redis.get(`folder:${mb.email}:wk:${wellKnownAlias}`);
+        if (cachedFolderId) {
+          folderOrConditions.push({ toFolder: cachedFolderId });
+        }
+      }
     }
+
+    filter.$and = [
+      ...(filter.$and ? (filter.$and as Record<string, unknown>[]) : []),
+      { $or: folderOrConditions },
+    ];
   }
 
   // Parallel query + count
@@ -142,23 +153,43 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     EmailEvent.countDocuments(filter),
   ]);
 
-  // Resolve folder IDs to display names when filtered by mailbox
+  // Resolve folder IDs to display names
   let resolvedEvents = events;
-  if (mailboxId && typeof mailboxId === 'string') {
-    const mb = await Mailbox.findById(mailboxId).select('email').lean();
-    if (mb?.email) {
-      const folderIds = new Set<string>();
-      for (const e of events) {
-        if (e.fromFolder) folderIds.add(e.fromFolder);
-        if (e.toFolder) folderIds.add(e.toFolder);
+  {
+    // Group events by mailboxId so we resolve folders per-mailbox
+    const mbIds = new Set<string>();
+    for (const e of events) {
+      if (e.mailboxId) mbIds.add(e.mailboxId.toString());
+    }
+    if (mbIds.size > 0) {
+      const mbDocs = await Mailbox.find({ _id: { $in: [...mbIds] } }).select('email').lean();
+      const mbEmailMap = new Map<string, string>();
+      for (const mb of mbDocs) {
+        mbEmailMap.set(mb._id.toString(), mb.email);
       }
+
+      // Collect folder IDs per mailbox email
+      const perMailboxFolderIds = new Map<string, Set<string>>();
+      for (const e of events) {
+        const email = mbEmailMap.get(e.mailboxId?.toString());
+        if (!email) continue;
+        if (!perMailboxFolderIds.has(email)) perMailboxFolderIds.set(email, new Set());
+        const idSet = perMailboxFolderIds.get(email)!;
+        if (e.fromFolder) idSet.add(e.fromFolder);
+        if (e.toFolder) idSet.add(e.toFolder);
+      }
+
+      // Resolve all folder IDs to names
       const nameMap = new Map<string, string>();
       await Promise.all(
-        [...folderIds].map(async (id) => {
-          const name = await getFolderName(mb.email, id);
-          nameMap.set(id, name);
-        }),
+        [...perMailboxFolderIds.entries()].flatMap(([email, ids]) =>
+          [...ids].map(async (id) => {
+            const name = await getFolderName(email, id);
+            nameMap.set(id, name);
+          }),
+        ),
       );
+
       resolvedEvents = events.map((e) => ({
         ...e,
         fromFolder: e.fromFolder ? nameMap.get(e.fromFolder) ?? e.fromFolder : e.fromFolder,

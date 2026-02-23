@@ -40,7 +40,7 @@ export function Topbar() {
 
   const isInboxPage = location.pathname.startsWith('/inbox');
   const connectedMailboxes = mailboxes.filter((m) => m.isConnected);
-  const activeMailboxId = mailboxId || (connectedMailboxes.length > 0 ? connectedMailboxes[0].id : undefined);
+  const activeMailboxId = mailboxId || null;
   const inboxFolder = useUiStore((s) => s.inboxFolder);
   const setInboxFolder = useUiStore((s) => s.setInboxFolder);
 
@@ -62,6 +62,15 @@ export function Topbar() {
       {isInboxPage && connectedMailboxes.length > 0 && (
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
+            {connectedMailboxes.length >= 2 && (
+              <Badge
+                variant={activeMailboxId === null ? 'default' : 'outline'}
+                className="cursor-pointer text-xs px-2.5 py-0.5"
+                onClick={() => navigate('/inbox')}
+              >
+                Unified MB
+              </Badge>
+            )}
             {connectedMailboxes.map((mb) => (
               <Badge
                 key={mb.id}

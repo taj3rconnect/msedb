@@ -32,7 +32,7 @@ import { fetchEvents } from '@/api/events';
 import type { EventItem } from '@/api/events';
 import { createRule, updateRule, fetchRules, runRule, deleteRulesBySender } from '@/api/rules';
 import type { RuleAction, RuleConditions } from '@/api/rules';
-import { applyActionsToMessages, fetchDeletedCount, emptyDeletedItems, triggerSync, fetchMessageBody, replyToMessage, forwardMessage } from '@/api/mailboxes';
+import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, fetchMessageBody, replyToMessage, forwardMessage } from '@/api/mailboxes';
 import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
 import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -46,8 +46,9 @@ export function InboxPage() {
   const mailboxes = useAuthStore((s) => s.mailboxes);
   const connected = mailboxes.filter((m) => m.isConnected);
 
-  // Use URL param if provided, otherwise default to first connected mailbox
-  const activeMailboxId = urlMailboxId || (connected.length > 0 ? connected[0].id : undefined);
+  // No URL mailboxId = unified mode (show all mailboxes)
+  const isUnifiedMode = !urlMailboxId;
+  const activeMailboxId = urlMailboxId;
 
   if (connected.length === 0) {
     return (
@@ -62,7 +63,8 @@ export function InboxPage() {
     );
   }
 
-  if (!activeMailboxId) {
+  // Single mailbox mode requires a valid mailboxId
+  if (!isUnifiedMode && !activeMailboxId) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -70,7 +72,7 @@ export function InboxPage() {
     );
   }
 
-  return <InboxEmailList mailboxId={activeMailboxId} />;
+  return <InboxEmailList mailboxId={activeMailboxId} isUnifiedMode={isUnifiedMode} />;
 }
 
 interface ConfirmPayload {
@@ -85,11 +87,12 @@ interface ConfirmPayload {
   runNow?: boolean;
 }
 
-function InboxEmailList({ mailboxId }: { mailboxId: string }) {
+function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: string; isUnifiedMode?: boolean }) {
   const queryClient = useQueryClient();
   const mailboxes = useAuthStore((s) => s.mailboxes);
   const folderFilter = useUiStore((s) => s.inboxFolder);
   const setFolderFilter = useUiStore((s) => s.setInboxFolder);
+  const queryKeyId = mailboxId || 'unified';
 
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
@@ -140,11 +143,11 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
     if (!previewEvent || previewEvent.isRead) return;
 
     const timer = setTimeout(() => {
-      applyActionsToMessages(mailboxId, [previewEvent.messageId], [{ actionType: 'markRead' }])
+      applyActionsToMessages(previewEvent.mailboxId, [previewEvent.messageId], [{ actionType: 'markRead' }])
         .then(() => {
           // Update local cache to reflect read status
           queryClient.setQueriesData<typeof data>(
-            { queryKey: ['inbox-events', mailboxId] },
+            { queryKey: ['inbox-events', queryKeyId] },
             (old) => {
               if (!old) return old;
               return {
@@ -165,7 +168,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [previewEvent?._id, previewEvent?.isRead, mailboxId, queryClient]);
+  }, [previewEvent?._id, previewEvent?.isRead, previewEvent?.mailboxId, queryKeyId, queryClient]);
 
   // Debounce search input by 400ms
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -234,10 +237,10 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
   }, [dateFilter]);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['inbox-events', mailboxId, page, search, dateFilter, unreadOnly, folderFilter],
+    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, unreadOnly, folderFilter],
     queryFn: () =>
       fetchEvents({
-        mailboxId,
+        mailboxId: mailboxId || undefined,
         eventType: 'arrived',
         sortBy: 'timestamp',
         sortOrder: 'desc',
@@ -403,7 +406,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       const messageIds = dialogEvents.map((e) => e.messageId);
 
       confirmMutation.mutate({
-        mailboxId,
+        mailboxId: dialogEvents[0]?.mailboxId || mailboxId || '',
         actions,
         actionLabel,
         senderEmails,
@@ -414,7 +417,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
         runNow,
       });
     },
-    [mailboxId, dialogEvents, confirmMutation],
+    [mailboxId, dialogEvents, confirmMutation, queryKeyId],
   );
 
   // Derive sender emails and subjects for the dialog
@@ -494,7 +497,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       // Optimistically remove ALL emails from this sender across ALL cached pages
       const senderEmail = event.sender.email?.toLowerCase();
       queryClient.setQueriesData<typeof data>(
-        { queryKey: ['inbox-events', mailboxId] },
+        { queryKey: ['inbox-events', queryKeyId] },
         (old) => {
           if (!old) return old;
           const filtered = old.events.filter(
@@ -514,7 +517,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
         `Rule created for ${senderEmail}${mbLabel} — ${totalDeleted} ${totalDeleted === 1 ? 'email' : 'emails'} deleted`,
       );
       queryClient.invalidateQueries({ queryKey: ['rules'] });
-      queryClient.invalidateQueries({ queryKey: ['deleted-count', mailboxId] });
+      queryClient.invalidateQueries({ queryKey: ['deleted-count'] });
     },
     onError: (_err: Error) => {
       // Rule was still created (only runRule might have failed).
@@ -532,7 +535,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
   const justDeleteMutation = useMutation({
     mutationFn: async (event: EventItem) => {
       return applyActionsToMessages(
-        mailboxId,
+        event.mailboxId,
         [event.messageId],
         [{ actionType: 'delete' }],
       );
@@ -543,7 +546,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
     onSuccess: () => {
       toast.success('Email deleted');
       queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
-      queryClient.invalidateQueries({ queryKey: ['deleted-count', mailboxId] });
+      queryClient.invalidateQueries({ queryKey: ['deleted-count'] });
     },
     onError: (err: Error, event) => {
       toast.error(`Failed: ${err.message}`);
@@ -593,7 +596,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       // Optimistically mark ALL emails from this sender as read across ALL cached pages
       const senderEmail = event.sender.email?.toLowerCase();
       queryClient.setQueriesData<typeof data>(
-        { queryKey: ['inbox-events', mailboxId] },
+        { queryKey: ['inbox-events', queryKeyId] },
         (old) => {
           if (!old) return old;
           return {
@@ -653,7 +656,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       const senderEmail = event.sender.email!;
       // Move message back to Inbox and delete rules in parallel
       const [moveResult, rulesResult] = await Promise.all([
-        applyActionsToMessages(mailboxId, [event.messageId], [{ actionType: 'move', toFolder: 'Inbox' }]),
+        applyActionsToMessages(event.mailboxId, [event.messageId], [{ actionType: 'move', toFolder: 'Inbox' }]),
         deleteRulesBySender(senderEmail),
       ]);
       return { moveResult, rulesResult, senderEmail };
@@ -669,7 +672,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       toast.success(`${senderEmail} moved to Inbox${rulesMsg}`);
       queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
       queryClient.invalidateQueries({ queryKey: ['rules'] });
-      queryClient.invalidateQueries({ queryKey: ['deleted-count', mailboxId] });
+      queryClient.invalidateQueries({ queryKey: ['deleted-count'] });
     },
     onError: (err: Error, event) => {
       toast.error(`Failed to undelete: ${err.message}`);
@@ -693,7 +696,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       toast.success('Sync started — new emails will appear shortly');
       // Refetch inbox after a short delay to show new emails
       setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['inbox-events', mailboxId] });
+        queryClient.invalidateQueries({ queryKey: ['inbox-events', queryKeyId] });
       }, 3000);
     },
     onError: (err: Error) => {
@@ -703,24 +706,41 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
 
   // Deleted items count
   const { data: deletedData } = useQuery({
-    queryKey: ['deleted-count', mailboxId],
-    queryFn: () => fetchDeletedCount(mailboxId),
+    queryKey: ['deleted-count', queryKeyId],
+    queryFn: () => isUnifiedMode ? fetchDeletedCountAll() : fetchDeletedCount(mailboxId!),
     refetchInterval: 30000,
   });
   const deletedCount = deletedData?.count ?? 0;
 
   const emptyDeletedMutation = useMutation({
-    mutationFn: () => emptyDeletedItems(mailboxId),
+    mutationFn: async () => {
+      if (isUnifiedMode) {
+        // Empty deleted items in all connected mailboxes
+        const results = await Promise.allSettled(
+          connectedMailboxes.map((mb) => emptyDeletedItems(mb.id)),
+        );
+        let totalDeleted = 0;
+        let totalFailed = 0;
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            totalDeleted += r.value.deleted;
+            totalFailed += r.value.failed;
+          }
+        }
+        return { deleted: totalDeleted, failed: totalFailed };
+      }
+      return emptyDeletedItems(mailboxId!);
+    },
     onSuccess: ({ deleted, failed }) => {
       const msg = failed > 0
         ? `${deleted} deleted, ${failed} failed`
         : `${deleted} ${deleted === 1 ? 'item' : 'items'} permanently deleted`;
       toast.success(msg);
-      queryClient.refetchQueries({ queryKey: ['deleted-count', mailboxId] });
+      queryClient.refetchQueries({ queryKey: ['deleted-count'] });
     },
     onError: (err: Error) => {
       toast.error(`Failed to empty deleted items: ${err.message}`);
-      queryClient.refetchQueries({ queryKey: ['deleted-count', mailboxId] });
+      queryClient.refetchQueries({ queryKey: ['deleted-count'] });
     },
   });
 
@@ -921,8 +941,8 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
             setPage(1);
             setDeletedEventIds(new Set());
             setSelectedIds(new Set());
-            queryClient.refetchQueries({ queryKey: ['inbox-events', mailboxId] });
-            queryClient.refetchQueries({ queryKey: ['deleted-count', mailboxId] });
+            queryClient.refetchQueries({ queryKey: ['inbox-events', queryKeyId] });
+            queryClient.refetchQueries({ queryKey: ['deleted-count', queryKeyId] });
           }}
           title="Reset filters & refresh"
         >
@@ -1092,6 +1112,8 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
                 focusedEventId={focusedIndex >= 0 && focusedIndex < visibleEvents.length ? visibleEvents[focusedIndex]._id : undefined}
                 folderFilter={folderFilter}
                 searchQuery={search}
+                isUnifiedMode={isUnifiedMode}
+                mailboxEmailMap={isUnifiedMode ? new Map(connectedMailboxes.map((mb) => [mb.id, mb.email])) : undefined}
                 toolbarSlot={
                   <>
                     {/* Deleted items inline */}
@@ -1197,7 +1219,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
                 <div className="h-full overflow-auto">
                   <EmailPreviewPane
                     event={previewEvent}
-                    mailboxId={mailboxId}
+                    mailboxId={previewEvent.mailboxId}
                     position={previewPosition}
                     onClose={() => setPreviewEvent(null)}
                     onQuickDelete={handleQuickDelete}
@@ -1217,7 +1239,7 @@ function InboxEmailList({ mailboxId }: { mailboxId: string }) {
       <RuleActionsDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        mailboxId={mailboxId}
+        mailboxId={dialogEvents[0]?.mailboxId || mailboxId || ''}
         senderEmails={dialogSenderEmails}
         subjects={dialogSubjects}
         isPending={confirmMutation.isPending}
