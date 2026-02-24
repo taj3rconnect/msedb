@@ -25,6 +25,7 @@ import {
   ReplyAll,
   Forward,
   Send,
+  MailCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
@@ -41,6 +42,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export function InboxPage() {
   const { mailboxId: urlMailboxId } = useParams<{ mailboxId: string }>();
@@ -543,6 +549,8 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     },
     onMutate: (event) => {
       setDeletedEventIds((prev) => new Set(prev).add(event._id));
+      // Close preview if this is the previewed message
+      setPreviewEvent((prev) => (prev?._id === event._id ? null : prev));
     },
     onSuccess: () => {
       toast.success('Email deleted');
@@ -562,6 +570,46 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const handleJustDelete = useCallback((event: EventItem) => {
     justDeleteMutation.mutate(event);
   }, [justDeleteMutation]);
+
+  // Just mark this email as read (no rule creation)
+  const markReadMutation = useMutation({
+    mutationFn: async (event: EventItem) => {
+      return applyActionsToMessages(
+        event.mailboxId,
+        [event.messageId],
+        [{ actionType: 'markRead' }],
+      );
+    },
+    onMutate: (event) => {
+      // Optimistically mark as read in cache
+      queryClient.setQueriesData<typeof data>(
+        { queryKey: ['inbox-events', queryKeyId] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            events: old.events.map((e) =>
+              e._id === event._id ? { ...e, isRead: true } : e,
+            ),
+          };
+        },
+      );
+      setPreviewEvent((prev) =>
+        prev?._id === event._id ? { ...prev, isRead: true } : prev,
+      );
+    },
+    onSuccess: () => {
+      toast.success('Marked as read');
+    },
+    onError: (err: Error) => {
+      toast.error(`Failed: ${err.message}`);
+      queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
+    },
+  });
+
+  const handleMarkRead = useCallback((event: EventItem) => {
+    markReadMutation.mutate(event);
+  }, [markReadMutation]);
 
   // Quick "Always Mark Read" — create rule in ALL mailboxes + run them
   const quickMarkReadMutation = useMutation({
@@ -1217,13 +1265,14 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                 } rounded-full bg-border`} />
               </PanelResizeHandle>
               <Panel defaultSize={40} minSize={20}>
-                <div key={previewEvent._id} className="h-full overflow-auto">
+                <div key={previewEvent._id} className="h-full">
                   <EmailPreviewPane
                     event={previewEvent}
                     mailboxId={previewEvent.mailboxId}
                     position={previewPosition}
                     onClose={() => setPreviewEvent(null)}
                     onJustDelete={handleJustDelete}
+                    onMarkRead={handleMarkRead}
                     onQuickDelete={handleQuickDelete}
                     onQuickMarkRead={handleQuickMarkRead}
                     onAction={handleGridAction}
@@ -1270,6 +1319,7 @@ interface EmailPreviewPaneProps {
   position: 'right' | 'bottom';
   onClose: () => void;
   onJustDelete: (event: EventItem) => void;
+  onMarkRead: (event: EventItem) => void;
   onQuickDelete: (event: EventItem) => void;
   onQuickMarkRead: (event: EventItem) => void;
   onAction: (event: EventItem) => void;
@@ -1279,9 +1329,9 @@ interface EmailPreviewPaneProps {
 function EmailPreviewPane({
   event,
   mailboxId,
-  position,
   onClose,
   onJustDelete,
+  onMarkRead,
   onQuickDelete,
   onQuickMarkRead,
   onAction,
@@ -1393,8 +1443,8 @@ function EmailPreviewPane({
   const isSending = replyMutation.isPending || replyAllMutation.isPending || forwardMutation.isPending;
 
   return (
-    <Card className="h-full border-0 shadow-none rounded-none">
-      <CardHeader className="pb-3">
+    <Card className="h-full border-0 shadow-none rounded-none flex flex-col">
+      <CardHeader className="pb-3 shrink-0">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base leading-snug break-words" dangerouslySetInnerHTML={{
             __html: highlightText(event.subject || '(no subject)', searchQuery),
@@ -1409,7 +1459,7 @@ function EmailPreviewPane({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex-1 min-h-0 flex flex-col space-y-4 overflow-auto">
         {/* Sender */}
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -1501,55 +1551,85 @@ function EmailPreviewPane({
         )}
 
         {/* Action buttons */}
-        <div className="flex flex-wrap gap-2 pt-1">
-          <Button
-            size="sm"
-            variant={composeMode === 'reply' ? 'default' : 'outline'}
-            className="h-7 text-xs"
-            onClick={() => {
-              setComposeMode(composeMode === 'reply' ? null : 'reply');
-              setComposeBody('');
-              setForwardTo('');
-            }}
-          >
-            <Reply className="mr-1.5 h-3 w-3" />
-            Reply
-          </Button>
-          <Button
-            size="sm"
-            variant={composeMode === 'replyAll' ? 'default' : 'outline'}
-            className="h-7 text-xs"
-            onClick={() => {
-              setComposeMode(composeMode === 'replyAll' ? null : 'replyAll');
-              setComposeBody('');
-              setForwardTo('');
-            }}
-          >
-            <ReplyAll className="mr-1.5 h-3 w-3" />
-            Reply All
-          </Button>
-          <Button
-            size="sm"
-            variant={composeMode === 'forward' ? 'default' : 'outline'}
-            className="h-7 text-xs"
-            onClick={() => {
-              setComposeMode(composeMode === 'forward' ? null : 'forward');
-              setComposeBody('');
-              setForwardTo('');
-            }}
-          >
-            <Forward className="mr-1.5 h-3 w-3" />
-            Forward
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs text-destructive hover:text-destructive"
-            onClick={() => onJustDelete(event)}
-          >
-            <Trash2 className="mr-1.5 h-3 w-3" />
-            Delete
-          </Button>
+        <div className="flex flex-wrap items-center gap-1 pt-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant={composeMode === 'reply' ? 'default' : 'outline'}
+                className="h-7 w-7"
+                onClick={() => {
+                  setComposeMode(composeMode === 'reply' ? null : 'reply');
+                  setComposeBody('');
+                  setForwardTo('');
+                }}
+              >
+                <Reply className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Reply</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant={composeMode === 'replyAll' ? 'default' : 'outline'}
+                className="h-7 w-7"
+                onClick={() => {
+                  setComposeMode(composeMode === 'replyAll' ? null : 'replyAll');
+                  setComposeBody('');
+                  setForwardTo('');
+                }}
+              >
+                <ReplyAll className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Reply All</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant={composeMode === 'forward' ? 'default' : 'outline'}
+                className="h-7 w-7"
+                onClick={() => {
+                  setComposeMode(composeMode === 'forward' ? null : 'forward');
+                  setComposeBody('');
+                  setForwardTo('');
+                }}
+              >
+                <Forward className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Forward</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={() => onJustDelete(event)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Delete</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="outline"
+                className="h-7 w-7"
+                onClick={() => onMarkRead(event)}
+                disabled={event.isRead}
+              >
+                <MailCheck className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{event.isRead ? 'Already read' : 'Mark as read'}</TooltipContent>
+          </Tooltip>
           <span className="mx-0.5 h-5 w-px bg-border" />
           <Button
             size="sm"
@@ -1656,7 +1736,7 @@ function EmailPreviewPane({
         )}
 
         {/* Email body */}
-        <div className="border-t pt-3">
+        <div className="border-t pt-3 flex-1 min-h-0 flex flex-col">
           {bodyLoading ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1665,13 +1745,12 @@ function EmailPreviewPane({
             messageBody.contentType === 'html' ? (
               <iframe
                 srcDoc={messageBody.content}
-                className="w-full border-0 min-h-[200px]"
+                className="w-full border-0 flex-1 min-h-0"
                 sandbox="allow-same-origin"
-                style={{ height: position === 'right' ? '400px' : '250px' }}
                 title="Email content"
               />
             ) : (
-              <pre className="text-sm whitespace-pre-wrap break-words text-foreground">
+              <pre className="text-sm whitespace-pre-wrap break-words text-foreground flex-1">
                 {messageBody.content}
               </pre>
             )
