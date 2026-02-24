@@ -219,10 +219,12 @@ export function AppSidebar() {
     setInboxFolder(filterValue, folder.id);
     const mbId = selectedFolderMailboxId;
 
-    // "Inbox" folder → unified mode (/inbox) to show all mailboxes
+    // "Inbox" folder → always unified mode (/inbox) to show all mailboxes
     // Other folders → single mailbox mode since they're mailbox-specific
     if (filterValue === 'inbox') {
+      setInboxFolder('inbox', null); // clear activeFolderId for unified inbox
       navigate('/inbox');
+      return;
     } else if (mbId) {
       navigate(`/inbox/${mbId}`);
       // Signal InboxPage to start syncing this folder with progress UI
@@ -276,6 +278,12 @@ export function AppSidebar() {
                       className={({ isActive }) =>
                         isActive ? 'text-primary font-semibold' : ''
                       }
+                      onClick={() => {
+                        // Reset to unified inbox when clicking nav Inbox link
+                        if (item.path === ROUTE_PATHS.inbox) {
+                          setInboxFolder('inbox', null);
+                        }
+                      }}
                     >
                       <item.icon className="h-4 w-4" />
                       <span className="flex-1">{item.label}</span>
