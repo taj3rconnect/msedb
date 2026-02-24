@@ -29,6 +29,7 @@ import {
   Sparkles,
   FileSpreadsheet,
   FileText,
+  SquarePen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
@@ -39,6 +40,7 @@ import { createRule, updateRule, fetchRules, runRule, deleteRulesBySender } from
 import type { RuleAction, RuleConditions } from '@/api/rules';
 import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, syncFolderStream, type SyncProgress, fetchMessageBody, replyToMessage, replyAllToMessage, forwardMessage } from '@/api/mailboxes';
 import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
+import { ComposeEmailDialog } from '@/components/inbox/ComposeEmailDialog';
 import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
@@ -166,6 +168,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [contentType, setContentType] = useState<'all' | 'emails' | 'files' | 'contacts'>('all');
 
   // Summarize Today state
@@ -1139,6 +1142,14 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
             {type}
           </Button>
         ))}
+        <Button
+          size="sm"
+          className="h-7 text-xs gap-1 bg-green-700 hover:bg-green-800 text-white"
+          onClick={() => setComposeOpen(true)}
+        >
+          <SquarePen className="h-3.5 w-3.5" />
+          New Email
+        </Button>
       </div>
 
       {!showEmailContent ? (
@@ -1640,6 +1651,8 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ComposeEmailDialog open={composeOpen} onOpenChange={setComposeOpen} />
     </div>
   );
 }

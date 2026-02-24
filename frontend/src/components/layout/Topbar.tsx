@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { HelpCircle, LogOut, SquarePen } from 'lucide-react';
+import { HelpCircle, LogOut } from 'lucide-react';
 import { useLocation, useParams, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -19,9 +18,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Button } from '@/components/ui/button';
 import { KillSwitch } from '@/components/layout/KillSwitch';
-import { ComposeEmailDialog } from '@/components/inbox/ComposeEmailDialog';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { fetchMailboxCounts } from '@/api/events';
 import { useAuthStore } from '@/stores/authStore';
@@ -42,7 +39,6 @@ export function Topbar() {
   const { mailboxId } = useParams<{ mailboxId: string }>();
   const navigate = useNavigate();
 
-  const [composeOpen, setComposeOpen] = useState(false);
   const isInboxPage = location.pathname.startsWith('/inbox');
   const connectedMailboxes = mailboxes.filter((m) => m.isConnected);
   const activeMailboxId = mailboxId || null;
@@ -70,23 +66,6 @@ export function Topbar() {
     <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-4" />
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setComposeOpen(true)}
-          >
-            <SquarePen className="h-4 w-4" />
-            <span className="hidden sm:inline">New Email</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Compose new email</TooltipContent>
-      </Tooltip>
-
-      <Separator orientation="vertical" className="h-4" />
 
       {/* Inbox label + mailbox tags — shown only on inbox pages */}
       {isInboxPage && connectedMailboxes.length > 0 && (
@@ -195,7 +174,6 @@ export function Topbar() {
         </DropdownMenu>
       </div>
 
-      <ComposeEmailDialog open={composeOpen} onOpenChange={setComposeOpen} />
     </header>
   );
 }
