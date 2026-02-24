@@ -202,8 +202,8 @@ export function InboxDataGrid({
 }: InboxDataGridProps) {
   const largeIcons = useUiStore((s) => s.largeIcons);
   const toggleIconSize = useUiStore((s) => s.toggleIconSize);
-  const iconCls = largeIcons ? 'h-5 w-5' : 'h-4 w-4';
-  const btnCls = largeIcons ? 'p-2' : 'p-1.5';
+  const iconSize = largeIcons ? 20 : 16;
+  const btnPad = largeIcons ? 8 : 6;
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -266,13 +266,14 @@ export function InboxDataGrid({
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        className={`shrink-0 rounded ${btnCls} opacity-0 group-hover/row:opacity-100 text-green-600 hover:!text-green-500 transition-all`}
+                        className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-green-600 hover:!text-green-500 transition-all"
+                        style={{ padding: btnPad }}
                         onClick={(e) => {
                           e.stopPropagation();
                           onUndelete?.(event);
                         }}
                       >
-                        <Undo2 className={iconCls} />
+                        <Undo2 style={{ width: iconSize, height: iconSize }} />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>Undelete & remove rules for this sender</TooltipContent>
@@ -284,14 +285,15 @@ export function InboxDataGrid({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className={`shrink-0 rounded ${btnCls} opacity-0 group-hover/row:opacity-100 text-green-600 hover:!text-green-500 transition-all`}
+                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-green-600 hover:!text-green-500 transition-all"
+                        style={{ padding: btnPad }}
                           onClick={(e) => {
                             e.stopPropagation();
                             onClearRules(event);
                           }}
                           disabled={!event.sender?.email}
                         >
-                          <CheckCircle className={iconCls} />
+                          <CheckCircle style={{ width: iconSize, height: iconSize }} />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>Remove all rules for this sender</TooltipContent>
@@ -300,13 +302,14 @@ export function InboxDataGrid({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className={`shrink-0 rounded ${btnCls} opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all`}
+                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all"
+                          style={{ padding: btnPad }}
                           onClick={(e) => {
                             e.stopPropagation();
                             onJustDelete(event);
                           }}
                         >
-                          <Trash2 className={iconCls} />
+                          <Trash2 style={{ width: iconSize, height: iconSize }} />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>Delete this email</TooltipContent>
@@ -315,14 +318,15 @@ export function InboxDataGrid({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className={`shrink-0 rounded ${btnCls} opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all`}
+                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all"
+                          style={{ padding: btnPad }}
                           onClick={(e) => {
                             e.stopPropagation();
                             onQuickDelete(event);
                           }}
                           disabled={!event.sender?.email}
                         >
-                          <Ban className={iconCls} />
+                          <Ban style={{ width: iconSize, height: iconSize }} />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>Always delete from this sender</TooltipContent>
@@ -331,14 +335,15 @@ export function InboxDataGrid({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className={`shrink-0 rounded ${btnCls} opacity-0 group-hover/row:opacity-100 transition-all ${event.isRead ? 'text-muted-foreground/30 cursor-default' : 'text-muted-foreground hover:!text-green-500'}`}
+                          className={`shrink-0 rounded opacity-0 group-hover/row:opacity-100 transition-all ${event.isRead ? 'text-muted-foreground/30 cursor-default' : 'text-muted-foreground hover:!text-green-500'}`}
+                          style={{ padding: btnPad }}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (!event.isRead) onMarkRead(event);
                           }}
                           disabled={event.isRead}
                         >
-                          <MailCheck className={iconCls} />
+                          <MailCheck style={{ width: iconSize, height: iconSize }} />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>{event.isRead ? 'Already read' : 'Mark as read'}</TooltipContent>
@@ -347,14 +352,15 @@ export function InboxDataGrid({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className={`shrink-0 rounded ${btnCls} opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-blue-500 transition-all`}
+                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-blue-500 transition-all"
+                          style={{ padding: btnPad }}
                           onClick={(e) => {
                             e.stopPropagation();
                             onQuickMarkRead(event);
                           }}
                           disabled={!event.sender?.email}
                         >
-                          <MailOpen className={iconCls} />
+                          <MailOpen style={{ width: iconSize, height: iconSize }} />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>Always mark read from this sender</TooltipContent>
@@ -363,13 +369,14 @@ export function InboxDataGrid({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className={`shrink-0 rounded ${btnCls} opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-foreground transition-all`}
+                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-foreground transition-all"
+                          style={{ padding: btnPad }}
                           onClick={(e) => {
                             e.stopPropagation();
                             onAction(event);
                           }}
                         >
-                          <MoreHorizontal className={iconCls} />
+                          <MoreHorizontal style={{ width: iconSize, height: iconSize }} />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>Create custom rule</TooltipContent>
@@ -618,6 +625,21 @@ export function InboxDataGrid({
             )}
           </Button>
 
+          {/* Icon size toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={largeIcons ? 'secondary' : 'outline'}
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={toggleIconSize}
+              >
+                {largeIcons ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{largeIcons ? 'Smaller icons' : 'Larger icons'}</TooltipContent>
+          </Tooltip>
+
           {activeFilterCount > 0 && (
             <Button
               variant="ghost"
@@ -630,25 +652,10 @@ export function InboxDataGrid({
             </Button>
           )}
 
-          {/* Icon size toggle */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-auto h-8 w-8 p-0"
-                onClick={toggleIconSize}
-              >
-                {largeIcons ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{largeIcons ? 'Smaller icons' : 'Larger icons'}</TooltipContent>
-          </Tooltip>
-
           {/* Column visibility */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 text-xs">
+              <Button variant="outline" size="sm" className="ml-auto h-8 text-xs">
                 Columns
               </Button>
             </PopoverTrigger>

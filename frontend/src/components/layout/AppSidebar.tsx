@@ -27,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
@@ -36,7 +35,6 @@ import {
 import { NAV_ITEMS, ROUTE_PATHS } from '@/lib/constants';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
-import { useStagingCount } from '@/hooks/useStaging';
 import { useHealth } from '@/hooks/useHealth';
 import { useFolders } from '@/hooks/useFolders';
 import { fetchChildFolders, type MailFolder } from '@/api/mailboxes';
@@ -166,8 +164,6 @@ function FolderItem({
 export function AppSidebar() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const { data: countData } = useStagingCount();
-  const stagingCount = countData?.count ?? 0;
   const { isHealthy, mongoStatus, mongoHost } = useHealth();
   const mailboxes = useAuthStore((s) => s.mailboxes);
   const connectedMailboxes = mailboxes.filter((m) => m.isConnected);
@@ -287,11 +283,6 @@ export function AppSidebar() {
                     >
                       <item.icon className="h-4 w-4" />
                       <span className="flex-1">{item.label}</span>
-                      {item.path === ROUTE_PATHS.staging && stagingCount > 0 && (
-                        <Badge variant="destructive" className="ml-auto text-xs px-1.5 py-0 min-w-5 h-5 flex items-center justify-center">
-                          {stagingCount}
-                        </Badge>
-                      )}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

@@ -56,10 +56,9 @@ export const useUiStore = create<UiState>((set) => ({
   requestFolderSync: () =>
     set((state) => ({ folderSyncRequested: state.folderSyncRequested + 1 })),
 
-  toggleIconSize: () =>
-    set((state) => {
-      const next = !state.largeIcons;
-      localStorage.setItem('msedb-large-icons', JSON.stringify(next));
-      return { largeIcons: next };
-    }),
+  toggleIconSize: () => {
+    const next = !useUiStore.getState().largeIcons;
+    localStorage.setItem('msedb-large-icons', JSON.stringify(next));
+    window.location.reload();
+  },
 }));
