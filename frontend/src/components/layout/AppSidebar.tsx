@@ -218,7 +218,12 @@ export function AppSidebar() {
     const filterValue = FOLDER_FILTER_MAP[folder.displayName] || folder.displayName;
     setInboxFolder(filterValue, folder.id);
     const mbId = selectedFolderMailboxId;
-    if (mbId) {
+
+    // "Inbox" folder → unified mode (/inbox) to show all mailboxes
+    // Other folders → single mailbox mode since they're mailbox-specific
+    if (filterValue === 'inbox') {
+      navigate('/inbox');
+    } else if (mbId) {
       navigate(`/inbox/${mbId}`);
       // Signal InboxPage to start syncing this folder with progress UI
       requestFolderSync();

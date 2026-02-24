@@ -13,6 +13,7 @@ import {
 } from '../services/whitelistService.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { refreshFolderCache } from '../services/folderCache.js';
+import { getRedisClient } from '../config/redis.js';
 import { runDeltaSync, type DeltaSyncResult } from '../services/deltaService.js';
 import { graphFetch } from '../services/graphClient.js';
 import { buildSelectParam } from '../utils/graph.js';
@@ -284,8 +285,89 @@ mailboxRouter.get('/:id/folders', async (req: Request, res: Response) => {
   // Also refresh the folder cache as a side effect
   refreshFolderCache(mailbox.email, accessToken).catch(() => {});
 
+  // Overlay DB counts (only emails since syncSinceDate) on top of Graph folder structure
+  const dbCounts = await getDbFolderCounts(mailbox._id.toString(), mailbox.email);
+  for (const folder of folders) {
+    const count = dbCounts.get(folder.id) ?? dbCounts.get(folder.displayName) ?? 0;
+    folder.totalItemCount = count;
+    // unreadItemCount from Graph is also not date-filtered; set to 0 for now
+    folder.unreadItemCount = 0;
+  }
+
   res.json({ folders });
 });
+
+/**
+ * Build a map of folderId/folderName → message count from our DB.
+ * Only counts non-deleted 'arrived' events (i.e. emails we've synced).
+ */
+async function getDbFolderCounts(
+  mailboxId: string,
+  mailboxEmail: string,
+): Promise<Map<string, number>> {
+  const redis = getRedisClient();
+  const countMap = new Map<string, number>();
+
+  // Aggregate counts by toFolder from EmailEvent
+  const counts = await EmailEvent.aggregate([
+    {
+      $match: {
+        mailboxId: new Types.ObjectId(mailboxId),
+        eventType: { $ne: 'deleted' },
+      },
+    },
+    { $group: { _id: '$toFolder', count: { $sum: 1 } } },
+  ]);
+
+  // Build reverse lookup: folder cache name → folder ID, and folder ID → name
+  const allFolderIdsRaw = await redis.get(`folder:${mailboxEmail}:all`);
+  const folderIdToName = new Map<string, string>();
+  const folderNameToId = new Map<string, string>();
+  if (allFolderIdsRaw) {
+    const ids: string[] = JSON.parse(allFolderIdsRaw);
+    for (const fid of ids) {
+      const fname = await redis.get(`folder:${mailboxEmail}:${fid}`);
+      if (fname) {
+        folderIdToName.set(fid, fname);
+        folderNameToId.set(fname, fid);
+      }
+    }
+  }
+
+  for (const row of counts) {
+    const toFolder: string = row._id;
+    const count: number = row.count;
+    if (!toFolder) continue;
+
+    // Store count by exact toFolder value
+    countMap.set(toFolder, (countMap.get(toFolder) ?? 0) + count);
+
+    // If toFolder is a folder ID, also map to its display name
+    const name = folderIdToName.get(toFolder);
+    if (name) {
+      countMap.set(name, (countMap.get(name) ?? 0) + count);
+    }
+
+    // If toFolder is a display name, also map to its folder ID
+    const id = folderNameToId.get(toFolder);
+    if (id) {
+      countMap.set(id, (countMap.get(id) ?? 0) + count);
+    }
+  }
+
+  // For subfolder paths like "Inbox/Abacus", also aggregate into the parent's count
+  // and map the leaf name to the folder ID
+  for (const [key, count] of Array.from(countMap.entries())) {
+    if (key.includes('/')) {
+      const fid = folderNameToId.get(key);
+      if (fid && !countMap.has(fid)) {
+        countMap.set(fid, count);
+      }
+    }
+  }
+
+  return countMap;
+}
 
 /**
  * GET /api/mailboxes/:id/folders/:folderId/children
@@ -327,6 +409,14 @@ mailboxRouter.get('/:id/folders/:folderId/children', async (req: Request, res: R
     }
 
     url = data['@odata.nextLink'];
+  }
+
+  // Overlay DB counts for child folders too
+  const dbCounts = await getDbFolderCounts(mailbox._id.toString(), mailbox.email);
+  for (const folder of folders) {
+    const count = dbCounts.get(folder.id) ?? dbCounts.get(folder.displayName) ?? 0;
+    folder.totalItemCount = count;
+    folder.unreadItemCount = 0;
   }
 
   res.json({ folders });
