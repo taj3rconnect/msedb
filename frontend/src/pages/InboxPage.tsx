@@ -122,17 +122,29 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   }>({ active: false, progress: null, cancel: null });
 
   const startFolderSync = useCallback((mbId: string, fId: string) => {
+    const startTime = Date.now();
+    const finishSync = (hadNewMessages: boolean) => {
+      const elapsed = Date.now() - startTime;
+      const minDisplay = 800; // don't flash overlay for instant syncs
+      const delay = hadNewMessages || elapsed >= minDisplay ? 0 : 0;
+      // If completed too fast with no new data, skip overlay entirely
+      if (elapsed < 500 && !hadNewMessages) {
+        setSyncState({ active: false, progress: null, cancel: null });
+        queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
+        return;
+      }
+      setTimeout(() => {
+        setSyncState({ active: false, progress: null, cancel: null });
+        queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
+      }, delay);
+    };
+
     const cancel = syncFolderStream(
       mbId,
       fId,
       (progress) => setSyncState((s) => ({ ...s, progress })),
-      () => {
-        setSyncState({ active: false, progress: null, cancel: null });
-        queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
-      },
-      () => {
-        setSyncState({ active: false, progress: null, cancel: null });
-      },
+      (result) => finishSync(result.created > 0 || result.updated > 0 || result.deleted > 0),
+      () => finishSync(false),
     );
     setSyncState({ active: true, progress: { created: 0, updated: 0, deleted: 0, skipped: 0, pageMessages: 0 }, cancel });
   }, [queryClient]);

@@ -143,8 +143,17 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
           const ids: string[] = JSON.parse(allFolderIds);
           for (const fid of ids) {
             const fname = await redis.get(`folder:${mb.email}:${fid}`);
-            if (fname === folderParam || fname === displayName) {
+            // Match exact name, or subfolder path ending with the folder name
+            // e.g. folderParam="Abacus" matches fname="Inbox/Abacus"
+            if (
+              fname === folderParam ||
+              fname === displayName ||
+              fname?.endsWith(`/${folderParam}`) ||
+              fname?.endsWith(`/${displayName}`)
+            ) {
               folderOrConditions.push({ toFolder: fid });
+              // Also match by the full path stored in toFolder
+              if (fname) folderOrConditions.push({ toFolder: fname });
             }
           }
         }
