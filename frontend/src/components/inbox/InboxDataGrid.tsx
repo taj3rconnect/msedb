@@ -636,7 +636,7 @@ export function InboxDataGrid({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 w-8 p-0"
+                className="ml-auto h-8 w-8 p-0"
                 onClick={toggleIconSize}
               >
                 {largeIcons ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -648,7 +648,7 @@ export function InboxDataGrid({
           {/* Column visibility */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="ml-auto h-8 text-xs">
+              <Button variant="outline" size="sm" className="h-8 text-xs">
                 Columns
               </Button>
             </PopoverTrigger>
