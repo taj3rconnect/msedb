@@ -25,7 +25,9 @@ import { stagingRouter } from './routes/staging.js';
 import { auditRouter } from './routes/audit.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { settingsRouter } from './routes/settings.js';
+import { aiSearchRouter } from './routes/aiSearch.js';
 import { createSocketServer } from './config/socket.js';
+import { ensureQdrantCollection } from './services/qdrantClient.js';
 
 // Import all models to trigger Mongoose model registration
 import './models/index.js';
@@ -80,6 +82,9 @@ app.use('/api/notifications', notificationsRouter);
 // Mount settings routes (requireAuth applied internally)
 app.use('/api/settings', settingsRouter);
 
+// Mount AI search routes (requireAuth applied internally)
+app.use('/api/ai-search', aiSearchRouter);
+
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);
 
@@ -106,6 +111,15 @@ async function startServer(): Promise<void> {
 
     // 5. Initialize tunnel config from DB / env / container detection
     await initializeTunnelConfig();
+
+    // 5b. Ensure Qdrant collection exists (non-fatal — AI search degrades gracefully)
+    try {
+      await ensureQdrantCollection();
+    } catch (err) {
+      logger.warn('Qdrant collection setup failed — AI search will be unavailable', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     // 6. Create Socket.IO server and start listening BEFORE webhook sync
     // (Graph validates webhook URL during subscription creation, so server must be listening)

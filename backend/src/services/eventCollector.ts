@@ -9,6 +9,7 @@ import { WebhookSubscription } from '../models/WebhookSubscription.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { getIO } from '../config/socket.js';
 import type { Types } from 'mongoose';
+import { queues } from '../jobs/queues.js';
 import logger from '../config/logger.js';
 
 /**
@@ -254,7 +255,32 @@ async function handleCreated(
     toFolder: graphMessage.parentFolderId,
   } as Partial<IEmailEvent>;
 
-  await saveEmailEvent(eventData);
+  const saved = await saveEmailEvent(eventData);
+
+  // Fire-and-forget: enqueue embedding job for new emails
+  if (saved) {
+    try {
+      await queues['email-embedding'].add('embed-email', {
+        userId: String(userId),
+        mailboxId: String(mailboxId),
+        mailboxEmail,
+        messageId,
+        senderEmail: metadata.sender?.email || '',
+        senderName: metadata.sender?.name || '',
+        subject: metadata.subject || '',
+        receivedAt: metadata.receivedAt?.toISOString() || new Date().toISOString(),
+        folder: graphMessage.parentFolderId || '',
+        importance: metadata.importance || 'normal',
+        hasAttachments: metadata.hasAttachments || false,
+        categories: metadata.categories || [],
+        isRead: graphMessage.isRead || false,
+      }, {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        delay: 2000,
+      });
+    } catch { /* non-blocking */ }
+  }
 
   // Evaluate automation rules for the new message
   try {

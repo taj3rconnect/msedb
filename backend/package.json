@@ -13,6 +13,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@azure/msal-node": "^3.8.7",
+    "@qdrant/js-client-rest": "^1.17.0",
     "bullmq": "^5.69.3",
     "compression": "^1.7.5",
     "cookie-parser": "^1.4.7",

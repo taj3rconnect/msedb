@@ -10,6 +10,7 @@ import { Mailbox } from '../models/Mailbox.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import type { IEmailEvent } from '../models/EmailEvent.js';
 import { config } from '../config/index.js';
+import { queues } from '../jobs/queues.js';
 import logger from '../config/logger.js';
 
 /**
@@ -183,6 +184,28 @@ export async function runDeltaSync(
 
         if (saved) {
           counters.created++;
+          // Fire-and-forget: enqueue embedding job for new emails
+          try {
+            await queues['email-embedding'].add('embed-email', {
+              userId,
+              mailboxId,
+              mailboxEmail,
+              messageId: msg.id,
+              senderEmail: metadata.sender?.email || '',
+              senderName: metadata.sender?.name || '',
+              subject: metadata.subject || '',
+              receivedAt: metadata.receivedAt?.toISOString() || new Date().toISOString(),
+              folder: folderName || '',
+              importance: metadata.importance || 'normal',
+              hasAttachments: metadata.hasAttachments || false,
+              categories: metadata.categories || [],
+              isRead: msg.isRead || false,
+            }, {
+              attempts: 2,
+              backoff: { type: 'exponential', delay: 10000 },
+              delay: 2000,
+            });
+          } catch { /* non-blocking */ }
         } else {
           counters.skipped++;
         }

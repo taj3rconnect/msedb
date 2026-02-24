@@ -13,6 +13,8 @@ services:
         condition: service_healthy
       msedb-redis:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - msedb-network
     volumes:

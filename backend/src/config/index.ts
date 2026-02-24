@@ -19,6 +19,13 @@ interface AppConfig {
   graphWebhookUrl: string; // mutable — updated via admin API
   readonly syncSinceDate: string;
   readonly adminEmail: string;
+
+  // AI Search (Qdrant + Ollama)
+  readonly qdrantUrl: string;
+  readonly qdrantCollection: string;
+  readonly ollamaUrl: string;
+  readonly ollamaEmbedModel: string;
+  readonly ollamaInstructModel: string;
 }
 
 export const config: AppConfig = {
@@ -56,6 +63,13 @@ export const config: AppConfig = {
 
   // Admin
   adminEmail: process.env.ADMIN_EMAIL || '',
+
+  // AI Search (Qdrant + Ollama)
+  qdrantUrl: process.env.QDRANT_URL || 'http://host.docker.internal:6333',
+  qdrantCollection: process.env.QDRANT_COLLECTION || 'msedb-emails',
+  ollamaUrl: process.env.OLLAMA_URL || 'http://host.docker.internal:11434',
+  ollamaEmbedModel: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
+  ollamaInstructModel: process.env.OLLAMA_INSTRUCT_MODEL || 'qwen3:1.7b',
 };
 
 export type Config = AppConfig;

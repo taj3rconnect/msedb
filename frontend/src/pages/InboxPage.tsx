@@ -30,6 +30,7 @@ import {
   FileSpreadsheet,
   FileText,
   SquarePen,
+  Brain,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
@@ -41,6 +42,8 @@ import type { RuleAction, RuleConditions } from '@/api/rules';
 import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, syncFolderStream, type SyncProgress, fetchMessageBody, replyToMessage, replyAllToMessage, forwardMessage } from '@/api/mailboxes';
 import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
 import { ComposeEmailDialog } from '@/components/inbox/ComposeEmailDialog';
+import { AiSearchPanel } from '@/components/inbox/AiSearchPanel';
+import type { AiSearchResult } from '@/api/aiSearch';
 import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
@@ -169,6 +172,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [aiSearchOpen, setAiSearchOpen] = useState(false);
   const [contentType, setContentType] = useState<'all' | 'emails' | 'files' | 'contacts'>('all');
 
   // Summarize Today state
@@ -1215,6 +1219,16 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
           )}
           Summarize
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => setAiSearchOpen(true)}
+          title="AI-powered semantic email search"
+        >
+          <Brain className="mr-1 h-3.5 w-3.5 text-purple-500" />
+          AI Search
+        </Button>
         <span className="mx-0.5 h-5 w-px bg-border" />
         {([
           ['all', 'All'],
@@ -1653,6 +1667,35 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
       </Dialog>
 
       <ComposeEmailDialog open={composeOpen} onOpenChange={setComposeOpen} />
+
+      <AiSearchPanel
+        open={aiSearchOpen}
+        onOpenChange={setAiSearchOpen}
+        mailboxId={mailboxId}
+        onSelectResult={(result: AiSearchResult) => {
+          // Find matching event in current data, or construct a preview-compatible stub
+          const matchingEvent = events.find((e) => e.messageId === result.messageId);
+          if (matchingEvent) {
+            setPreviewEvent(matchingEvent);
+          } else {
+            // Construct a minimal EventItem from the search result to open preview
+            setPreviewEvent({
+              _id: result.id,
+              messageId: result.messageId,
+              mailboxId: result.mailboxId,
+              eventType: 'arrived',
+              sender: { email: result.senderEmail, name: result.senderName },
+              subject: result.subject,
+              timestamp: result.receivedAt,
+              receivedAt: result.receivedAt,
+              importance: result.importance,
+              hasAttachments: result.hasAttachments,
+              categories: result.categories,
+              isRead: result.isRead,
+            } as EventItem);
+          }
+        }}
+      />
     </div>
   );
 }
