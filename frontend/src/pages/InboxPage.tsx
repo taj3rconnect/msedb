@@ -493,6 +493,86 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     setDialogOpen(true);
   }, [visibleEvents, selectedIds]);
 
+  // Bulk delete selected emails
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async () => {
+      const selected = visibleEvents.filter((e) => selectedIds.has(e._id));
+      // Group by mailboxId for batched API calls
+      const byMailbox = new Map<string, string[]>();
+      for (const e of selected) {
+        const ids = byMailbox.get(e.mailboxId) ?? [];
+        ids.push(e.messageId);
+        byMailbox.set(e.mailboxId, ids);
+      }
+      await Promise.all(
+        Array.from(byMailbox.entries()).map(([mbId, msgIds]) =>
+          applyActionsToMessages(mbId, msgIds, [{ actionType: 'delete' }]),
+        ),
+      );
+      return selected.length;
+    },
+    onMutate: () => {
+      // Optimistically hide selected emails
+      for (const id of selectedIds) {
+        setDeletedEventIds((prev) => new Set(prev).add(id));
+      }
+      setPreviewEvent(null);
+    },
+    onSuccess: (count) => {
+      toast.success(`${count} email${count === 1 ? '' : 's'} deleted`);
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
+      queryClient.invalidateQueries({ queryKey: ['deleted-count'] });
+    },
+    onError: (err: Error) => {
+      toast.error(`Bulk delete failed: ${err.message}`);
+      setDeletedEventIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
+    },
+  });
+
+  // Bulk mark selected emails as read
+  const bulkMarkReadMutation = useMutation({
+    mutationFn: async () => {
+      const selected = visibleEvents.filter((e) => selectedIds.has(e._id));
+      const byMailbox = new Map<string, string[]>();
+      for (const e of selected) {
+        const ids = byMailbox.get(e.mailboxId) ?? [];
+        ids.push(e.messageId);
+        byMailbox.set(e.mailboxId, ids);
+      }
+      await Promise.all(
+        Array.from(byMailbox.entries()).map(([mbId, msgIds]) =>
+          applyActionsToMessages(mbId, msgIds, [{ actionType: 'markRead' }]),
+        ),
+      );
+      return selected.length;
+    },
+    onMutate: () => {
+      // Optimistically mark as read in cache
+      queryClient.setQueriesData<typeof data>(
+        { queryKey: ['inbox-events', queryKeyId] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            events: old.events.map((e) =>
+              selectedIds.has(e._id) ? { ...e, isRead: true } : e,
+            ),
+          };
+        },
+      );
+    },
+    onSuccess: (count) => {
+      toast.success(`${count} email${count === 1 ? '' : 's'} marked as read`);
+      setSelectedIds(new Set());
+    },
+    onError: (err: Error) => {
+      toast.error(`Bulk mark read failed: ${err.message}`);
+      queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
+    },
+  });
+
   // Create rules + apply immediate actions
   const handleConfirm = useCallback(
     (actions: RuleAction[], actionLabel: string, ruleName?: string, existingRuleId?: string, extraConditions?: Partial<RuleConditions>, runNow?: boolean) => {
@@ -1215,7 +1295,25 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
           <span className="text-sm font-medium">
             {selectedCount} selected
           </span>
-          <Button size="sm" onClick={handleBulkAction}>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => bulkDeleteMutation.mutate()}
+            disabled={bulkDeleteMutation.isPending}
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            {bulkDeleteMutation.isPending ? 'Deleting...' : 'Delete'}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => bulkMarkReadMutation.mutate()}
+            disabled={bulkMarkReadMutation.isPending}
+          >
+            <MailCheck className="mr-1.5 h-3.5 w-3.5" />
+            {bulkMarkReadMutation.isPending ? 'Marking...' : 'Mark Read'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleBulkAction}>
             <ListFilter className="mr-1.5 h-3.5 w-3.5" />
             Create Rules
           </Button>
@@ -1224,6 +1322,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
             variant="ghost"
             onClick={() => setSelectedIds(new Set())}
           >
+            <X className="mr-1.5 h-3.5 w-3.5" />
             Clear
           </Button>
         </div>
