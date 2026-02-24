@@ -236,8 +236,8 @@ describe('SUGGESTION_THRESHOLDS', () => {
 });
 
 describe('Constants', () => {
-  it('MIN_OBSERVATION_DAYS should be 14', () => {
-    expect(MIN_OBSERVATION_DAYS).toBe(14);
+  it('MIN_OBSERVATION_DAYS should be 5', () => {
+    expect(MIN_OBSERVATION_DAYS).toBe(5);
   });
 
   it('DEFAULT_OBSERVATION_WINDOW should be 90', () => {

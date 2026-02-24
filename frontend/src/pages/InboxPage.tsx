@@ -906,9 +906,9 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   useKeyboardShortcuts(inboxShortcuts);
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-[calc(100vh-7.5rem)] overflow-hidden">
       {/* Content type tags */}
-      <div className="flex items-center gap-1">
+      <div className="shrink-0 flex items-center gap-1 mb-3">
         {(['all', 'emails', 'files', 'contacts'] as const).map((type) => (
           <Button
             key={type}
@@ -928,7 +928,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         </div>
       ) : (<>
       {/* Date filter tabs */}
-      <div className="flex flex-wrap items-center gap-1">
+      <div className="shrink-0 flex flex-wrap items-center gap-1 mb-3">
         <Button
           variant="outline"
           size="sm"
@@ -1030,7 +1030,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
       </div>
 
       {/* Search bar */}
-      <div className="relative">
+      <div className="shrink-0 relative mb-3">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={searchInputRef}
@@ -1051,7 +1051,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
 
       {/* Bulk action bar */}
       {selectedCount > 0 && (
-        <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2">
+        <div className="shrink-0 flex items-center gap-3 rounded-md border bg-muted/50 px-4 py-2 mb-3">
           <span className="text-sm font-medium">
             {selectedCount} selected
           </span>
@@ -1090,7 +1090,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
           orientation={previewEvent && previewPosition === 'bottom' ? 'vertical' : 'horizontal'}
           defaultLayout={previewPosition === 'bottom' ? panelLayoutBottom.defaultLayout : panelLayoutRight.defaultLayout}
           onLayoutChanged={previewPosition === 'bottom' ? panelLayoutBottom.onLayoutChanged : panelLayoutRight.onLayoutChanged}
-          className="min-h-[400px]"
+          className="flex-1 min-h-0"
         >
           <Panel defaultSize={previewEvent ? 60 : 100} minSize={30}>
             <div className="space-y-2 h-full overflow-auto">
@@ -1217,12 +1217,13 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                 } rounded-full bg-border`} />
               </PanelResizeHandle>
               <Panel defaultSize={40} minSize={20}>
-                <div className="h-full overflow-auto">
+                <div key={previewEvent._id} className="h-full overflow-auto">
                   <EmailPreviewPane
                     event={previewEvent}
                     mailboxId={previewEvent.mailboxId}
                     position={previewPosition}
                     onClose={() => setPreviewEvent(null)}
+                    onJustDelete={handleJustDelete}
                     onQuickDelete={handleQuickDelete}
                     onQuickMarkRead={handleQuickMarkRead}
                     onAction={handleGridAction}
@@ -1268,6 +1269,7 @@ interface EmailPreviewPaneProps {
   mailboxId: string;
   position: 'right' | 'bottom';
   onClose: () => void;
+  onJustDelete: (event: EventItem) => void;
   onQuickDelete: (event: EventItem) => void;
   onQuickMarkRead: (event: EventItem) => void;
   onAction: (event: EventItem) => void;
@@ -1279,6 +1281,7 @@ function EmailPreviewPane({
   mailboxId,
   position,
   onClose,
+  onJustDelete,
   onQuickDelete,
   onQuickMarkRead,
   onAction,
@@ -1336,7 +1339,7 @@ function EmailPreviewPane({
   const forwardMutation = useMutation({
     mutationFn: () => {
       const recipients = forwardTo
-        .split(',')
+        .split(/[,;]+/)
         .map((e) => e.trim())
         .filter(Boolean)
         .map((email) => ({ email }));
@@ -1389,10 +1392,8 @@ function EmailPreviewPane({
 
   const isSending = replyMutation.isPending || replyAllMutation.isPending || forwardMutation.isPending;
 
-  const containerClass = 'h-full border-0 shadow-none rounded-none';
-
   return (
-    <Card className={containerClass}>
+    <Card className="h-full border-0 shadow-none rounded-none">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="text-base leading-snug break-words" dangerouslySetInnerHTML={{
@@ -1425,6 +1426,32 @@ function EmailPreviewPane({
             </div>
           </div>
         </div>
+
+        {/* To recipients */}
+        {bodyData?.message?.toRecipients && bodyData.message.toRecipients.length > 0 && (
+          <div className="text-xs text-muted-foreground">
+            <span className="font-medium">To:</span>{' '}
+            {bodyData.message.toRecipients.map((r, i) => (
+              <span key={i}>
+                {i > 0 && ', '}
+                {r.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : r.emailAddress?.address}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* CC recipients */}
+        {bodyData?.message?.ccRecipients && bodyData.message.ccRecipients.length > 0 && (
+          <div className="text-xs text-muted-foreground">
+            <span className="font-medium">CC:</span>{' '}
+            {bodyData.message.ccRecipients.map((r, i) => (
+              <span key={i}>
+                {i > 0 && ', '}
+                {r.emailAddress?.name ? `${r.emailAddress.name} <${r.emailAddress.address}>` : r.emailAddress?.address}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Metadata */}
         <div className="flex flex-wrap gap-2 text-xs">
@@ -1514,6 +1541,15 @@ function EmailPreviewPane({
             <Forward className="mr-1.5 h-3 w-3" />
             Forward
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs text-destructive hover:text-destructive"
+            onClick={() => onJustDelete(event)}
+          >
+            <Trash2 className="mr-1.5 h-3 w-3" />
+            Delete
+          </Button>
           <span className="mx-0.5 h-5 w-px bg-border" />
           <Button
             size="sm"
@@ -1546,7 +1582,7 @@ function EmailPreviewPane({
           </Button>
         </div>
 
-        {/* Compose area (Reply / Forward) */}
+        {/* Compose area (Reply / Reply All / Forward) */}
         {composeMode && (
           <div className="border rounded-md p-3 space-y-3 bg-muted/30">
             <div className="text-sm font-medium">

@@ -14,12 +14,12 @@ export const SUGGESTION_THRESHOLDS: Record<string, number> = {
   markRead: 80,
 };
 
-export const MIN_OBSERVATION_DAYS = 14;
+export const MIN_OBSERVATION_DAYS = 5;
 export const DEFAULT_OBSERVATION_WINDOW = 90;
 
 const RECENCY_WINDOW_DAYS = 7;
 const REJECTION_COOLDOWN_DAYS = 30;
-const MIN_SENDER_EVENTS = 10;
+const MIN_SENDER_EVENTS = 5;
 const MIN_FOLDER_MOVES = 5;
 const MAX_EVIDENCE_ITEMS = 10;
 
