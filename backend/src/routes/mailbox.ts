@@ -23,6 +23,14 @@ import { NotFoundError, ValidationError } from '../middleware/errorHandler.js';
 
 const mailboxRouter = Router();
 
+/** Folders to hide from the folder browser (not useful for mail management). */
+const HIDDEN_FOLDERS = new Set([
+  'Outbox',
+  'Sync Issues',
+  'Conversation History',
+  'RSS Feeds',
+]);
+
 /**
  * Prepend user's reply text into a Graph-generated draft HTML body.
  * Uses multiple fallback strategies to ensure the text is always inserted.
@@ -270,6 +278,8 @@ mailboxRouter.get('/:id/folders', async (req: Request, res: Response) => {
     };
 
     for (const folder of data.value) {
+      // Skip non-useful system folders
+      if (HIDDEN_FOLDERS.has(folder.displayName)) continue;
       folders.push({
         id: folder.id,
         displayName: folder.displayName,

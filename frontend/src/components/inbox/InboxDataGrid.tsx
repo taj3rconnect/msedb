@@ -34,6 +34,7 @@ import {
   ArrowDown,
   Ban,
   CheckCircle,
+  MailCheck,
   MailOpen,
   MoreHorizontal,
   GripVertical,
@@ -153,6 +154,7 @@ interface InboxDataGridProps {
   onClearRules: (event: EventItem) => void;
   onQuickDelete: (event: EventItem) => void;
   onJustDelete: (event: EventItem) => void;
+  onMarkRead: (event: EventItem) => void;
   onQuickMarkRead: (event: EventItem) => void;
   onUndelete?: (event: EventItem) => void;
   onRowClick?: (event: EventItem) => void;
@@ -180,6 +182,7 @@ export function InboxDataGrid({
   onClearRules,
   onQuickDelete,
   onJustDelete,
+  onMarkRead,
   onQuickMarkRead,
   onUndelete,
   onRowClick,
@@ -316,6 +319,22 @@ export function InboxDataGrid({
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>Always delete from this sender</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className={`shrink-0 rounded p-1 opacity-0 group-hover/row:opacity-100 transition-all ${event.isRead ? 'text-muted-foreground/30 cursor-default' : 'text-muted-foreground hover:!text-green-500'}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!event.isRead) onMarkRead(event);
+                          }}
+                          disabled={event.isRead}
+                        >
+                          <MailCheck className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{event.isRead ? 'Already read' : 'Mark as read'}</TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -508,7 +527,7 @@ export function InboxDataGrid({
         ),
       })] : []),
     ],
-    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onClearRules, onQuickDelete, onJustDelete, onQuickMarkRead, onUndelete, folderFilter, isUnifiedMode, mailboxEmailMap],
+    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onClearRules, onQuickDelete, onJustDelete, onMarkRead, onQuickMarkRead, onUndelete, folderFilter, isUnifiedMode, mailboxEmailMap],
   );
 
   const table = useReactTable({

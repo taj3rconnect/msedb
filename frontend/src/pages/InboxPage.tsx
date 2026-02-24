@@ -1274,6 +1274,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                 onClearRules={handleClearRules}
                 onQuickDelete={handleQuickDelete}
                 onJustDelete={handleJustDelete}
+                onMarkRead={handleMarkRead}
                 onQuickMarkRead={handleQuickMarkRead}
                 onUndelete={handleUndelete}
                 onRowClick={handleRowClick}
