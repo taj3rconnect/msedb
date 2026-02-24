@@ -118,6 +118,14 @@ export function Topbar() {
             >
               Deleted Items
             </Badge>
+            {inboxFolder !== 'inbox' && inboxFolder !== 'deleted' && (
+              <Badge
+                variant="default"
+                className="text-xs px-2.5 py-0.5"
+              >
+                {inboxFolder}
+              </Badge>
+            )}
           </div>
         </div>
       )}

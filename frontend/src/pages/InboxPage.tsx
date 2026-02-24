@@ -37,7 +37,7 @@ import { fetchEvents, summarizeToday, downloadSummaryCsv, sendSummaryEmail } fro
 import type { EventItem } from '@/api/events';
 import { createRule, updateRule, fetchRules, runRule, deleteRulesBySender } from '@/api/rules';
 import type { RuleAction, RuleConditions } from '@/api/rules';
-import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, fetchMessageBody, replyToMessage, replyAllToMessage, forwardMessage } from '@/api/mailboxes';
+import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, syncFolderStream, type SyncProgress, fetchMessageBody, replyToMessage, replyAllToMessage, forwardMessage } from '@/api/mailboxes';
 import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
 import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -107,9 +107,44 @@ interface ConfirmPayload {
 function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: string; isUnifiedMode?: boolean }) {
   const queryClient = useQueryClient();
   const mailboxes = useAuthStore((s) => s.mailboxes);
-  const folderFilter = useUiStore((s) => s.inboxFolder);
+  const folderFilter: string = useUiStore((s) => s.inboxFolder);
+  const activeFolderId = useUiStore((s) => s.activeFolderId);
+  const selectedFolderMailboxId = useUiStore((s) => s.selectedFolderMailboxId);
+  const folderSyncRequested = useUiStore((s) => s.folderSyncRequested);
   const setFolderFilter = useUiStore((s) => s.setInboxFolder);
   const queryKeyId = mailboxId || 'unified';
+
+  // Folder sync with progress overlay
+  const [syncState, setSyncState] = useState<{
+    active: boolean;
+    progress: SyncProgress | null;
+    cancel: (() => void) | null;
+  }>({ active: false, progress: null, cancel: null });
+
+  const startFolderSync = useCallback((mbId: string, fId: string) => {
+    const cancel = syncFolderStream(
+      mbId,
+      fId,
+      (progress) => setSyncState((s) => ({ ...s, progress })),
+      () => {
+        setSyncState({ active: false, progress: null, cancel: null });
+        queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
+      },
+      () => {
+        setSyncState({ active: false, progress: null, cancel: null });
+      },
+    );
+    setSyncState({ active: true, progress: { created: 0, updated: 0, deleted: 0, skipped: 0, pageMessages: 0 }, cancel });
+  }, [queryClient]);
+
+  // React to sidebar folder click
+  useEffect(() => {
+    if (folderSyncRequested === 0) return;
+    const mbId = mailboxId || selectedFolderMailboxId;
+    if (mbId && activeFolderId) {
+      startFolderSync(mbId, activeFolderId);
+    }
+  }, [folderSyncRequested]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
@@ -294,7 +329,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         search: search || undefined,
         page,
         limit: 50,
-        excludeDeleted: folderFilter !== 'deleted',
+        excludeDeleted: folderFilter === 'inbox',
         folder: folderFilter,
         unreadOnly: unreadOnly || undefined,
         ...dateRange,
@@ -779,14 +814,18 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   }, [undeleteMutation]);
 
   // Sync mutation — triggers delta sync to pull recent emails from Graph
+  // If viewing a specific folder, syncs that folder with progress overlay
   const syncMutation = useMutation({
-    mutationFn: () => triggerSync(),
+    mutationFn: async () => {
+      const mbId = mailboxId || selectedFolderMailboxId;
+      if (activeFolderId && mbId) {
+        startFolderSync(mbId, activeFolderId);
+      }
+      return triggerSync();
+    },
     onSuccess: () => {
       toast.success('Sync started — new emails will appear shortly');
-      // Refetch inbox after a short delay to show new emails
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['inbox-events', queryKeyId] });
-      }, 3000);
+      queryClient.invalidateQueries({ queryKey: ['inbox-events', queryKeyId] });
     },
     onError: (err: Error) => {
       toast.error(`Sync failed: ${err.message}`);
@@ -1178,7 +1217,15 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         </div>
       )}
 
-      {isError ? (
+      {syncState.active ? (
+        <FolderSyncOverlay
+          progress={syncState.progress}
+          onCancel={() => {
+            syncState.cancel?.();
+            setSyncState({ active: false, progress: null, cancel: null });
+          }}
+        />
+      ) : isError ? (
         <EmptyState
           icon={AlertCircle}
           title="Failed to load emails"
@@ -1559,6 +1606,127 @@ function SummarizeLoadingState({ onCancel }: { onCancel: () => void }) {
       >
         <X className="mr-1.5 h-3.5 w-3.5" />
         Cancel
+      </Button>
+    </div>
+  );
+}
+
+// --- Folder Sync Overlay ---
+
+const SYNC_MESSAGES = [
+  "📡 Beaming down your emails from the cloud...",
+  "📮 Your mailbox is spilling its secrets...",
+  "🏃 Chasing emails at the speed of light...",
+  "🧲 Magnetically attracting your messages...",
+  "🎣 Fishing for emails in the Microsoft ocean...",
+  "🚚 Mail truck incoming, honk honk!",
+  "🌊 Surfing the email wave...",
+  "🐝 Busy bees fetching your honey... er, mail...",
+  "🏗️ Building your email empire, one message at a time...",
+  "🎰 Every message is a winner!",
+  "📦 Unpacking your digital mail bag...",
+  "🛸 Downloading emails from the mothership...",
+  "⚡ Electrons carrying your precious messages...",
+  "🎁 Unwrapping emails like birthday presents...",
+  "🧙 Conjuring messages from the Graph API void...",
+  "🐌 Just kidding, we're actually pretty fast...",
+  "🎪 Step right up! Watch the emails appear!",
+  "🍿 Sit back, relax, enjoy the sync show...",
+  "🦅 Emails soaring in from Microsoft HQ...",
+  "🔬 Carefully examining each message...",
+];
+
+function FolderSyncOverlay({
+  progress,
+  onCancel,
+}: {
+  progress: SyncProgress | null;
+  onCancel: () => void;
+}) {
+  const [messageIndex, setMessageIndex] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const msgTimer = setInterval(() => {
+      setMessageIndex((prev) => (prev + 1) % SYNC_MESSAGES.length);
+    }, 3000);
+    return () => clearInterval(msgTimer);
+  }, []);
+
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const timeStr = mins > 0 ? `${mins}m ${secs.toString().padStart(2, '0')}s` : `${secs}s`;
+
+  const total = progress
+    ? progress.created + progress.updated + progress.deleted + progress.skipped
+    : 0;
+
+  return (
+    <div className="flex flex-col items-center justify-center py-16 gap-5">
+      {/* Animated mail icon */}
+      <div className="relative">
+        <Mail className="h-12 w-12 text-primary animate-bounce" />
+        {total > 0 && (
+          <span className="absolute -top-2 -right-3 bg-primary text-primary-foreground text-xs font-bold rounded-full h-6 min-w-6 flex items-center justify-center px-1.5 animate-in zoom-in duration-200">
+            {total}
+          </span>
+        )}
+      </div>
+
+      {/* Funny rotating message */}
+      <p
+        key={messageIndex}
+        className="text-base text-muted-foreground animate-in fade-in slide-in-from-bottom-2 duration-300 text-center max-w-md"
+      >
+        {SYNC_MESSAGES[messageIndex]}
+      </p>
+
+      {/* Progress stats */}
+      {progress && (
+        <div className="flex items-center gap-4 text-sm tabular-nums">
+          {progress.created > 0 && (
+            <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+              <Inbox className="h-3.5 w-3.5" />
+              {progress.created} new
+            </span>
+          )}
+          {progress.updated > 0 && (
+            <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+              <RefreshCw className="h-3.5 w-3.5" />
+              {progress.updated} updated
+            </span>
+          )}
+          {progress.deleted > 0 && (
+            <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+              <Trash2 className="h-3.5 w-3.5" />
+              {progress.deleted} removed
+            </span>
+          )}
+          {progress.pageMessages > 0 && (
+            <span className="text-muted-foreground">
+              ({progress.pageMessages} in last batch)
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Elapsed time */}
+      <p className="text-xs text-muted-foreground/60 tabular-nums">{timeStr}</p>
+
+      {/* Cancel button */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-1"
+        onClick={onCancel}
+      >
+        <X className="mr-1.5 h-3.5 w-3.5" />
+        Stop Sync
       </Button>
     </div>
   );

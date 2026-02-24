@@ -3,7 +3,7 @@ import { buildSelectParam } from '../utils/graph.js';
 import { getRedisClient } from '../config/redis.js';
 import { extractMetadata, type GraphMessage } from './metadataExtractor.js';
 import { saveEmailEvent } from './eventCollector.js';
-import { getFolderName, getTrackedFolderIds, refreshFolderCache } from './folderCache.js';
+import { getFolderName, getTrackedFolderIds, getAllCachedFolderIds, refreshFolderCache } from './folderCache.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { Types } from 'mongoose';
 import { Mailbox } from '../models/Mailbox.js';
@@ -81,12 +81,18 @@ interface DeltaQueryResponse {
  * represents duplicates -- this is EXPECTED and NORMAL since delta
  * sync will frequently see events already captured by webhooks.
  */
+export interface DeltaSyncOptions {
+  onProgress?: (counters: DeltaSyncResult, pageMessages: number) => void;
+  signal?: AbortSignal;
+}
+
 export async function runDeltaSync(
   mailboxId: string,
   mailboxEmail: string,
   folderId: string,
   accessToken: string,
   userId: string,
+  options?: DeltaSyncOptions,
 ): Promise<DeltaSyncResult> {
   // Get stored deltaLink from Redis
   const storedDeltaLink = await getDeltaLink(mailboxId, folderId);
@@ -104,6 +110,11 @@ export async function runDeltaSync(
   const counters: DeltaSyncResult = { created: 0, updated: 0, deleted: 0, skipped: 0 };
 
   while (url) {
+    // Check for cancellation
+    if (options?.signal?.aborted) {
+      return counters;
+    }
+
     let data: DeltaQueryResponse;
 
     try {
@@ -117,7 +128,7 @@ export async function runDeltaSync(
           mailboxId,
           folderId,
         });
-        return runDeltaSync(mailboxId, mailboxEmail, folderId, accessToken, userId);
+        return runDeltaSync(mailboxId, mailboxEmail, folderId, accessToken, userId, options);
       }
       throw err;
     }
@@ -192,6 +203,9 @@ export async function runDeltaSync(
       }
     }
 
+    // Report progress after each page
+    options?.onProgress?.(counters, messages.length);
+
     // Follow pagination or store deltaLink
     if (data['@odata.nextLink']) {
       url = data['@odata.nextLink'];
@@ -250,12 +264,16 @@ export async function runDeltaSyncForMailbox(mailboxId: string): Promise<void> {
     });
   }
 
-  // Get tracked folder IDs
+  // Get ALL folder IDs (top-level + subfolders) from cache
+  // Falls back to well-known folders only if cache is empty
   let folderIds: string[];
   try {
-    folderIds = await getTrackedFolderIds(mailboxEmail, accessToken);
+    folderIds = await getAllCachedFolderIds(mailboxEmail);
+    if (folderIds.length === 0) {
+      folderIds = await getTrackedFolderIds(mailboxEmail, accessToken);
+    }
   } catch (err) {
-    logger.error('Failed to get tracked folder IDs', {
+    logger.error('Failed to get folder IDs for delta sync', {
       mailboxId,
       error: err instanceof Error ? err.message : String(err),
     });

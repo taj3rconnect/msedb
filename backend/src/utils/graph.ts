@@ -30,6 +30,7 @@ export const SELECT_FIELDS = {
     'parentFolderId',
     'totalItemCount',
     'unreadItemCount',
+    'childFolderCount',
   ],
   messageRule: [
     'id',

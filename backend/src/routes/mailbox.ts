@@ -13,7 +13,9 @@ import {
 } from '../services/whitelistService.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { refreshFolderCache } from '../services/folderCache.js';
+import { runDeltaSync, type DeltaSyncResult } from '../services/deltaService.js';
 import { graphFetch } from '../services/graphClient.js';
+import { buildSelectParam } from '../utils/graph.js';
 import { config } from '../config/index.js';
 import logger from '../config/logger.js';
 import { NotFoundError, ValidationError } from '../middleware/errorHandler.js';
@@ -244,14 +246,152 @@ mailboxRouter.get('/:id/folders', async (req: Request, res: Response) => {
   }
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
-  const folderMap = await refreshFolderCache(mailbox.email, accessToken);
 
-  const folders = Array.from(folderMap.entries()).map(([id, displayName]) => ({
-    id,
-    displayName,
-  }));
+  // Fetch folders with counts directly from Graph API
+  const selectParam = buildSelectParam('mailFolder');
+  let url: string | undefined =
+    `/users/${mailbox.email}/mailFolders?$select=${selectParam}&$top=100`;
+
+  interface FolderResult {
+    id: string;
+    displayName: string;
+    totalItemCount: number;
+    unreadItemCount: number;
+    childFolderCount: number;
+  }
+  const folders: FolderResult[] = [];
+
+  while (url) {
+    const response = await graphFetch(url, accessToken);
+    const data = (await response.json()) as {
+      value: { id: string; displayName: string; totalItemCount?: number; unreadItemCount?: number; childFolderCount?: number }[];
+      '@odata.nextLink'?: string;
+    };
+
+    for (const folder of data.value) {
+      folders.push({
+        id: folder.id,
+        displayName: folder.displayName,
+        totalItemCount: folder.totalItemCount ?? 0,
+        unreadItemCount: folder.unreadItemCount ?? 0,
+        childFolderCount: folder.childFolderCount ?? 0,
+      });
+    }
+
+    url = data['@odata.nextLink'];
+  }
+
+  // Also refresh the folder cache as a side effect
+  refreshFolderCache(mailbox.email, accessToken).catch(() => {});
 
   res.json({ folders });
+});
+
+/**
+ * GET /api/mailboxes/:id/folders/:folderId/children
+ *
+ * Returns child folders for a specific folder.
+ */
+mailboxRouter.get('/:id/folders/:folderId/children', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const selectParam = buildSelectParam('mailFolder');
+  let url: string | undefined =
+    `/users/${mailbox.email}/mailFolders/${req.params.folderId}/childFolders?$select=${selectParam}&$top=100`;
+
+  const folders: { id: string; displayName: string; totalItemCount: number; unreadItemCount: number; childFolderCount: number }[] = [];
+
+  while (url) {
+    const response = await graphFetch(url, accessToken);
+    const data = (await response.json()) as {
+      value: { id: string; displayName: string; totalItemCount?: number; unreadItemCount?: number; childFolderCount?: number }[];
+      '@odata.nextLink'?: string;
+    };
+
+    for (const folder of data.value) {
+      folders.push({
+        id: folder.id,
+        displayName: folder.displayName,
+        totalItemCount: folder.totalItemCount ?? 0,
+        unreadItemCount: folder.unreadItemCount ?? 0,
+        childFolderCount: folder.childFolderCount ?? 0,
+      });
+    }
+
+    url = data['@odata.nextLink'];
+  }
+
+  res.json({ folders });
+});
+
+/**
+ * POST /api/mailboxes/:id/folders/:folderId/sync
+ *
+ * Trigger a delta sync for a specific folder. Used when user navigates
+ * to a folder that may not have been synced yet.
+ */
+mailboxRouter.post('/:id/folders/:folderId/sync', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  // Set up SSE streaming for progress updates
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  const ac = new AbortController();
+  req.on('close', () => ac.abort());
+
+  const sendEvent = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+    const folderId = req.params.folderId as string;
+
+    const result = await runDeltaSync(
+      mailbox._id.toString(),
+      mailbox.email,
+      folderId,
+      accessToken,
+      mailbox.userId.toString(),
+      {
+        signal: ac.signal,
+        onProgress: (counters: DeltaSyncResult, pageMessages: number) => {
+          if (!ac.signal.aborted) {
+            sendEvent('progress', { ...counters, pageMessages });
+          }
+        },
+      },
+    );
+
+    if (!ac.signal.aborted) {
+      sendEvent('done', { synced: true, ...result });
+    }
+  } catch (err) {
+    if (!ac.signal.aborted) {
+      sendEvent('error', { message: err instanceof Error ? err.message : 'Sync failed' });
+    }
+  }
+
+  res.end();
 });
 
 /**

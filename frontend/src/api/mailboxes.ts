@@ -35,6 +35,9 @@ export async function disconnectMailbox(mailboxId: string): Promise<void> {
 export interface MailFolder {
   id: string;
   displayName: string;
+  totalItemCount: number;
+  unreadItemCount: number;
+  childFolderCount: number;
 }
 
 /**
@@ -44,6 +47,113 @@ export async function fetchMailboxFolders(
   mailboxId: string,
 ): Promise<{ folders: MailFolder[] }> {
   return apiFetch<{ folders: MailFolder[] }>(`/mailboxes/${mailboxId}/folders`);
+}
+
+/**
+ * Fetch child folders for a specific folder.
+ */
+export async function fetchChildFolders(
+  mailboxId: string,
+  folderId: string,
+): Promise<{ folders: MailFolder[] }> {
+  return apiFetch<{ folders: MailFolder[] }>(`/mailboxes/${mailboxId}/folders/${folderId}/children`);
+}
+
+export interface SyncProgress {
+  created: number;
+  updated: number;
+  deleted: number;
+  skipped: number;
+  pageMessages: number;
+}
+
+export interface SyncResult {
+  synced: boolean;
+  created: number;
+  updated: number;
+  deleted: number;
+  skipped: number;
+}
+
+/**
+ * Trigger delta sync for a specific folder with SSE progress streaming.
+ * Returns an abort function to cancel the sync.
+ */
+export function syncFolderStream(
+  mailboxId: string,
+  folderId: string,
+  onProgress: (progress: SyncProgress) => void,
+  onDone: (result: SyncResult) => void,
+  onError: (error: string) => void,
+): () => void {
+  const ac = new AbortController();
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+
+  fetch(`${baseUrl}/mailboxes/${mailboxId}/folders/${folderId}/sync`, {
+    method: 'POST',
+    credentials: 'include',
+    signal: ac.signal,
+  })
+    .then(async (res) => {
+      if (!res.body) {
+        onError('No response body');
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events from buffer
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7);
+          } else if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+            if (eventType === 'progress') onProgress(data);
+            else if (eventType === 'done') onDone(data);
+            else if (eventType === 'error') onError(data.message);
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        onError(err.message);
+      }
+    });
+
+  return () => ac.abort();
+}
+
+/**
+ * Trigger delta sync for a specific folder (simple, non-streaming).
+ */
+export async function syncFolder(
+  mailboxId: string,
+  folderId: string,
+): Promise<SyncResult> {
+  return new Promise((resolve, reject) => {
+    let lastResult: SyncResult | null = null;
+    syncFolderStream(
+      mailboxId,
+      folderId,
+      () => {},
+      (result) => { lastResult = result; resolve(result); },
+      (err) => reject(new Error(err)),
+    );
+    // Fallback timeout
+    setTimeout(() => {
+      if (lastResult) resolve(lastResult);
+    }, 120000);
+  });
 }
 
 /**

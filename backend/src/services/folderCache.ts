@@ -29,6 +29,7 @@ export type WellKnownFolder = (typeof WELL_KNOWN_FOLDERS)[number];
 interface GraphMailFolder {
   id: string;
   displayName: string;
+  childFolderCount?: number;
 }
 
 interface GraphMailFolderListResponse {
@@ -37,12 +38,51 @@ interface GraphMailFolderListResponse {
 }
 
 /**
+ * Recursively fetch child folders for a given parent folder.
+ */
+async function fetchChildFoldersRecursive(
+  mailboxEmail: string,
+  parentFolderId: string,
+  parentPath: string,
+  accessToken: string,
+  folderMap: Map<string, string>,
+): Promise<void> {
+  const selectParam = buildSelectParam('mailFolder');
+  let url: string | undefined =
+    `/users/${mailboxEmail}/mailFolders/${parentFolderId}/childFolders?$select=${selectParam}&$top=100`;
+
+  while (url) {
+    const response = await graphFetch(url, accessToken);
+    const data = (await response.json()) as GraphMailFolderListResponse;
+
+    for (const folder of data.value) {
+      const fullPath = parentPath ? `${parentPath}/${folder.displayName}` : folder.displayName;
+      folderMap.set(folder.id, fullPath);
+
+      // Recurse into children
+      if (folder.childFolderCount && folder.childFolderCount > 0) {
+        await fetchChildFoldersRecursive(
+          mailboxEmail,
+          folder.id,
+          fullPath,
+          accessToken,
+          folderMap,
+        );
+      }
+    }
+
+    url = data['@odata.nextLink'];
+  }
+}
+
+/**
  * Refresh the folder cache for a mailbox by fetching all mail folders
- * from Graph API and storing ID-to-displayName mappings in Redis.
+ * from Graph API (including subfolders recursively) and storing
+ * ID-to-displayName mappings in Redis.
  *
  * Follows @odata.nextLink for pagination (mailboxes can have 100+ folders).
  *
- * @returns Map of folderId -> displayName
+ * @returns Map of folderId -> displayName (includes subfolders)
  */
 export async function refreshFolderCache(
   mailboxEmail: string,
@@ -55,15 +95,31 @@ export async function refreshFolderCache(
   let url: string | undefined =
     `/users/${mailboxEmail}/mailFolders?$select=${selectParam}&$top=100`;
 
+  // Fetch top-level folders
+  const topLevelFolders: GraphMailFolder[] = [];
   while (url) {
     const response = await graphFetch(url, accessToken);
     const data = (await response.json()) as GraphMailFolderListResponse;
 
     for (const folder of data.value) {
       folderMap.set(folder.id, folder.displayName);
+      topLevelFolders.push(folder);
     }
 
     url = data['@odata.nextLink'];
+  }
+
+  // Recursively fetch child folders
+  for (const folder of topLevelFolders) {
+    if (folder.childFolderCount && folder.childFolderCount > 0) {
+      await fetchChildFoldersRecursive(
+        mailboxEmail,
+        folder.id,
+        folder.displayName,
+        accessToken,
+        folderMap,
+      );
+    }
   }
 
   // Store each mapping in Redis with 24h TTL
@@ -76,13 +132,13 @@ export async function refreshFolderCache(
     folderIds.push(folderId);
   }
 
-  // Store the complete folder ID list
+  // Store the complete folder ID list (all folders including subfolders)
   const allKey = `${FOLDER_CACHE_PREFIX}:${mailboxEmail}:all`;
   pipeline.set(allKey, JSON.stringify(folderIds), 'EX', FOLDER_CACHE_TTL);
 
   await pipeline.exec();
 
-  logger.info('Refreshed folder cache', {
+  logger.info('Refreshed folder cache (including subfolders)', {
     mailboxEmail,
     count: folderMap.size,
   });
@@ -104,6 +160,20 @@ export async function getFolderName(
   const key = `${FOLDER_CACHE_PREFIX}:${mailboxEmail}:${folderId}`;
   const name = await redis.get(key);
   return name ?? folderId;
+}
+
+/**
+ * Get ALL cached folder IDs for a mailbox (top-level + subfolders).
+ *
+ * @returns Array of all folder IDs from the cache
+ */
+export async function getAllCachedFolderIds(
+  mailboxEmail: string,
+): Promise<string[]> {
+  const redis = getRedisClient();
+  const allKey = `${FOLDER_CACHE_PREFIX}:${mailboxEmail}:all`;
+  const cached = await redis.get(allKey);
+  return cached ? JSON.parse(cached) : [];
 }
 
 /**

@@ -158,7 +158,7 @@ interface InboxDataGridProps {
   onRowClick?: (event: EventItem) => void;
   activeEventId?: string;
   focusedEventId?: string;
-  folderFilter?: 'inbox' | 'deleted';
+  folderFilter?: string;
   showFilters?: boolean;
   onToggleFilters?: (show: boolean) => void;
   toolbarSlot?: React.ReactNode;

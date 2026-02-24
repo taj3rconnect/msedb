@@ -97,7 +97,7 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     }
   }
 
-  // Filter by folder: supports 'inbox', 'deleted', or well-known folder names
+  // Filter by folder: supports 'inbox', 'deleted', well-known names, or subfolder paths
   const folderParam = typeof folder === 'string' ? folder : (inboxOnly === 'true' ? 'inbox' : null);
   if (folderParam) {
     const folderAliasMap: Record<string, string> = {
@@ -128,12 +128,25 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     const folderOrConditions: Record<string, unknown>[] = [
       { toFolder: displayName },
       { toFolder: wellKnownAlias },
+      { toFolder: folderParam }, // exact match for subfolder paths like "Inbox/Abacus"
     ];
     for (const mb of mailboxesToResolve) {
       if (mb.email) {
+        // Check well-known folder cache
         const cachedFolderId = await redis.get(`folder:${mb.email}:wk:${wellKnownAlias}`);
         if (cachedFolderId) {
           folderOrConditions.push({ toFolder: cachedFolderId });
+        }
+        // Also resolve folder ID from the full folder cache (subfolders included)
+        const allFolderIds = await redis.get(`folder:${mb.email}:all`);
+        if (allFolderIds) {
+          const ids: string[] = JSON.parse(allFolderIds);
+          for (const fid of ids) {
+            const fname = await redis.get(`folder:${mb.email}:${fid}`);
+            if (fname === folderParam || fname === displayName) {
+              folderOrConditions.push({ toFolder: fid });
+            }
+          }
         }
       }
     }
