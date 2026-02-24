@@ -124,3 +124,41 @@ export async function fetchEventTimeline(
 export async function fetchMailboxCounts(): Promise<{ counts: Record<string, number> }> {
   return apiFetch<{ counts: Record<string, number> }>('/events/mailbox-counts');
 }
+
+/**
+ * Summarize today's emails using AI.
+ */
+export async function summarizeToday(
+  mailboxId?: string,
+): Promise<{ summary: string; stats: { total: number; read: number; unread: number; deleted: number } }> {
+  return apiFetch<{ summary: string; stats: { total: number; read: number; unread: number; deleted: number } }>(
+    '/events/summarize-today',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mailboxId }),
+    },
+  );
+}
+
+/**
+ * Download today's emails as CSV.
+ */
+export function downloadSummaryCsv(mailboxId?: string): void {
+  const params = mailboxId ? `?mailboxId=${encodeURIComponent(mailboxId)}` : '';
+  window.open(`/api/events/summarize-today/csv${params}`, '_blank');
+}
+
+/**
+ * Send the summary via email using Graph API.
+ */
+export async function sendSummaryEmail(
+  to: string,
+  summary: string,
+): Promise<{ success: boolean }> {
+  return apiFetch<{ success: boolean }>('/events/summarize-today/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, summary }),
+  });
+}

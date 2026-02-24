@@ -1,10 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
+import Anthropic from '@anthropic-ai/sdk';
 import { requireAuth } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { getFolderName } from '../services/folderCache.js';
 import { getRedisClient } from '../config/redis.js';
+import { graphFetch } from '../services/graphClient.js';
+import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 
 const eventsRouter = Router();
 
@@ -302,6 +305,277 @@ eventsRouter.get('/mailbox-counts', async (req: Request, res: Response) => {
   }
 
   res.json({ counts: result });
+});
+
+/**
+ * POST /api/events/summarize-today
+ *
+ * Uses AI to summarize today's emails, grouped by importance.
+ * Body: { mailboxId?: string }
+ */
+eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { mailboxId } = req.body;
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+    return;
+  }
+
+  // Query today's arrived events
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  const filter: Record<string, unknown> = {
+    userId,
+    eventType: 'arrived',
+    receivedAt: { $gte: startOfDay, $lte: endOfDay },
+  };
+  if (mailboxId && typeof mailboxId === 'string') {
+    filter.mailboxId = mailboxId;
+  }
+
+  // Exclude deleted emails
+  const deletedMessageIds = await EmailEvent.distinct('messageId', {
+    userId,
+    ...(mailboxId && typeof mailboxId === 'string' ? { mailboxId } : {}),
+    eventType: 'deleted',
+  });
+  if (deletedMessageIds.length > 0) {
+    filter.messageId = { $nin: deletedMessageIds };
+  }
+
+  // Build aggregation-safe filter with proper ObjectId casting
+  const aggFilter: Record<string, unknown> = {
+    userId: new Types.ObjectId(userId),
+    eventType: 'arrived',
+    receivedAt: { $gte: startOfDay, $lte: endOfDay },
+  };
+  if (mailboxId && typeof mailboxId === 'string') {
+    aggFilter.mailboxId = new Types.ObjectId(mailboxId);
+  }
+  if (deletedMessageIds.length > 0) {
+    aggFilter.messageId = { $nin: deletedMessageIds };
+  }
+
+  const [events, readUnreadCounts] = await Promise.all([
+    EmailEvent.find(filter)
+      .sort({ receivedAt: -1 })
+      .limit(200)
+      .select('sender subject importance isRead categories metadata.isNewsletter hasAttachments receivedAt')
+      .lean(),
+    EmailEvent.aggregate([
+      { $match: aggFilter },
+      { $group: { _id: '$isRead', count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  // Compute accurate read/unread stats from aggregation
+  let readCount = 0;
+  let unreadCount = 0;
+  for (const bucket of readUnreadCounts) {
+    if (bucket._id === true) readCount = bucket.count;
+    else unreadCount = bucket.count;
+  }
+  const totalCount = readCount + unreadCount;
+  const deletedCount = deletedMessageIds.length;
+  const stats = { total: totalCount, read: readCount, unread: unreadCount, deleted: deletedCount };
+
+  if (events.length === 0) {
+    res.json({ summary: '<p style="color:#888">No emails received today.</p>', stats });
+    return;
+  }
+
+  // Build text list for Claude
+  const emailList = events.map((e, i) => {
+    const sender = e.sender?.name
+      ? `${e.sender.name} <${e.sender.email}>`
+      : (e.sender?.email || 'Unknown');
+    const subject = e.subject || '(no subject)';
+    const importance = e.importance || 'normal';
+    const isNewsletter = (e as any).metadata?.isNewsletter ? 'yes' : 'no';
+    const isRead = e.isRead ? 'read' : 'unread';
+    const attachments = e.hasAttachments ? 'has attachments' : '';
+    const categories = e.categories?.length ? `categories: ${e.categories.join(', ')}` : '';
+    const time = new Date(e.receivedAt ?? e.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+    return `${i + 1}. [${time}] From: ${sender} | Subject: ${subject} | Importance: ${importance} | Newsletter: ${isNewsletter} | ${isRead} ${attachments} ${categories}`.trim();
+  }).join('\n');
+
+  const truncatedNote = totalCount > events.length
+    ? `\n\nNote: Showing ${events.length} of ${totalCount} total emails received today.`
+    : '';
+
+  const prompt = `You are an email assistant. Summarize the following ${events.length} emails received today (${totalCount} total). Group them into these categories (use ALL that apply, skip empty categories):
+
+1. **Needs Your Response** — emails that clearly require a reply or action (meetings to accept, questions asked, approvals needed)
+2. **Important Updates** — significant emails that don't need a reply but should be read (announcements, reports, notifications from people)
+3. **FYI / Updates** — informational emails, automated notifications, status updates
+4. **Newsletters & Low Priority** — marketing, newsletters, bulk emails, promotions
+
+Rules:
+- Maximum 1 line per email, be very brief
+- For "Needs Your Response" items, wrap each line in <span style="color:#ef4444;font-weight:600">...</span>
+- Use HTML formatting. Each category as <h3> with a count. Each email as a <div> with sender name bolded.
+- At the top, add a brief 1-sentence overall summary (e.g. "23 emails today — 3 need your attention")
+- Do NOT use markdown, only HTML
+- If an email is unread, prefix with a blue dot: <span style="color:#3b82f6">●</span>
+
+Here are today's emails:
+${emailList}${truncatedNote}`;
+
+  try {
+    const anthropic = new Anthropic({ apiKey });
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const textBlock = message.content.find((b) => b.type === 'text');
+    const summary = textBlock?.text || '<p>Failed to generate summary.</p>';
+
+    res.json({ summary, stats });
+  } catch (err: any) {
+    console.error('Anthropic API error:', err.message);
+    res.status(500).json({ error: `AI summary failed: ${err.message}` });
+  }
+});
+
+/**
+ * GET /api/events/summarize-today/csv
+ *
+ * Downloads today's emails as a CSV file.
+ * Query: ?mailboxId (optional)
+ */
+eventsRouter.get('/summarize-today/csv', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { mailboxId } = req.query;
+
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  const filter: Record<string, unknown> = {
+    userId,
+    eventType: 'arrived',
+    receivedAt: { $gte: startOfDay, $lte: endOfDay },
+  };
+  if (mailboxId && typeof mailboxId === 'string') {
+    filter.mailboxId = mailboxId;
+  }
+
+  // Exclude deleted emails
+  const deletedMessageIds = await EmailEvent.distinct('messageId', {
+    userId,
+    ...(mailboxId && typeof mailboxId === 'string' ? { mailboxId } : {}),
+    eventType: 'deleted',
+  });
+  if (deletedMessageIds.length > 0) {
+    filter.messageId = { $nin: deletedMessageIds };
+  }
+
+  const events = await EmailEvent.find(filter)
+    .sort({ receivedAt: -1 })
+    .limit(500)
+    .select('sender subject importance isRead hasAttachments categories receivedAt timestamp')
+    .lean();
+
+  // Build CSV
+  const escapeCsv = (val: string) => {
+    if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  };
+
+  const header = 'Time,From Name,From Email,Subject,Importance,Read,Has Attachments,Categories';
+  const rows = events.map((e) => {
+    const time = new Date(e.receivedAt ?? e.timestamp).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return [
+      escapeCsv(time),
+      escapeCsv(e.sender?.name || ''),
+      escapeCsv(e.sender?.email || ''),
+      escapeCsv(e.subject || ''),
+      escapeCsv(e.importance || 'normal'),
+      e.isRead ? 'Yes' : 'No',
+      e.hasAttachments ? 'Yes' : 'No',
+      escapeCsv(e.categories?.join('; ') || ''),
+    ].join(',');
+  });
+
+  const csv = [header, ...rows].join('\n');
+  const dateStr = now.toISOString().slice(0, 10);
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="email-summary-${dateStr}.csv"`);
+  res.send(csv);
+});
+
+/**
+ * POST /api/events/summarize-today/send
+ *
+ * Sends the summary as an email via Graph API sendMail.
+ * Body: { to: string, summary: string }
+ */
+eventsRouter.post('/summarize-today/send', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { to, summary } = req.body;
+
+  if (!to || !summary) {
+    res.status(400).json({ error: 'Missing "to" or "summary" in request body' });
+    return;
+  }
+
+  // Find the first connected mailbox to send from
+  const mailbox = await Mailbox.findOne({ userId, isConnected: true }).lean();
+  if (!mailbox) {
+    res.status(400).json({ error: 'No connected mailbox to send from' });
+    return;
+  }
+
+  try {
+    const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+    const today = new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    const sendMailBody = {
+      message: {
+        subject: `Daily Email Summary — ${today}`,
+        body: {
+          contentType: 'HTML',
+          content: summary,
+        },
+        toRecipients: to.split(/[,;]+/).map((email: string) => ({
+          emailAddress: { address: email.trim() },
+        })),
+      },
+      saveToSentItems: false,
+    };
+
+    await graphFetch(
+      `/users/${mailbox.email}/sendMail`,
+      accessToken,
+      {
+        method: 'POST',
+        body: JSON.stringify(sendMailBody),
+      },
+    );
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Send summary email error:', err.message);
+    res.status(500).json({ error: `Failed to send email: ${err.message}` });
+  }
 });
 
 export { eventsRouter };

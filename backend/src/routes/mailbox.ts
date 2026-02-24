@@ -20,6 +20,31 @@ import { NotFoundError, ValidationError } from '../middleware/errorHandler.js';
 
 const mailboxRouter = Router();
 
+/**
+ * Prepend user's reply text into a Graph-generated draft HTML body.
+ * Uses multiple fallback strategies to ensure the text is always inserted.
+ */
+function prependReplyHtml(draftBodyContent: string, replyText: string): string {
+  const replyHtml = `<div style="font-family:Calibri,Arial,Helvetica,sans-serif;font-size:11pt;color:#000000">${replyText.replace(/\n/g, '<br>')}</div><br>`;
+
+  // Strategy 1: Insert after the appendonsend marker (Graph's standard insertion point)
+  const appendOnSend = draftBodyContent.match(/<div\s+id\s*=\s*["']appendonsend["'][^>]*>[\s\S]*?<\/div>/i);
+  if (appendOnSend) {
+    const insertPos = appendOnSend.index! + appendOnSend[0].length;
+    return draftBodyContent.slice(0, insertPos) + replyHtml + draftBodyContent.slice(insertPos);
+  }
+
+  // Strategy 2: Insert right after the opening <body> tag
+  const bodyTag = draftBodyContent.match(/<body[^>]*>/i);
+  if (bodyTag) {
+    const insertPos = bodyTag.index! + bodyTag[0].length;
+    return draftBodyContent.slice(0, insertPos) + replyHtml + draftBodyContent.slice(insertPos);
+  }
+
+  // Strategy 3: Prepend to whatever content exists
+  return replyHtml + draftBodyContent;
+}
+
 // All mailbox routes require authentication
 mailboxRouter.use(requireAuth);
 
@@ -570,14 +595,14 @@ mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response
 /**
  * POST /api/mailboxes/:id/reply
  *
- * Send a reply to a message using Graph API one-step reply.
+ * Two-step reply: createReply draft (with proper HTML + quoted original) → send.
+ * Produces Outlook-identical formatting that passes spam filters.
  * Body: { messageId, body, contentType? }
  */
 mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
-  const { messageId, body, contentType } = req.body as {
+  const { messageId, body } = req.body as {
     messageId?: string;
     body?: string;
-    contentType?: string;
   };
 
   if (!messageId) throw new ValidationError('messageId is required');
@@ -591,18 +616,37 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
 
+  // Step 1: Create draft reply — empty body gives us the quoted original
+  const createRes = await graphFetch(
+    `/users/${mailbox.email}/messages/${messageId}/createReply`,
+    accessToken,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+  const draft = (await createRes.json()) as { id: string; body: { content: string; contentType: string } };
+
+  // Step 2: Prepend user's reply as Outlook-formatted HTML into the draft body
+  const updatedContent = prependReplyHtml(draft.body.content, body.trim());
+
   await graphFetch(
-    `/users/${mailbox.email}/messages/${messageId}/reply`,
+    `/users/${mailbox.email}/messages/${draft.id}`,
     accessToken,
     {
-      method: 'POST',
+      method: 'PATCH',
       body: JSON.stringify({
-        comment: body.trim(),
+        body: { contentType: 'HTML', content: updatedContent },
+        importance: 'normal',
       }),
     },
   );
 
-  logger.info('Reply sent', {
+  // Step 3: Send the draft
+  await graphFetch(
+    `/users/${mailbox.email}/messages/${draft.id}/send`,
+    accessToken,
+    { method: 'POST' },
+  );
+
+  logger.info('Reply sent (two-step)', {
     mailboxId: req.params.id,
     messageId,
     userId: req.user!.userId,
@@ -614,14 +658,13 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
 /**
  * POST /api/mailboxes/:id/reply-all
  *
- * Send a reply-all to a message using Graph API one-step replyAll.
+ * Two-step reply-all: createReplyAll draft → send.
  * Body: { messageId, body, contentType? }
  */
 mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
-  const { messageId, body, contentType } = req.body as {
+  const { messageId, body } = req.body as {
     messageId?: string;
     body?: string;
-    contentType?: string;
   };
 
   if (!messageId) throw new ValidationError('messageId is required');
@@ -635,18 +678,37 @@ mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
 
+  // Step 1: Create draft reply-all
+  const createRes = await graphFetch(
+    `/users/${mailbox.email}/messages/${messageId}/createReplyAll`,
+    accessToken,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+  const draft = (await createRes.json()) as { id: string; body: { content: string; contentType: string } };
+
+  // Step 2: Prepend user's reply as Outlook-formatted HTML
+  const updatedContent = prependReplyHtml(draft.body.content, body.trim());
+
   await graphFetch(
-    `/users/${mailbox.email}/messages/${messageId}/replyAll`,
+    `/users/${mailbox.email}/messages/${draft.id}`,
     accessToken,
     {
-      method: 'POST',
+      method: 'PATCH',
       body: JSON.stringify({
-        comment: body.trim(),
+        body: { contentType: 'HTML', content: updatedContent },
+        importance: 'normal',
       }),
     },
   );
 
-  logger.info('Reply-all sent', {
+  // Step 3: Send
+  await graphFetch(
+    `/users/${mailbox.email}/messages/${draft.id}/send`,
+    accessToken,
+    { method: 'POST' },
+  );
+
+  logger.info('Reply-all sent (two-step)', {
     mailboxId: req.params.id,
     messageId,
     userId: req.user!.userId,
@@ -658,15 +720,14 @@ mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
 /**
  * POST /api/mailboxes/:id/forward
  *
- * Forward a message using Graph API one-step forward.
+ * Two-step forward: createForward draft → set recipients → send.
  * Body: { messageId, toRecipients: [{email, name?}], body, contentType? }
  */
 mailboxRouter.post('/:id/forward', async (req: Request, res: Response) => {
-  const { messageId, toRecipients, body, contentType } = req.body as {
+  const { messageId, toRecipients, body } = req.body as {
     messageId?: string;
     toRecipients?: { email: string; name?: string }[];
     body?: string;
-    contentType?: string;
   };
 
   if (!messageId) throw new ValidationError('messageId is required');
@@ -683,21 +744,40 @@ mailboxRouter.post('/:id/forward', async (req: Request, res: Response) => {
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
 
+  // Step 1: Create draft forward
+  const createRes = await graphFetch(
+    `/users/${mailbox.email}/messages/${messageId}/createForward`,
+    accessToken,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+  const draft = (await createRes.json()) as { id: string; body: { content: string; contentType: string } };
+
+  // Step 2: Set recipients and prepend user's comment
+  const updatedContent = prependReplyHtml(draft.body.content, body.trim());
+
   await graphFetch(
-    `/users/${mailbox.email}/messages/${messageId}/forward`,
+    `/users/${mailbox.email}/messages/${draft.id}`,
     accessToken,
     {
-      method: 'POST',
+      method: 'PATCH',
       body: JSON.stringify({
         toRecipients: toRecipients.map((r) => ({
           emailAddress: { address: r.email, name: r.name || r.email },
         })),
-        comment: body.trim(),
+        body: { contentType: 'HTML', content: updatedContent },
+        importance: 'normal',
       }),
     },
   );
 
-  logger.info('Message forwarded', {
+  // Step 3: Send
+  await graphFetch(
+    `/users/${mailbox.email}/messages/${draft.id}/send`,
+    accessToken,
+    { method: 'POST' },
+  );
+
+  logger.info('Message forwarded (two-step)', {
     mailboxId: req.params.id,
     messageId,
     toRecipients: toRecipients.map((r) => r.email),

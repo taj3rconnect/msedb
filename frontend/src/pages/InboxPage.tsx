@@ -26,11 +26,14 @@ import {
   Forward,
   Send,
   MailCheck,
+  Sparkles,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
-import { fetchEvents } from '@/api/events';
+import { fetchEvents, summarizeToday, downloadSummaryCsv, sendSummaryEmail } from '@/api/events';
 import type { EventItem } from '@/api/events';
 import { createRule, updateRule, fetchRules, runRule, deleteRulesBySender } from '@/api/rules';
 import type { RuleAction, RuleConditions } from '@/api/rules';
@@ -47,6 +50,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 export function InboxPage() {
   const { mailboxId: urlMailboxId } = useParams<{ mailboxId: string }>();
@@ -110,6 +120,36 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [contentType, setContentType] = useState<'all' | 'emails' | 'files' | 'contacts'>('all');
+
+  // Summarize Today state
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryContent, setSummaryContent] = useState('');
+  const [summaryStats, setSummaryStats] = useState<{ total: number; read: number; unread: number; deleted: number } | null>(null);
+  const [emailTo, setEmailTo] = useState('taj@jobtalk.ai');
+  const [showEmailForm, setShowEmailForm] = useState(false);
+
+  const summarizeMutation = useMutation({
+    mutationFn: () => summarizeToday(mailboxId || undefined),
+    onSuccess: (data) => {
+      setSummaryContent(data.summary);
+      setSummaryStats(data.stats);
+    },
+    onError: (err: Error) => {
+      toast.error(`Summary failed: ${err.message}`);
+      setSummaryOpen(false);
+    },
+  });
+
+  const sendEmailMutation = useMutation({
+    mutationFn: () => sendSummaryEmail(emailTo, summaryContent),
+    onSuccess: () => {
+      toast.success(`Summary sent to ${emailTo}`);
+      setShowEmailForm(false);
+    },
+    onError: (err: Error) => {
+      toast.error(`Failed to send: ${err.message}`);
+    },
+  });
 
   // Keyboard navigation
   const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -1012,6 +1052,27 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
           )}
           Sync
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => {
+            setSummaryContent('');
+            setSummaryStats(null);
+            setShowEmailForm(false);
+            setSummaryOpen(true);
+            summarizeMutation.mutate();
+          }}
+          disabled={summarizeMutation.isPending}
+          title="AI summary of today's emails"
+        >
+          {summarizeMutation.isPending ? (
+            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="mr-1 h-3.5 w-3.5" />
+          )}
+          Summarize
+        </Button>
         <span className="mx-0.5 h-5 w-px bg-border" />
         {([
           ['all', 'All'],
@@ -1296,6 +1357,130 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         isPending={confirmMutation.isPending}
         onConfirm={handleConfirm}
       />
+
+      {/* Summarize Today Dialog */}
+      <Dialog open={summaryOpen} onOpenChange={(open) => {
+        setSummaryOpen(open);
+        if (!open) setShowEmailForm(false);
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Today's Email Summary
+            </DialogTitle>
+          </DialogHeader>
+          {/* Stats bar */}
+          {summaryStats && !summarizeMutation.isPending && (
+            <div className="text-sm text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+              <span className="font-semibold text-foreground">{summaryStats.total}</span> emails today
+              {' — '}
+              <span className="text-green-600 dark:text-green-400">{summaryStats.read} read</span>
+              {', '}
+              <span className="text-blue-600 dark:text-blue-400">{summaryStats.unread} unread</span>
+              {summaryStats.deleted > 0 && (
+                <>
+                  {', '}
+                  <span className="text-red-500 dark:text-red-400">{summaryStats.deleted} deleted</span>
+                </>
+              )}
+            </div>
+          )}
+          <div className="flex-1 min-h-0 overflow-auto" id="summary-content">
+            {summarizeMutation.isPending ? (
+              <SummarizeLoadingState onCancel={() => {
+                summarizeMutation.reset();
+                setSummaryOpen(false);
+              }} />
+            ) : (
+              <div
+                className="prose prose-sm dark:prose-invert max-w-none [&_h3]:text-base [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-semibold [&_div]:py-0.5"
+                dangerouslySetInnerHTML={{ __html: summaryContent }}
+              />
+            )}
+          </div>
+          {/* Email form */}
+          {showEmailForm && (
+            <div className="flex items-center gap-2 border rounded-md p-2 bg-muted/30">
+              <Input
+                placeholder="Recipient email"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                className="flex-1 h-8 text-sm"
+              />
+              <Button
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => sendEmailMutation.mutate()}
+                disabled={sendEmailMutation.isPending || !emailTo.trim() || !summaryContent}
+              >
+                {sendEmailMutation.isPending ? (
+                  <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                ) : (
+                  <Send className="mr-1.5 h-3 w-3" />
+                )}
+                Send
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs"
+                onClick={() => setShowEmailForm(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+          <DialogFooter>
+            {!summarizeMutation.isPending && summaryContent && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadSummaryCsv(mailboxId || undefined)}
+                >
+                  <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />
+                  CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const statsHtml = summaryStats
+                      ? `<div style="margin-bottom:16px;padding:8px 12px;background:#f5f5f5;border-radius:6px;font-size:14px;color:#555"><strong style="color:#000">${summaryStats.total}</strong> emails today — <span style="color:#16a34a">${summaryStats.read} read</span>, <span style="color:#2563eb">${summaryStats.unread} unread</span></div>`
+                      : '';
+                    const printContent = `<!DOCTYPE html><html><head><title>Email Summary</title><style>body{font-family:system-ui,-apple-system,sans-serif;padding:24px;max-width:700px;margin:0 auto}h3{margin-top:16px;margin-bottom:8px}div{padding:2px 0}</style></head><body><h1>Today's Email Summary</h1>${statsHtml}${summaryContent}</body></html>`;
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    document.body.appendChild(iframe);
+                    iframe.contentDocument?.open();
+                    iframe.contentDocument?.write(printContent);
+                    iframe.contentDocument?.close();
+                    setTimeout(() => {
+                      iframe.contentWindow?.print();
+                      setTimeout(() => document.body.removeChild(iframe), 1000);
+                    }, 250);
+                  }}
+                >
+                  <FileText className="mr-1.5 h-3.5 w-3.5" />
+                  PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowEmailForm(!showEmailForm)}
+                >
+                  <Send className="mr-1.5 h-3.5 w-3.5" />
+                  Email
+                </Button>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setSummaryOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1309,6 +1494,74 @@ function highlightText(text: string, query: string): string {
   const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
   return text.replace(pattern, '<mark class="bg-yellow-200 dark:bg-yellow-500/30 rounded-sm px-0.5">$1</mark>');
+}
+
+// --- Summarize Loading State ---
+
+const SUMMARY_MESSAGES = [
+  "🔍 Digging through your inbox...",
+  "📬 So many emails, so little time...",
+  "🤖 AI is reading faster than you ever could...",
+  "☕ Grab a coffee, this inbox is THICC...",
+  "🧠 Teaching AI what 'urgent' really means...",
+  "📊 Crunching numbers, dodging spam...",
+  "🕵️ Hunting for emails that actually matter...",
+  "💌 Sorting love letters from newsletters...",
+  "🗑️ Resisting the urge to delete everything...",
+  "🎯 Finding needles in your email haystack...",
+  "📝 Writing your summary with extra sass...",
+  "🚀 Almost there... probably...",
+  "🤯 Wow, you get a LOT of email...",
+  "🧹 Sweeping through the chaos...",
+  "🎭 Judging your subscription choices...",
+  "⏳ Still faster than reading them yourself...",
+  "🔮 Predicting which ones you'll ignore...",
+  "🏋️ Heavy lifting in progress...",
+  "📖 Reading between the lines (literally)...",
+  "🎪 Organizing this circus of an inbox...",
+];
+
+function SummarizeLoadingState({ onCancel }: { onCancel: () => void }) {
+  const [messageIndex, setMessageIndex] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const msgTimer = setInterval(() => {
+      setMessageIndex((prev) => (prev + 1) % SUMMARY_MESSAGES.length);
+    }, 3000);
+    return () => clearInterval(msgTimer);
+  }, []);
+
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const timeStr = mins > 0 ? `${mins}m ${secs.toString().padStart(2, '0')}s` : `${secs}s`;
+
+  return (
+    <div className="flex flex-col items-center justify-center py-12 gap-4">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <p
+        key={messageIndex}
+        className="text-sm text-muted-foreground animate-in fade-in slide-in-from-bottom-2 duration-300"
+      >
+        {SUMMARY_MESSAGES[messageIndex]}
+      </p>
+      <p className="text-xs text-muted-foreground/60 tabular-nums">{timeStr}</p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-2"
+        onClick={onCancel}
+      >
+        <X className="mr-1.5 h-3.5 w-3.5" />
+        Cancel
+      </Button>
+    </div>
+  );
 }
 
 // --- Email Preview Pane ---
