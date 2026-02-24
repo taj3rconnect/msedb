@@ -1,0 +1,18 @@
+{
+  "name": "msedb-desktop",
+  "version": "1.15.1",
+  "description": "MSEDB - Microsoft Email Dashboard",
+  "main": "dist/main.js",
+  "private": true,
+  "scripts": {
+    "dev": "tsc && electron dist/main.js",
+    "build": "tsc",
+    "pack": "tsc && electron-builder --dir",
+    "dist:win": "tsc && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.7.0"
+  }
+}
