@@ -279,6 +279,25 @@ export async function forwardMessage(
   });
 }
 
+/**
+ * Compose and send a new email from a specific mailbox.
+ */
+export async function sendNewEmail(
+  mailboxId: string,
+  params: {
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject: string;
+    body: string;
+  },
+): Promise<void> {
+  await apiFetch(`/mailboxes/${mailboxId}/send-email`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
 export async function applyActionsToMessages(
   mailboxId: string,
   messageIds: string[],

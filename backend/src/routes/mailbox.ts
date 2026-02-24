@@ -1027,6 +1027,65 @@ mailboxRouter.post('/:id/forward', async (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+// ---- Send new email ----
+
+/**
+ * POST /api/mailboxes/:id/send-email
+ *
+ * Compose and send a new email via Graph API sendMail.
+ * Body: { to: string[], cc?: string[], bcc?: string[], subject: string, body: string, contentType?: 'Text' | 'HTML' }
+ */
+mailboxRouter.post('/:id/send-email', async (req: Request, res: Response) => {
+  const { to, cc, bcc, subject, body, contentType } = req.body as {
+    to?: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject?: string;
+    body?: string;
+    contentType?: 'Text' | 'HTML';
+  };
+
+  if (!to || !Array.isArray(to) || to.length === 0) {
+    throw new ValidationError('to is required and must be a non-empty array');
+  }
+  if (!subject) throw new ValidationError('subject is required');
+  if (!body) throw new ValidationError('body is required');
+
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+
+  const mapRecipients = (addrs: string[]) =>
+    addrs.map((address) => ({ emailAddress: { address } }));
+
+  const message: Record<string, unknown> = {
+    subject,
+    body: { contentType: contentType || 'Text', content: body },
+    toRecipients: mapRecipients(to),
+  };
+  if (cc && cc.length > 0) message.ccRecipients = mapRecipients(cc);
+  if (bcc && bcc.length > 0) message.bccRecipients = mapRecipients(bcc);
+
+  await graphFetch(`/users/${mailbox.email}/sendMail`, accessToken, {
+    method: 'POST',
+    body: JSON.stringify({ message, saveToSentItems: true }),
+  });
+
+  logger.info('New email sent', {
+    mailboxId: req.params.id,
+    from: mailbox.email,
+    to,
+    subject,
+    userId: req.user!.userId,
+  });
+
+  res.json({ success: true });
+});
+
 // ---- Per-mailbox whitelist endpoints ----
 
 /**
