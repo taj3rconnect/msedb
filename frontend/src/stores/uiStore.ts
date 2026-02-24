@@ -9,6 +9,7 @@ interface UiState {
   selectedFolderMailboxId: string | null;
   foldersExpanded: boolean;
   folderSyncRequested: number; // increment to trigger a sync in InboxPage
+  largeIcons: boolean; // toggle for larger action icons in inbox grid
   toggleSidebar: () => void;
   setSelectedMailbox: (id: string | null) => void;
   setInboxFolder: (folder: string, folderId?: string | null) => void;
@@ -17,6 +18,7 @@ interface UiState {
   setSelectedFolderMailboxId: (id: string | null) => void;
   toggleFolders: () => void;
   requestFolderSync: () => void;
+  toggleIconSize: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -28,6 +30,7 @@ export const useUiStore = create<UiState>((set) => ({
   selectedFolderMailboxId: null,
   foldersExpanded: false,
   folderSyncRequested: 0,
+  largeIcons: JSON.parse(localStorage.getItem('msedb-large-icons') ?? 'false'),
 
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -52,4 +55,11 @@ export const useUiStore = create<UiState>((set) => ({
 
   requestFolderSync: () =>
     set((state) => ({ folderSyncRequested: state.folderSyncRequested + 1 })),
+
+  toggleIconSize: () =>
+    set((state) => {
+      const next = !state.largeIcons;
+      localStorage.setItem('msedb-large-icons', JSON.stringify(next));
+      return { largeIcons: next };
+    }),
 }));
