@@ -337,6 +337,21 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
     filter.mailboxId = mailboxId;
   }
 
+  // Filter to inbox folder only (same logic as GET /events with folder=inbox)
+  const mailboxesToResolve = mailboxId && typeof mailboxId === 'string'
+    ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
+    : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
+
+  const redis = getRedisClient();
+  const inboxFolderValues: string[] = ['Inbox'];
+  for (const mb of mailboxesToResolve) {
+    if (mb.email) {
+      const cachedFolderId = await redis.get(`folder:${mb.email}:wk:Inbox`);
+      if (cachedFolderId) inboxFolderValues.push(cachedFolderId);
+    }
+  }
+  filter.toFolder = { $in: inboxFolderValues };
+
   // Exclude deleted emails
   const deletedMessageIds = await EmailEvent.distinct('messageId', {
     userId,
@@ -348,28 +363,39 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
   }
 
   // Build aggregation-safe filter with proper ObjectId casting
-  const aggFilter: Record<string, unknown> = {
+  const aggFilterBase: Record<string, unknown> = {
     userId: new Types.ObjectId(userId),
     eventType: 'arrived',
     receivedAt: { $gte: startOfDay, $lte: endOfDay },
+    toFolder: { $in: inboxFolderValues },
   };
   if (mailboxId && typeof mailboxId === 'string') {
-    aggFilter.mailboxId = new Types.ObjectId(mailboxId);
-  }
-  if (deletedMessageIds.length > 0) {
-    aggFilter.messageId = { $nin: deletedMessageIds };
+    aggFilterBase.mailboxId = new Types.ObjectId(mailboxId);
   }
 
-  const [events, readUnreadCounts] = await Promise.all([
+  const aggFilterExclDeleted = deletedMessageIds.length > 0
+    ? { ...aggFilterBase, messageId: { $nin: deletedMessageIds } }
+    : aggFilterBase;
+
+  // Count today's inbox arrivals (including deleted) and read/unread for non-deleted
+  const [events, readUnreadCounts, todayTotalCount] = await Promise.all([
     EmailEvent.find(filter)
       .sort({ receivedAt: -1 })
       .limit(200)
       .select('sender subject importance isRead categories metadata.isNewsletter hasAttachments receivedAt')
       .lean(),
     EmailEvent.aggregate([
-      { $match: aggFilter },
+      { $match: aggFilterExclDeleted },
       { $group: { _id: '$isRead', count: { $sum: 1 } } },
     ]),
+    // Total arrived in inbox today (including deleted) — to compute deleted count
+    EmailEvent.countDocuments({
+      userId,
+      eventType: 'arrived',
+      receivedAt: { $gte: startOfDay, $lte: endOfDay },
+      toFolder: { $in: inboxFolderValues },
+      ...(mailboxId && typeof mailboxId === 'string' ? { mailboxId } : {}),
+    }),
   ]);
 
   // Compute accurate read/unread stats from aggregation
@@ -379,9 +405,9 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
     if (bucket._id === true) readCount = bucket.count;
     else unreadCount = bucket.count;
   }
-  const totalCount = readCount + unreadCount;
-  const deletedCount = deletedMessageIds.length;
-  const stats = { total: totalCount, read: readCount, unread: unreadCount, deleted: deletedCount };
+  const activeCount = readCount + unreadCount;
+  const deletedCount = todayTotalCount - activeCount;
+  const stats = { total: activeCount, read: readCount, unread: unreadCount, deleted: deletedCount };
 
   if (events.length === 0) {
     res.json({ summary: '<p style="color:#888">No emails received today.</p>', stats });
@@ -404,11 +430,11 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
     return `${i + 1}. [${time}] From: ${sender} | Subject: ${subject} | Importance: ${importance} | Newsletter: ${isNewsletter} | ${isRead} ${attachments} ${categories}`.trim();
   }).join('\n');
 
-  const truncatedNote = totalCount > events.length
-    ? `\n\nNote: Showing ${events.length} of ${totalCount} total emails received today.`
+  const truncatedNote = activeCount > events.length
+    ? `\n\nNote: Showing ${events.length} of ${activeCount} total emails received today.`
     : '';
 
-  const prompt = `You are an email assistant. Summarize the following ${events.length} emails received today (${totalCount} total). Group them into these categories (use ALL that apply, skip empty categories):
+  const prompt = `You are an email assistant. Summarize the following ${events.length} emails received today (${activeCount} total). Group them into these categories (use ALL that apply, skip empty categories):
 
 1. **Needs Your Response** — emails that clearly require a reply or action (meetings to accept, questions asked, approvals needed)
 2. **Important Updates** — significant emails that don't need a reply but should be read (announcements, reports, notifications from people)
@@ -466,6 +492,20 @@ eventsRouter.get('/summarize-today/csv', async (req: Request, res: Response) => 
   if (mailboxId && typeof mailboxId === 'string') {
     filter.mailboxId = mailboxId;
   }
+
+  // Filter to inbox folder only
+  const csvMailboxes = mailboxId && typeof mailboxId === 'string'
+    ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
+    : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
+  const csvRedis = getRedisClient();
+  const csvInboxFolders: string[] = ['Inbox'];
+  for (const mb of csvMailboxes) {
+    if (mb.email) {
+      const fid = await csvRedis.get(`folder:${mb.email}:wk:Inbox`);
+      if (fid) csvInboxFolders.push(fid);
+    }
+  }
+  filter.toFolder = { $in: csvInboxFolders };
 
   // Exclude deleted emails
   const deletedMessageIds = await EmailEvent.distinct('messageId', {
