@@ -127,7 +127,7 @@ export function ContactsPage() {
   const [indexedAt, setIndexedAt] = useState<Date | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [editContact, setEditContact] = useState<Contact | null>(null);
+  const [editIndex, setEditIndex] = useState<number>(-1);
   const [editOpen, setEditOpen] = useState(false);
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -343,10 +343,28 @@ export function ContactsPage() {
     });
   }, []);
 
+  // Derive editContact from editIndex into filtered array
+  const editContact = editIndex >= 0 && editIndex < filtered.length ? filtered[editIndex] : null;
+
   // Card click → edit
   const handleCardClick = useCallback((contact: Contact) => {
-    setEditContact(contact);
+    const idx = filtered.findIndex((c) => c.id === contact.id);
+    setEditIndex(idx >= 0 ? idx : 0);
     setEditOpen(true);
+  }, [filtered]);
+
+  // Next/previous navigation in sheet
+  const handleNext = useCallback(() => {
+    setEditIndex((i) => {
+      const next = Math.min(i + 1, filtered.length - 1);
+      // Expand visible limit if navigating past current range
+      if (next >= visibleLimit) setVisibleLimit(next + BATCH_SIZE);
+      return next;
+    });
+  }, [filtered.length, visibleLimit]);
+
+  const handlePrevious = useCallback(() => {
+    setEditIndex((i) => Math.max(i - 1, 0));
   }, []);
 
   // Quick delete from card
@@ -365,9 +383,22 @@ export function ContactsPage() {
     setAllContacts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
   };
 
-  // After single delete from dialog
+  // After single delete from dialog — show next contact or close sheet
   const handleDeleted = (id: string) => {
-    setAllContacts((prev) => prev.filter((c) => c.id !== id));
+    setAllContacts((prev) => {
+      const remaining = prev.filter((c) => c.id !== id);
+      // After state updates, the filtered array shrinks by 1.
+      // If editIndex is now past the end, clamp it back; if no contacts left, close.
+      const newFilteredLen = remaining.length; // approximate (search may narrow further)
+      if (newFilteredLen === 0) {
+        setEditOpen(false);
+        setEditIndex(-1);
+      } else if (editIndex >= newFilteredLen) {
+        setEditIndex(newFilteredLen - 1);
+      }
+      // else editIndex stays — the next contact slides into place
+      return remaining;
+    });
   };
 
   // After bulk delete from duplicates panel
@@ -625,6 +656,12 @@ export function ContactsPage() {
         onOpenChange={setEditOpen}
         onUpdated={handleUpdated}
         onDeleted={handleDeleted}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
+        hasNext={editIndex < filtered.length - 1}
+        hasPrevious={editIndex > 0}
+        currentIndex={editIndex}
+        totalCount={filtered.length}
       />
 
       <DuplicatesPanel

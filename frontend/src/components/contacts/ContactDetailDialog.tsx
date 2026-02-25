@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Loader2, Trash2, Plus, X, Mail, Phone } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Loader2, Trash2, Plus, X, Mail, Phone, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
+  Sheet, SheetContent, SheetTitle,
+} from '@/components/ui/sheet';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogAction, AlertDialogCancel,
@@ -40,10 +40,17 @@ interface ContactDetailDialogProps {
   onOpenChange: (open: boolean) => void;
   onUpdated: (contact: Contact) => void;
   onDeleted: (contactId: string) => void;
+  onNext?: () => void;
+  onPrevious?: () => void;
+  hasNext?: boolean;
+  hasPrevious?: boolean;
+  currentIndex?: number;
+  totalCount?: number;
 }
 
 export function ContactDetailDialog({
   contact, mailboxId, open, onOpenChange, onUpdated, onDeleted,
+  onNext, onPrevious, hasNext, hasPrevious, currentIndex, totalCount,
 }: ContactDetailDialogProps) {
   const [displayName, setDisplayName] = useState('');
   const [emails, setEmails] = useState<Array<{ address: string; name: string }>>([]);
@@ -96,7 +103,7 @@ export function ContactDetailDialog({
         businessPhones: businessPhones.filter(Boolean),
         mobilePhone,
       });
-      onOpenChange(false);
+      setDirty(false);
     } catch {
       // Error handled by apiFetch toast
     } finally {
@@ -109,15 +116,33 @@ export function ContactDetailDialog({
     setDeleting(true);
     try {
       await deleteContact(mailboxId, contact.id);
-      onDeleted(contact.id);
       setShowDeleteConfirm(false);
-      onOpenChange(false);
+      onDeleted(contact.id);
     } catch {
       // Error handled by apiFetch toast
     } finally {
       setDeleting(false);
     }
   };
+
+  // Keyboard navigation
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!open) return;
+    // Don't navigate when typing in an input
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (e.key === 'ArrowLeft' && hasPrevious && onPrevious) {
+      e.preventDefault();
+      onPrevious();
+    } else if (e.key === 'ArrowRight' && hasNext && onNext) {
+      e.preventDefault();
+      onNext();
+    }
+  }, [open, hasNext, hasPrevious, onNext, onPrevious]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   const addEmail = () => { setEmails([...emails, { address: '', name: '' }]); markDirty(); };
   const removeEmail = (idx: number) => { setEmails(emails.filter((_, i) => i !== idx)); markDirty(); };
@@ -136,14 +161,45 @@ export function ContactDetailDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto p-0">
-          <div className="flex min-h-[400px]">
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="right" showCloseButton={false} className="sm:max-w-3xl w-full p-0 flex flex-col">
+          {/* Navigation bar */}
+          <div className="flex items-center justify-between px-4 py-2 border-b shrink-0">
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onPrevious}
+                disabled={!hasPrevious}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Prev
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onNext}
+                disabled={!hasNext}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            {currentIndex != null && totalCount != null && (
+              <span className="text-xs text-muted-foreground">
+                {currentIndex + 1} of {totalCount}
+              </span>
+            )}
+            <Button variant="ghost" size="icon-sm" onClick={() => onOpenChange(false)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Two-column layout */}
+          <div className="flex flex-1 min-h-0 overflow-hidden">
             {/* Left: Edit form */}
             <div className="flex-1 p-6 space-y-4 border-r overflow-y-auto">
-              <DialogHeader className="pb-0">
-                <DialogTitle className="text-lg">Edit Contact</DialogTitle>
-              </DialogHeader>
+              <SheetTitle className="text-lg">Edit Contact</SheetTitle>
 
               {/* Name + Avatar row */}
               <div className="flex items-start gap-4">
@@ -222,7 +278,7 @@ export function ContactDetailDialog({
               </div>
 
               {/* Footer actions */}
-              <DialogFooter className="flex-row justify-between sm:justify-between pt-2 border-t">
+              <div className="flex justify-between pt-2 border-t">
                 <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
                   <Trash2 className="h-3.5 w-3.5" /> Delete
                 </Button>
@@ -233,11 +289,11 @@ export function ContactDetailDialog({
                     Save
                   </Button>
                 </div>
-              </DialogFooter>
+              </div>
             </div>
 
             {/* Right: Contact card preview */}
-            <div className="w-64 shrink-0 p-5 bg-muted/30">
+            <div className="w-64 shrink-0 p-5 bg-muted/30 overflow-y-auto">
               <div className="rounded-lg border bg-card p-4 space-y-3">
                 {/* Avatar + Name */}
                 <div className="flex items-center gap-3">
@@ -288,8 +344,8 @@ export function ContactDetailDialog({
               </div>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
