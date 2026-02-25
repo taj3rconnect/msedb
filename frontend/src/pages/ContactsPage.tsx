@@ -205,6 +205,13 @@ export function ContactsPage() {
       const result = await refreshAllContacts(contactsMailboxId, contactsFolderId);
       setAllContacts(result.contacts);
       setSyncedAt(result.syncedAt);
+      setPartial(!!result.partial);
+
+      // If partial (background still fetching), auto-retry to get the full set
+      if (result.partial) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(() => loadContacts(true), 3000);
+      }
     } catch {
       // Error handled by apiFetch toast
     } finally {
@@ -551,7 +558,7 @@ export function ContactsPage() {
       <div className="flex-1 flex gap-1 overflow-hidden min-h-0">
         {/* Alphabet index */}
         {!loading && filtered.length > 0 && (
-          <div className="shrink-0 flex items-start pt-1">
+          <div className="shrink-0 flex items-start pt-1 relative z-10">
             <AlphabetIndex
               availableLetters={availableLetters}
               activeLetter={activeLetter}

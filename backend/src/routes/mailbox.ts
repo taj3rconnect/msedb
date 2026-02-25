@@ -1343,6 +1343,10 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
   if (q && q.trim()) {
     const searchTerm = q.trim().replace(/"/g, '\\"');
     graphUrl = `${basePath}?$search="${searchTerm}"&$select=${selectFields}&$top=${pageSize}&$orderby=displayName`;
+  } else if (fetchAll) {
+    // Skip $orderby for fetchAll — Graph sorts empty displayName first, making
+    // the first page all blank names.  We sort locally after fetching anyway.
+    graphUrl = `${basePath}?$select=${selectFields}&$top=${pageSize}`;
   } else {
     graphUrl = `${basePath}?$select=${selectFields}&$top=${pageSize}&$orderby=displayName`;
   }

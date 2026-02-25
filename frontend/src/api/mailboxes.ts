@@ -359,9 +359,9 @@ export async function fetchAllContacts(
 export async function refreshAllContacts(
   mailboxId: string,
   folderId: string,
-): Promise<{ contacts: Contact[]; cached: boolean; syncedAt: string | null }> {
+): Promise<{ contacts: Contact[]; cached: boolean; syncedAt: string | null; partial?: boolean }> {
   const params = new URLSearchParams({ folderId, all: 'true', refresh: 'true' });
-  return apiFetch<{ contacts: Contact[]; cached: boolean; syncedAt: string | null }>(
+  return apiFetch<{ contacts: Contact[]; cached: boolean; syncedAt: string | null; partial?: boolean }>(
     `/mailboxes/${mailboxId}/contacts?${params}`,
   );
 }
