@@ -1300,7 +1300,7 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
       const meta = metaRaw ? JSON.parse(metaRaw) : {};
       const contacts = JSON.parse(cached);
       contacts.sort((a: { displayName: string }, b: { displayName: string }) =>
-        a.displayName.localeCompare(b.displayName),
+        (!a.displayName ? 1 : 0) - (!b.displayName ? 1 : 0) || (a.displayName || '').localeCompare(b.displayName || ''),
       );
       res.json({ contacts, cached: true, syncedAt: meta.syncedAt || null });
       return;
@@ -1361,7 +1361,7 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
 
   // For fetchAll with remaining pages: return first page now, fetch rest in background
   if (fetchAll && nextLink) {
-    firstPageContacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    firstPageContacts.sort((a, b) => (!a.displayName ? 1 : 0) - (!b.displayName ? 1 : 0) || (a.displayName || '').localeCompare(b.displayName || ''));
     // Mark as partial — a background job is populating the cache
     redis.set(`contacts:${mailbox._id.toString()}:loading`, '1', 'EX', 120).catch(() => {});
     res.json({ contacts: firstPageContacts, cached: false, syncedAt: null, partial: true });
@@ -1379,7 +1379,7 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
           allContacts.push(...(data.value || []).map(mapContact));
           nextUrl = data['@odata.nextLink'];
         }
-        allContacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+        allContacts.sort((a, b) => (!a.displayName ? 1 : 0) - (!b.displayName ? 1 : 0) || (a.displayName || '').localeCompare(b.displayName || ''));
         const now = new Date().toISOString();
         await redis.set(cacheKey, JSON.stringify(allContacts), 'EX', 86400);
         await redis.set(metaKey, JSON.stringify({ count: allContacts.length, syncedAt: now }), 'EX', 86400);
@@ -1399,7 +1399,7 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
   }
 
   // fetchAll with no nextLink — all fit in one page
-  firstPageContacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  firstPageContacts.sort((a, b) => (!a.displayName ? 1 : 0) - (!b.displayName ? 1 : 0) || (a.displayName || '').localeCompare(b.displayName || ''));
   const now = new Date().toISOString();
   redis.set(cacheKey, JSON.stringify(firstPageContacts), 'EX', 86400).catch(() => {});
   redis.set(metaKey, JSON.stringify({ count: firstPageContacts.length, syncedAt: now }), 'EX', 86400).catch(() => {});

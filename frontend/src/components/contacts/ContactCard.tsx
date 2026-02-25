@@ -33,9 +33,22 @@ interface ContactCardProps {
   onDelete: (contact: Contact) => void;
 }
 
+/** Derive a display label for a contact — name, email, or phone. */
+function getLabel(contact: Contact): string {
+  if (contact.displayName?.trim()) return contact.displayName.trim();
+  const email = contact.emailAddresses?.find((e) => e.address)?.address;
+  if (email) return email;
+  if (contact.mobilePhone?.trim()) return contact.mobilePhone.trim();
+  const phone = contact.businessPhones?.find(Boolean);
+  if (phone) return phone;
+  if (contact.companyName?.trim()) return contact.companyName.trim();
+  return '(No name)';
+}
+
 export const ContactCard = memo(function ContactCard({ contact, selected, onSelect, onClick, onDelete }: ContactCardProps) {
-  const initials = getInitials(contact.displayName);
-  const avatarColor = nameToColor(contact.displayName);
+  const label = getLabel(contact);
+  const initials = getInitials(label);
+  const avatarColor = nameToColor(label);
   const primaryEmail = contact.emailAddresses.find((e) => e.address)?.address;
   const infoLine = [contact.companyName, contact.jobTitle, contact.department]
     .filter(Boolean)
@@ -75,7 +88,7 @@ export const ContactCard = memo(function ContactCard({ contact, selected, onSele
           {initials}
         </div>
         <div className="min-w-0">
-          <div className="font-medium text-sm truncate">{contact.displayName || '(No name)'}</div>
+          <div className="font-medium text-sm truncate">{label}</div>
         </div>
       </div>
 
