@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Trash2, Mail, Phone, Building2 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import type { Contact } from '@/api/mailboxes';
@@ -32,7 +33,7 @@ interface ContactCardProps {
   onDelete: (contact: Contact) => void;
 }
 
-export function ContactCard({ contact, selected, onSelect, onClick, onDelete }: ContactCardProps) {
+export const ContactCard = memo(function ContactCard({ contact, selected, onSelect, onClick, onDelete }: ContactCardProps) {
   const initials = getInitials(contact.displayName);
   const avatarColor = nameToColor(contact.displayName);
   const primaryEmail = contact.emailAddresses.find((e) => e.address)?.address;
@@ -103,4 +104,4 @@ export function ContactCard({ contact, selected, onSelect, onClick, onDelete }: 
       )}
     </div>
   );
-}
+});

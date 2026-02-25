@@ -135,10 +135,12 @@ export function ContactsPage() {
     return saved ? parseInt(saved, 10) : 4;
   });
 
+  const [visibleLimit, setVisibleLimit] = useState(120);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const searchIndexRef = useRef<MiniSearch | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   // / key focuses search (same as InboxPage)
   useKeyboardShortcuts(useMemo(() => [
@@ -215,6 +217,9 @@ export function ContactsPage() {
   }, []);
 
   // MiniSearch-powered filtered contacts
+  // Reset visible limit when query changes
+  useEffect(() => { setVisibleLimit(120); }, [query]);
+
   const filtered = useMemo(() => {
     if (!query.trim()) return allContacts;
     const index = searchIndexRef.current;
@@ -222,35 +227,73 @@ export function ContactsPage() {
 
     const results = index.search(query.trim());
     const matchedIds = new Set(results.map((r) => r.id));
-    // Preserve alphabetical order for matched contacts
     return allContacts.filter((c) => matchedIds.has(c.id));
   }, [allContacts, query]);
 
+  // Slice to visible limit for progressive rendering
+  const visibleContacts = useMemo(
+    () => filtered.slice(0, visibleLimit),
+    [filtered, visibleLimit],
+  );
+  const hasMore = filtered.length > visibleLimit;
+
   const grouped = useMemo(() => {
     const map = new Map<string, Contact[]>();
-    for (const c of filtered) {
+    for (const c of visibleContacts) {
       const letter = getLetterKey(c.displayName);
       if (!map.has(letter)) map.set(letter, []);
       map.get(letter)!.push(c);
     }
-    // Sort keys: A-Z then #
     const sorted = [...map.entries()].sort(([a], [b]) => {
       if (a === '#') return 1;
       if (b === '#') return -1;
       return a.localeCompare(b);
     });
     return sorted;
+  }, [visibleContacts]);
+
+  const availableLetters = useMemo(() => {
+    const letters = new Set<string>();
+    for (const c of filtered) letters.add(getLetterKey(c.displayName));
+    return letters;
   }, [filtered]);
 
-  const availableLetters = useMemo(() => new Set(grouped.map(([letter]) => letter)), [grouped]);
+  // IntersectionObserver to load more contacts as user scrolls
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleLimit((prev) => prev + 120);
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [grouped]);
 
-  // Scroll to letter section
+  // Scroll to letter section — expand visible limit if needed
   const scrollToLetter = (letter: string) => {
-    const el = sectionRefs.current.get(letter);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setActiveLetter(letter);
+    // Find how many contacts we need visible to reach this letter
+    let count = 0;
+    for (const c of filtered) {
+      count++;
+      if (getLetterKey(c.displayName) === letter) break;
     }
+    if (count > visibleLimit) {
+      setVisibleLimit(count + 120);
+      // Wait for render before scrolling
+      requestAnimationFrame(() => {
+        const el = sectionRefs.current.get(letter);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    } else {
+      const el = sectionRefs.current.get(letter);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    setActiveLetter(letter);
   };
 
   // Track active letter on scroll
@@ -361,6 +404,7 @@ export function ContactsPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-7.5rem)] overflow-hidden">
       {/* Header + toolbar */}
+      <TooltipProvider delayDuration={300}>
       <div className="shrink-0 mb-3 relative z-20">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
@@ -382,21 +426,19 @@ export function ContactsPage() {
                 Indexing...
               </Badge>
             ) : indexedAt ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="secondary" className="gap-1 text-xs font-normal cursor-default">
-                      <Database className="h-3 w-3" />
-                      {allContacts.length} indexed
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">
-                    Searches: name, email, company, title, department, phone
-                    <br />
-                    Prefix matching + fuzzy search
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="secondary" className="gap-1 text-xs font-normal cursor-default">
+                    <Database className="h-3 w-3" />
+                    {allContacts.length} indexed
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  Searches: name, email, company, title, department, phone
+                  <br />
+                  Prefix matching + fuzzy search
+                </TooltipContent>
+              </Tooltip>
             ) : null}
             {partial && !loading && (
               <Badge variant="outline" className="gap-1 text-xs font-normal">
@@ -416,31 +458,29 @@ export function ContactsPage() {
                     </div>
                   )}
                 </div>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        onClick={handleReindex}
-                        disabled={refreshing}
-                      >
-                        <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Fetch fresh from server</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      onClick={handleReindex}
+                      disabled={refreshing}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Fetch fresh from server</TooltipContent>
+                </Tooltip>
               </div>
             )}
             <div className="flex items-center gap-1.5">
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
                   <LayoutGrid className="h-4 w-4" /> {columnsPerRow}/row <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="z-50">
                 {[2, 3, 4, 5, 6, 7, 8].map((n) => (
                   <DropdownMenuItem key={n} onClick={() => handleColumnsChange(n)}>
                     {n} per row {n === columnsPerRow ? '\u2713' : ''}
@@ -451,13 +491,13 @@ export function ContactsPage() {
             <Button variant="outline" size="sm" onClick={() => setDuplicatesOpen(true)}>
               <Users className="h-4 w-4" /> Duplicates
             </Button>
-            <DropdownMenu>
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
                   <Download className="h-4 w-4" /> Export <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="z-50">
                 <DropdownMenuItem onClick={handleExportCSV}>Export as CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={handleExportVCard}>Export as vCard</DropdownMenuItem>
               </DropdownMenuContent>
@@ -498,6 +538,7 @@ export function ContactsPage() {
           </div>
         )}
       </div>
+      </TooltipProvider>
 
       {/* Main content: alphabet index + card grid */}
       <div className="flex-1 flex gap-1 overflow-hidden min-h-0">
@@ -548,6 +589,15 @@ export function ContactsPage() {
                   </div>
                 </div>
               ))}
+              {/* Infinite scroll sentinel */}
+              {hasMore && (
+                <div ref={sentinelRef} className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    Showing {visibleContacts.length} of {filtered.length}...
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>

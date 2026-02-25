@@ -28,6 +28,7 @@ import { settingsRouter } from './routes/settings.js';
 import { aiSearchRouter } from './routes/aiSearch.js';
 import { scheduledEmailsRouter } from './routes/scheduledEmails.js';
 import { createSocketServer } from './config/socket.js';
+import { warmContactsCache } from './services/contactsCacheWarmer.js';
 import { ensureQdrantCollection } from './services/qdrantClient.js';
 
 // Import all models to trigger Mongoose model registration
@@ -142,6 +143,13 @@ async function startServer(): Promise<void> {
       }
       syncSubscriptionsOnStartup().catch((err) => {
         logger.error('Subscription sync failed on startup', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      // 8. Pre-warm contacts cache (background, non-blocking)
+      warmContactsCache().catch((err) => {
+        logger.error('Contacts cache warming failed', {
           error: err instanceof Error ? err.message : String(err),
         });
       });

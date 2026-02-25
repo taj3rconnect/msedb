@@ -12,7 +12,7 @@ const CONTACTS_SELECT = 'id,displayName,emailAddresses,companyName,department,jo
  * Fetch ALL contacts from a mailbox's default Contacts folder via Graph API,
  * paginating through @odata.nextLink, and cache them in Redis.
  */
-async function syncContactsForMailbox(mailboxId: string, email: string): Promise<number> {
+export async function syncContactsForMailbox(mailboxId: string, email: string): Promise<number> {
   const accessToken = await getAccessTokenForMailbox(mailboxId);
   const redis = getRedisClient();
 
