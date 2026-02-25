@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useSettings } from '@/hooks/useSettings';
-import { fetchAllContacts, deleteContact, type Contact } from '@/api/mailboxes';
+import { fetchAllContacts, refreshAllContacts, deleteContact, type Contact } from '@/api/mailboxes';
 import { ContactCard } from '@/components/contacts/ContactCard';
 import { ContactDetailDialog } from '@/components/contacts/ContactDetailDialog';
 import { AlphabetIndex } from '@/components/contacts/AlphabetIndex';
@@ -119,8 +119,11 @@ export function ContactsPage() {
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexedAt, setIndexedAt] = useState<Date | null>(null);
+  const [fromCache, setFromCache] = useState(false);
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editContact, setEditContact] = useState<Contact | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -161,13 +164,15 @@ export function ContactsPage() {
     });
   }, [allContacts]);
 
-  // Load all contacts on mount
+  // Load contacts (cache-first — instant when cached)
   const loadContacts = useCallback(async () => {
     if (!contactsMailboxId || !contactsFolderId) return;
     setLoading(true);
     try {
-      const { contacts } = await fetchAllContacts(contactsMailboxId, contactsFolderId);
-      setAllContacts(contacts);
+      const result = await fetchAllContacts(contactsMailboxId, contactsFolderId);
+      setAllContacts(result.contacts);
+      setFromCache(result.cached);
+      setSyncedAt(result.syncedAt);
     } catch {
       setAllContacts([]);
     } finally {
@@ -179,9 +184,20 @@ export function ContactsPage() {
     loadContacts();
   }, [loadContacts]);
 
-  // Reindex: re-fetch from Graph API + rebuild index
+  // Force refresh: bypass cache, re-fetch from Graph API + rebuild cache + index
   const handleReindex = async () => {
-    await loadContacts();
+    if (!contactsMailboxId || !contactsFolderId) return;
+    setRefreshing(true);
+    try {
+      const result = await refreshAllContacts(contactsMailboxId, contactsFolderId);
+      setAllContacts(result.contacts);
+      setFromCache(false);
+      setSyncedAt(result.syncedAt);
+    } catch {
+      // Error handled by apiFetch toast
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Auto-focus
@@ -350,6 +366,11 @@ export function ContactsPage() {
                         <Loader2 className="h-3 w-3 animate-spin" />
                         Loading...
                       </Badge>
+                    ) : refreshing ? (
+                      <Badge variant="outline" className="gap-1 text-xs font-normal">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Refreshing from server...
+                      </Badge>
                     ) : indexing ? (
                       <Badge variant="outline" className="gap-1 text-xs font-normal">
                         <Loader2 className="h-3 w-3 animate-spin" />
@@ -359,6 +380,7 @@ export function ContactsPage() {
                       <Badge variant="secondary" className="gap-1 text-xs font-normal">
                         <Database className="h-3 w-3" />
                         {allContacts.length} indexed
+                        {fromCache && <span className="text-green-600 ml-1">(cached)</span>}
                       </Badge>
                     ) : null}
                   </div>
@@ -372,33 +394,48 @@ export function ContactsPage() {
                     Searches: name, email, company, title, department, phone
                     <br />
                     Features: prefix matching, fuzzy search (~80% similarity)
-                    {indexedAt && (
-                      <>
-                        <br />
-                        Last indexed: {indexedAt.toLocaleTimeString()}
-                      </>
-                    )}
+                    {fromCache && <><br />Source: Redis cache (instant)</>}
+                    {syncedAt && <><br />Last synced: {new Date(syncedAt).toLocaleString()}</>}
+                    {indexedAt && <><br />Last indexed: {indexedAt.toLocaleTimeString()}</>}
                   </div>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            {/* Reindex button */}
+            {/* Reindex + Reset buttons */}
             {!loading && allContacts.length > 0 && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={handleReindex}
-                      disabled={loading}
-                    >
-                      <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Re-fetch &amp; reindex contacts</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={handleReindex}
+                        disabled={refreshing}
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Re-fetch from server &amp; reindex</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                {query && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => setQuery('')}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Clear search</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </>
             )}
           </div>
           <div className="flex items-center gap-1.5">

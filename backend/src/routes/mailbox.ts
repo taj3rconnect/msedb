@@ -1264,10 +1264,14 @@ mailboxRouter.get('/:id/contact-folders', async (req: Request, res: Response) =>
  * Query params:
  *   - folderId: contact folder ID (required)
  *   - q: search query (optional, searches all fields)
- *   - all: if "true", fetches ALL contacts by paginating through @odata.nextLink
+ *   - all: if "true", serves from Redis cache (instant). On cache miss, fetches
+ *          first page from Graph and queues a background full-sync.
+ *   - refresh: if "true" with all=true, forces a full Graph API fetch + cache rebuild
  */
 mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
-  const { folderId, q, all } = req.query as { folderId?: string; q?: string; all?: string };
+  const { folderId, q, all, refresh } = req.query as {
+    folderId?: string; q?: string; all?: string; refresh?: string;
+  };
 
   if (!folderId) {
     throw new ValidationError('folderId query parameter is required');
@@ -1282,10 +1286,31 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     throw new NotFoundError('Mailbox not found');
   }
 
+  const fetchAll = all === 'true';
+  const forceRefresh = refresh === 'true';
+  const redis = getRedisClient();
+  const cacheKey = `contacts:${mailbox._id.toString()}:all`;
+  const metaKey = `contacts:${mailbox._id.toString()}:meta`;
+
+  // --- Fast path: serve from Redis cache when all=true ---
+  if (fetchAll && !forceRefresh) {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      const metaRaw = await redis.get(metaKey);
+      const meta = metaRaw ? JSON.parse(metaRaw) : {};
+      const contacts = JSON.parse(cached);
+      contacts.sort((a: { displayName: string }, b: { displayName: string }) =>
+        a.displayName.localeCompare(b.displayName),
+      );
+      res.json({ contacts, cached: true, syncedAt: meta.syncedAt || null });
+      return;
+    }
+  }
+
+  // --- Cache miss or refresh: fetch from Graph API ---
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
   const selectFields = 'id,displayName,emailAddresses,companyName,department,jobTitle,businessPhones,mobilePhone';
 
-  // "default" = the root Contacts folder (accessed via /contacts, not /contactFolders/{id}/contacts)
   const basePath = folderId === 'default'
     ? `/users/${mailbox.email}/contacts`
     : `/users/${mailbox.email}/contactFolders/${folderId}/contacts`;
@@ -1302,7 +1327,6 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
   }
 
   const allContacts: RawContact[] = [];
-  const fetchAll = all === 'true';
   const pageSize = fetchAll ? 100 : 50;
 
   let graphUrl: string | undefined;
@@ -1323,8 +1347,6 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     };
 
     allContacts.push(...(data.value || []));
-
-    // Only follow nextLink when fetching all
     graphUrl = fetchAll ? data['@odata.nextLink'] : undefined;
   }
 
@@ -1339,8 +1361,16 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     mobilePhone: c.mobilePhone || '',
   }));
 
-  // Sort alphabetically by displayName (Graph $orderby + $search can conflict)
   contacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  // Populate cache for next visit when fetching all
+  if (fetchAll) {
+    const now = new Date().toISOString();
+    redis.set(cacheKey, JSON.stringify(contacts), 'EX', 86400).catch(() => {});
+    redis.set(metaKey, JSON.stringify({ count: contacts.length, syncedAt: now }), 'EX', 86400).catch(() => {});
+    res.json({ contacts, cached: false, syncedAt: now });
+    return;
+  }
 
   res.json({ contacts });
 });

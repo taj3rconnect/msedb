@@ -340,14 +340,30 @@ export async function searchContacts(
 }
 
 /**
- * Fetch ALL contacts in a folder (paginated through all pages).
+ * Fetch ALL contacts in a folder.
+ * Serves from Redis cache (instant) when available. On cache miss, fetches from Graph API.
  */
 export async function fetchAllContacts(
   mailboxId: string,
   folderId: string,
-): Promise<{ contacts: Contact[] }> {
+): Promise<{ contacts: Contact[]; cached: boolean; syncedAt: string | null }> {
   const params = new URLSearchParams({ folderId, all: 'true' });
-  return apiFetch<{ contacts: Contact[] }>(`/mailboxes/${mailboxId}/contacts?${params}`);
+  return apiFetch<{ contacts: Contact[]; cached: boolean; syncedAt: string | null }>(
+    `/mailboxes/${mailboxId}/contacts?${params}`,
+  );
+}
+
+/**
+ * Force refresh ALL contacts from Graph API and rebuild the cache.
+ */
+export async function refreshAllContacts(
+  mailboxId: string,
+  folderId: string,
+): Promise<{ contacts: Contact[]; cached: boolean; syncedAt: string | null }> {
+  const params = new URLSearchParams({ folderId, all: 'true', refresh: 'true' });
+  return apiFetch<{ contacts: Contact[]; cached: boolean; syncedAt: string | null }>(
+    `/mailboxes/${mailboxId}/contacts?${params}`,
+  );
 }
 
 /**
