@@ -23,7 +23,7 @@ userRouter.use(requireAuth);
  */
 userRouter.patch('/preferences', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const { automationPaused, workingHoursStart, workingHoursEnd, aggressiveness } = req.body;
+  const { automationPaused, workingHoursStart, workingHoursEnd, aggressiveness, contactsMailboxId, contactsFolderId } = req.body;
 
   const updateFields: Record<string, unknown> = {};
 
@@ -60,6 +60,18 @@ userRouter.patch('/preferences', async (req: Request, res: Response) => {
     throw new ValidationError('aggressiveness must be a string');
   }
 
+  if (typeof contactsMailboxId === 'string') {
+    updateFields['preferences.contactsMailboxId'] = contactsMailboxId;
+  } else if (contactsMailboxId !== undefined) {
+    throw new ValidationError('contactsMailboxId must be a string');
+  }
+
+  if (typeof contactsFolderId === 'string') {
+    updateFields['preferences.contactsFolderId'] = contactsFolderId;
+  } else if (contactsFolderId !== undefined) {
+    throw new ValidationError('contactsFolderId must be a string');
+  }
+
   if (Object.keys(updateFields).length === 0) {
     throw new ValidationError('No valid preference fields provided');
   }
@@ -80,6 +92,8 @@ userRouter.patch('/preferences', async (req: Request, res: Response) => {
       workingHoursStart: user.preferences.workingHoursStart,
       workingHoursEnd: user.preferences.workingHoursEnd,
       aggressiveness: user.preferences.aggressiveness,
+      contactsMailboxId: user.preferences.contactsMailboxId,
+      contactsFolderId: user.preferences.contactsFolderId,
     },
   });
 });

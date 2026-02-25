@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard,
   Inbox,
+  Contact,
   Mail,
   Brain,
   Shield,
@@ -30,6 +31,7 @@ export const EVENT_TYPES: Record<string, { label: string; color: string }> = {
 export const ROUTE_PATHS = {
   dashboard: '/',
   inbox: '/inbox',
+  contacts: '/contacts',
   activity: '/activity',
   patterns: '/patterns',
   rules: '/rules',
@@ -54,6 +56,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', path: ROUTE_PATHS.dashboard, icon: LayoutDashboard },
   { label: 'Inbox', path: ROUTE_PATHS.inbox, icon: Inbox },
+  { label: 'Contacts', path: ROUTE_PATHS.contacts, icon: Contact },
   { label: 'Pending', path: ROUTE_PATHS.pending, icon: CalendarClock },
   { label: 'Email Activity', path: ROUTE_PATHS.activity, icon: Mail },
   { label: 'Patterns', path: ROUTE_PATHS.patterns, icon: Brain },

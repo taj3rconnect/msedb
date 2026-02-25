@@ -298,6 +298,47 @@ export async function sendNewEmail(
   });
 }
 
+// ---- Contact types and API functions ----
+
+export interface ContactFolder {
+  id: string;
+  displayName: string;
+  totalCount: number;
+}
+
+export interface Contact {
+  id: string;
+  displayName: string;
+  emailAddresses: Array<{ name?: string; address?: string }>;
+  companyName: string;
+  department: string;
+  jobTitle: string;
+  businessPhones: string[];
+  mobilePhone: string;
+}
+
+/**
+ * Fetch contact folders for a mailbox.
+ */
+export async function fetchContactFolders(
+  mailboxId: string,
+): Promise<{ folders: ContactFolder[] }> {
+  return apiFetch<{ folders: ContactFolder[] }>(`/mailboxes/${mailboxId}/contact-folders`);
+}
+
+/**
+ * Search contacts in a specific folder.
+ */
+export async function searchContacts(
+  mailboxId: string,
+  folderId: string,
+  query?: string,
+): Promise<{ contacts: Contact[] }> {
+  const params = new URLSearchParams({ folderId });
+  if (query) params.set('q', query);
+  return apiFetch<{ contacts: Contact[] }>(`/mailboxes/${mailboxId}/contacts?${params}`);
+}
+
 export async function applyActionsToMessages(
   mailboxId: string,
   messageIds: string[],

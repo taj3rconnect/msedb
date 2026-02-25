@@ -1166,4 +1166,143 @@ mailboxRouter.put('/:id/whitelist', async (req: Request, res: Response) => {
   });
 });
 
+// ---- Contact folder & search endpoints ----
+
+/**
+ * GET /api/mailboxes/:id/contact-folders
+ *
+ * Returns all contact folders for a mailbox with contact counts.
+ */
+mailboxRouter.get('/:id/contact-folders', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+
+  let url: string | undefined =
+    `/users/${mailbox.email}/contactFolders?$top=100&$select=id,displayName`;
+
+  interface ContactFolderResult {
+    id: string;
+    displayName: string;
+    totalCount: number;
+  }
+  const folders: ContactFolderResult[] = [];
+
+  while (url) {
+    const response = await graphFetch(url, accessToken);
+    const data = (await response.json()) as {
+      value: { id: string; displayName: string }[];
+      '@odata.nextLink'?: string;
+    };
+
+    for (const folder of data.value) {
+      folders.push({
+        id: folder.id,
+        displayName: folder.displayName,
+        totalCount: 0,
+      });
+    }
+
+    url = data['@odata.nextLink'];
+  }
+
+  // Fetch contact counts per folder in parallel
+  const countResults = await Promise.allSettled(
+    folders.map(async (folder) => {
+      const countRes = await graphFetch(
+        `/users/${mailbox.email}/contactFolders/${folder.id}/contacts/$count`,
+        accessToken,
+        { headers: { 'ConsistencyLevel': 'eventual' } },
+      );
+      const text = await countRes.text();
+      return { id: folder.id, count: parseInt(text, 10) || 0 };
+    }),
+  );
+
+  for (const result of countResults) {
+    if (result.status === 'fulfilled') {
+      const folder = folders.find((f) => f.id === result.value.id);
+      if (folder) folder.totalCount = result.value.count;
+    }
+  }
+
+  res.json({ folders });
+});
+
+/**
+ * GET /api/mailboxes/:id/contacts
+ *
+ * Search contacts in a specific contact folder.
+ * Query params:
+ *   - folderId: contact folder ID (required)
+ *   - q: search query (optional, searches all fields)
+ */
+mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
+  const { folderId, q } = req.query as { folderId?: string; q?: string };
+
+  if (!folderId) {
+    throw new ValidationError('folderId query parameter is required');
+  }
+
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const selectFields = 'id,displayName,emailAddresses,companyName,department,jobTitle,businessPhones,mobilePhone';
+
+  let graphUrl: string;
+  if (q && q.trim()) {
+    // $search searches across all indexed contact fields
+    const searchTerm = q.trim().replace(/"/g, '\\"');
+    graphUrl = `/users/${mailbox.email}/contactFolders/${folderId}/contacts?$search="${searchTerm}"&$select=${selectFields}&$top=50&$orderby=displayName`;
+  } else {
+    graphUrl = `/users/${mailbox.email}/contactFolders/${folderId}/contacts?$select=${selectFields}&$top=50&$orderby=displayName`;
+  }
+
+  const response = await graphFetch(graphUrl, accessToken, {
+    headers: { 'ConsistencyLevel': 'eventual' },
+  });
+  const data = (await response.json()) as {
+    value: Array<{
+      id: string;
+      displayName?: string;
+      emailAddresses?: Array<{ name?: string; address?: string }>;
+      companyName?: string;
+      department?: string;
+      jobTitle?: string;
+      businessPhones?: string[];
+      mobilePhone?: string;
+    }>;
+  };
+
+  const contacts = (data.value || []).map((c) => ({
+    id: c.id,
+    displayName: c.displayName || '',
+    emailAddresses: c.emailAddresses || [],
+    companyName: c.companyName || '',
+    department: c.department || '',
+    jobTitle: c.jobTitle || '',
+    businessPhones: c.businessPhones || [],
+    mobilePhone: c.mobilePhone || '',
+  }));
+
+  // Sort alphabetically by displayName (Graph $orderby + $search can conflict)
+  contacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  res.json({ contacts });
+});
+
 export default mailboxRouter;

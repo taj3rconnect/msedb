@@ -11,6 +11,8 @@ export interface IUserPreferences {
   workingHoursStart: number;
   workingHoursEnd: number;
   aggressiveness: 'conservative' | 'moderate' | 'aggressive';
+  contactsMailboxId?: string;
+  contactsFolderId?: string;
 }
 
 export interface IEncryptedTokens {
@@ -59,6 +61,8 @@ const userSchema = new Schema<IUser>(
         enum: ['conservative', 'moderate', 'aggressive'],
         default: 'moderate',
       },
+      contactsMailboxId: { type: String },
+      contactsFolderId: { type: String },
     },
     encryptedTokens: {
       accessToken: { type: encryptedTokenSchema },

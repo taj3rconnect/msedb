@@ -7,6 +7,8 @@ export interface UserPreferences {
   workingHoursStart: number;
   workingHoursEnd: number;
   aggressiveness: 'conservative' | 'moderate' | 'aggressive';
+  contactsMailboxId?: string;
+  contactsFolderId?: string;
 }
 
 export interface MailboxInfo {

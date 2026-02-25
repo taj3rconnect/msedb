@@ -6,6 +6,7 @@ import { PreferencesSection } from '@/components/settings/PreferencesSection';
 import { MailboxSection } from '@/components/settings/MailboxSection';
 import { WhitelistSection } from '@/components/settings/WhitelistSection';
 import { DataManagement } from '@/components/settings/DataManagement';
+import { ContactsSection } from '@/components/settings/ContactsSection';
 import { useSettings } from '@/hooks/useSettings';
 
 /**
@@ -46,6 +47,7 @@ export function SettingsPage() {
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
           <TabsTrigger value="mailboxes">Mailboxes</TabsTrigger>
           <TabsTrigger value="whitelists">Whitelists</TabsTrigger>
+          <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="data">Data</TabsTrigger>
         </TabsList>
 
@@ -59,6 +61,10 @@ export function SettingsPage() {
 
         <TabsContent value="whitelists">
           <WhitelistSection settings={settings} />
+        </TabsContent>
+
+        <TabsContent value="contacts">
+          <ContactsSection settings={settings} />
         </TabsContent>
 
         <TabsContent value="data">
