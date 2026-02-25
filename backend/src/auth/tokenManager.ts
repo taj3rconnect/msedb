@@ -1,6 +1,6 @@
 import { encrypt, decrypt } from '../utils/encryption.js';
 import { config } from '../config/index.js';
-import { createMsalClient, GRAPH_SCOPES } from './msalClient.js';
+import { createMsalClient, GRAPH_REFRESH_SCOPES } from './msalClient.js';
 import { Mailbox } from '../models/Mailbox.js';
 import type { EncryptedData } from '../utils/encryption.js';
 
@@ -41,8 +41,9 @@ export async function getAccessTokenForMailbox(mailboxId: string): Promise<strin
     throw new Error('Account not found in cache -- re-authentication required');
   }
 
-  // Filter out offline_access as it is not a resource scope
-  const scopes = GRAPH_SCOPES.filter((s) => s !== 'offline_access');
+  // Use the narrower refresh scopes to avoid consent errors for
+  // scopes that weren't present when the refresh token was issued.
+  const scopes = GRAPH_REFRESH_SCOPES;
 
   const silentResult = await msalClient.acquireTokenSilent({
     account,

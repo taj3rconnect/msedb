@@ -2,7 +2,7 @@ import type { Job } from 'bullmq';
 import { Types } from 'mongoose';
 import { Mailbox } from '../../models/Mailbox.js';
 import { Notification } from '../../models/Notification.js';
-import { createMsalClient, GRAPH_SCOPES } from '../../auth/msalClient.js';
+import { createMsalClient, GRAPH_REFRESH_SCOPES } from '../../auth/msalClient.js';
 import { isInteractionRequired } from '../../auth/tokenManager.js';
 import logger from '../../config/logger.js';
 
@@ -70,7 +70,7 @@ export async function processTokenRefresh(job: Job): Promise<void> {
       }
 
       // Filter out offline_access as it is not a resource scope
-      const scopes = GRAPH_SCOPES.filter((s) => s !== 'offline_access');
+      const scopes = GRAPH_REFRESH_SCOPES;
 
       const result = await msalClient.acquireTokenSilent({
         account,

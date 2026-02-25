@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -35,11 +35,12 @@ export function ContactsSection({ settings }: ContactsSectionProps) {
   }, [prefs.contactsMailboxId, prefs.contactsFolderId]);
 
   // Fetch contact folders when a mailbox is selected
-  const { data: folderData, isLoading: foldersLoading } = useQuery({
+  const { data: folderData, isLoading: foldersLoading, isError, error, isFetching } = useQuery({
     queryKey: ['contact-folders', selectedMailboxId],
     queryFn: () => fetchContactFolders(selectedMailboxId),
     enabled: !!selectedMailboxId,
-    staleTime: 60_000,
+    staleTime: 0,
+    retry: false,
   });
 
   const folders = folderData?.folders ?? [];
@@ -99,9 +100,23 @@ export function ContactsSection({ settings }: ContactsSectionProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {foldersLoading ? (
+            {(foldersLoading || isFetching) ? (
               <div className="flex items-center justify-center py-4">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : isError ? (
+              <div className="flex items-start gap-2 text-destructive text-sm">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium">Failed to load contact folders</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {error instanceof Error ? error.message : 'Unknown error'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Make sure Contacts.Read permission is granted and admin-consented in Azure Portal,
+                    then disconnect and reconnect this mailbox.
+                  </p>
+                </div>
               </div>
             ) : folders.length === 0 ? (
               <p className="text-sm text-muted-foreground">No contact folders found in this mailbox.</p>

@@ -1185,15 +1185,35 @@ mailboxRouter.get('/:id/contact-folders', async (req: Request, res: Response) =>
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
 
-  let url: string | undefined =
-    `/users/${mailbox.email}/contactFolders?$top=100&$select=id,displayName`;
-
   interface ContactFolderResult {
     id: string;
     displayName: string;
     totalCount: number;
   }
   const folders: ContactFolderResult[] = [];
+
+  // 1. Always include the default "Contacts" folder (not returned by /contactFolders)
+  //    Use special id "default" — the contacts search endpoint handles this.
+  try {
+    const defaultCountRes = await graphFetch(
+      `/users/${mailbox.email}/contacts/$count`,
+      accessToken,
+      { headers: { 'ConsistencyLevel': 'eventual' } },
+    );
+    const defaultCountText = await defaultCountRes.text();
+    folders.push({
+      id: 'default',
+      displayName: 'Contacts',
+      totalCount: parseInt(defaultCountText, 10) || 0,
+    });
+  } catch {
+    // If count fails, still add with 0
+    folders.push({ id: 'default', displayName: 'Contacts', totalCount: 0 });
+  }
+
+  // 2. List user-created sub-folders under the default contacts folder
+  let url: string | undefined =
+    `/users/${mailbox.email}/contactFolders?$top=100&$select=id,displayName`;
 
   while (url) {
     const response = await graphFetch(url, accessToken);
@@ -1213,9 +1233,10 @@ mailboxRouter.get('/:id/contact-folders', async (req: Request, res: Response) =>
     url = data['@odata.nextLink'];
   }
 
-  // Fetch contact counts per folder in parallel
+  // Fetch contact counts for sub-folders in parallel
+  const subFolders = folders.filter((f) => f.id !== 'default');
   const countResults = await Promise.allSettled(
-    folders.map(async (folder) => {
+    subFolders.map(async (folder) => {
       const countRes = await graphFetch(
         `/users/${mailbox.email}/contactFolders/${folder.id}/contacts/$count`,
         accessToken,
@@ -1263,13 +1284,17 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
   const selectFields = 'id,displayName,emailAddresses,companyName,department,jobTitle,businessPhones,mobilePhone';
 
+  // "default" = the root Contacts folder (accessed via /contacts, not /contactFolders/{id}/contacts)
+  const basePath = folderId === 'default'
+    ? `/users/${mailbox.email}/contacts`
+    : `/users/${mailbox.email}/contactFolders/${folderId}/contacts`;
+
   let graphUrl: string;
   if (q && q.trim()) {
-    // $search searches across all indexed contact fields
     const searchTerm = q.trim().replace(/"/g, '\\"');
-    graphUrl = `/users/${mailbox.email}/contactFolders/${folderId}/contacts?$search="${searchTerm}"&$select=${selectFields}&$top=50&$orderby=displayName`;
+    graphUrl = `${basePath}?$search="${searchTerm}"&$select=${selectFields}&$top=50&$orderby=displayName`;
   } else {
-    graphUrl = `/users/${mailbox.email}/contactFolders/${folderId}/contacts?$select=${selectFields}&$top=50&$orderby=displayName`;
+    graphUrl = `${basePath}?$select=${selectFields}&$top=50&$orderby=displayName`;
   }
 
   const response = await graphFetch(graphUrl, accessToken, {

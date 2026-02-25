@@ -23,6 +23,20 @@ export const GRAPH_SCOPES: string[] = [
 ];
 
 /**
+ * Scopes used for silent token refresh. Excludes scopes that may not have
+ * been consented at the time the refresh token was originally issued.
+ * Graph API checks actual tenant-level permissions, not token scopes,
+ * so a narrower refresh scope still allows calls if admin consent is granted.
+ */
+export const GRAPH_REFRESH_SCOPES: string[] = [
+  'User.Read',
+  'Mail.Read',
+  'Mail.ReadWrite',
+  'Mail.Send',
+  'MailboxSettings.ReadWrite',
+];
+
+/**
  * Custom ICachePlugin that persists the MSAL token cache to MongoDB
  * via the Mailbox model's msalCache field.
  *
