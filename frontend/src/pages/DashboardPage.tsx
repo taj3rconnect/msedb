@@ -117,8 +117,8 @@ export function DashboardPage() {
 
       {/* Stats Cards */}
       {stats.isLoading ? (
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-[120px] rounded-xl" />
           ))}
         </div>
@@ -134,6 +134,7 @@ export function DashboardPage() {
           rulesFired={stats.data.rulesFired}
           patternsPending={stats.data.patternsPending}
           stagingCount={stats.data.stagingCount}
+          contactsIndexed={stats.data.contactsIndexed}
         />
       ) : null}
 

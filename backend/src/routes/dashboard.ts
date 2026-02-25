@@ -4,6 +4,8 @@ import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { Pattern } from '../models/Pattern.js';
 import { Rule } from '../models/Rule.js';
+import { User } from '../models/User.js';
+import { getRedisClient } from '../config/redis.js';
 
 const dashboardRouter = Router();
 
@@ -80,11 +82,27 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
   const rulesFired = ruleStatsAgg[0]?.totalFired ?? 0;
   const stagingCount = ruleStatsAgg[0]?.stagingCount ?? 0;
 
+  // Contacts indexed — read count from Redis cache meta
+  let contactsIndexed = 0;
+  try {
+    const user = await User.findById(userId).select('preferences.contactsMailboxId').lean();
+    const cmId = user?.preferences?.contactsMailboxId;
+    if (cmId) {
+      const redis = getRedisClient();
+      const metaRaw = await redis.get(`contacts:${cmId}:meta`);
+      if (metaRaw) {
+        const meta = JSON.parse(metaRaw);
+        contactsIndexed = meta.count ?? 0;
+      }
+    }
+  } catch { /* ignore — contacts count is best-effort */ }
+
   res.json({
     emailsProcessed,
     rulesFired,
     patternsPending,
     stagingCount,
+    contactsIndexed,
     perMailbox,
   });
 });

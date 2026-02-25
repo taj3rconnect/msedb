@@ -122,7 +122,6 @@ export function ContactsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexedAt, setIndexedAt] = useState<Date | null>(null);
-  const [fromCache, setFromCache] = useState(false);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editContact, setEditContact] = useState<Contact | null>(null);
@@ -171,7 +170,7 @@ export function ContactsPage() {
     try {
       const result = await fetchAllContacts(contactsMailboxId, contactsFolderId);
       setAllContacts(result.contacts);
-      setFromCache(result.cached);
+
       setSyncedAt(result.syncedAt);
     } catch {
       setAllContacts([]);
@@ -191,7 +190,7 @@ export function ContactsPage() {
     try {
       const result = await refreshAllContacts(contactsMailboxId, contactsFolderId);
       setAllContacts(result.contacts);
-      setFromCache(false);
+      // Fresh data from server
       setSyncedAt(result.syncedAt);
     } catch {
       // Error handled by apiFetch toast
@@ -357,88 +356,68 @@ export function ContactsPage() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
             {/* Index status badge */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-1.5">
-                    {loading ? (
-                      <Badge variant="outline" className="gap-1 text-xs font-normal">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        Loading...
-                      </Badge>
-                    ) : refreshing ? (
-                      <Badge variant="outline" className="gap-1 text-xs font-normal">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        Refreshing from server...
-                      </Badge>
-                    ) : indexing ? (
-                      <Badge variant="outline" className="gap-1 text-xs font-normal">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        Indexing...
-                      </Badge>
-                    ) : indexedAt ? (
-                      <Badge variant="secondary" className="gap-1 text-xs font-normal">
-                        <Database className="h-3 w-3" />
-                        {allContacts.length} indexed
-                        {fromCache && <span className="text-green-600 ml-1">(cached)</span>}
-                      </Badge>
-                    ) : null}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  <div>
-                    <strong>MiniSearch Index</strong>
-                    <br />
-                    {allContacts.length} contacts indexed across all fields
-                    <br />
+            {loading ? (
+              <Badge variant="outline" className="gap-1 text-xs font-normal">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading...
+              </Badge>
+            ) : refreshing ? (
+              <Badge variant="outline" className="gap-1 text-xs font-normal">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Refreshing...
+              </Badge>
+            ) : indexing ? (
+              <Badge variant="outline" className="gap-1 text-xs font-normal">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Indexing...
+              </Badge>
+            ) : indexedAt ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="secondary" className="gap-1 text-xs font-normal cursor-default">
+                      <Database className="h-3 w-3" />
+                      {allContacts.length} indexed
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
                     Searches: name, email, company, title, department, phone
                     <br />
-                    Features: prefix matching, fuzzy search (~80% similarity)
-                    {fromCache && <><br />Source: Redis cache (instant)</>}
-                    {syncedAt && <><br />Last synced: {new Date(syncedAt).toLocaleString()}</>}
-                    {indexedAt && <><br />Last indexed: {indexedAt.toLocaleTimeString()}</>}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            {/* Reindex + Reset buttons */}
+                    Prefix matching + fuzzy search
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Refresh from server — right side with timestamp */}
             {!loading && allContacts.length > 0 && (
-              <>
+              <div className="flex items-center gap-1.5">
+                <div className="text-right">
+                  {syncedAt && (
+                    <div className="text-[10px] text-muted-foreground leading-tight">
+                      Last refreshed: {new Date(syncedAt).toLocaleString()}
+                    </div>
+                  )}
+                </div>
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant="ghost"
-                        size="icon-xs"
+                        variant="outline"
+                        size="icon-sm"
                         onClick={handleReindex}
                         disabled={refreshing}
                       >
-                        <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent side="bottom">Re-fetch from server &amp; reindex</TooltipContent>
+                    <TooltipContent side="bottom">Fetch fresh from server</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-                {query && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => setQuery('')}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">Clear search</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-              </>
+              </div>
             )}
-          </div>
-          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -470,6 +449,7 @@ export function ContactsPage() {
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4" /> Import
             </Button>
+            </div>
           </div>
         </div>
 

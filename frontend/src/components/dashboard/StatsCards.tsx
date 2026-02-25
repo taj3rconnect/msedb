@@ -1,4 +1,4 @@
-import { Mail, Shield, Brain, Clock } from 'lucide-react';
+import { Mail, Shield, Brain, Clock, Contact } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatNumber } from '@/lib/formatters';
 
@@ -7,6 +7,7 @@ interface StatsCardsProps {
   rulesFired: number;
   patternsPending: number;
   stagingCount: number;
+  contactsIndexed: number;
 }
 
 const STAT_CARDS = [
@@ -38,6 +39,13 @@ const STAT_CARDS = [
     color: 'text-orange-600 dark:text-orange-400',
     bgColor: 'bg-orange-50 dark:bg-orange-950',
   },
+  {
+    key: 'contactsIndexed' as const,
+    label: 'Contacts Indexed',
+    icon: Contact,
+    color: 'text-purple-600 dark:text-purple-400',
+    bgColor: 'bg-purple-50 dark:bg-purple-950',
+  },
 ];
 
 /**
@@ -45,7 +53,7 @@ const STAT_CARDS = [
  */
 export function StatsCards(props: StatsCardsProps) {
   return (
-    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
       {STAT_CARDS.map((card) => {
         const Icon = card.icon;
         return (

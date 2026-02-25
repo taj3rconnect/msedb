@@ -5,6 +5,7 @@ export interface DashboardStats {
   rulesFired: number;
   patternsPending: number;
   stagingCount: number;
+  contactsIndexed: number;
   perMailbox: Array<{
     mailboxId: string;
     count: number;
