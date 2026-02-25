@@ -480,19 +480,37 @@ export function ContactsPage() {
                 Indexing...
               </Badge>
             ) : indexedAt ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Badge variant="secondary" className="gap-1 text-xs font-normal cursor-default">
-                    <Database className="h-3 w-3" />
-                    {allContacts.length} indexed
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  Searches: name, email, company, title, department, phone
-                  <br />
-                  Prefix matching + fuzzy search
-                </TooltipContent>
-              </Tooltip>
+              <div className="flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="secondary" className="gap-1 text-xs font-normal cursor-default">
+                      <Database className="h-3 w-3" />
+                      {allContacts.length} indexed
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    Searches: name, email, company, title, department, phone, notes
+                    <br />
+                    Prefix matching + fuzzy search
+                  </TooltipContent>
+                </Tooltip>
+                {query && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => { setQuery(''); inputRef.current?.focus(); }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      Clear search &amp; show all contacts
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
             ) : null}
             {partial && !loading && (
               <Badge variant="outline" className="gap-1 text-xs font-normal">
