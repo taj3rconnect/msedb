@@ -83,5 +83,17 @@ export async function initializeSchedulers(): Promise<void> {
   );
   logger.info('Scheduler registered: scheduled-email (every 1 minute)');
 
-  logger.info('All 6 job schedulers initialized');
+  // 7. Contacts sync -- daily at 1 AM EST (6 AM UTC)
+  await queues['contacts-sync'].upsertJobScheduler(
+    'contacts-sync-schedule',
+    { pattern: '0 6 * * *' },
+    {
+      name: 'sync-contacts',
+      data: {},
+      opts: schedulerJobOpts,
+    }
+  );
+  logger.info('Scheduler registered: contacts-sync (daily at 1 AM EST)');
+
+  logger.info('All 7 job schedulers initialized');
 }
