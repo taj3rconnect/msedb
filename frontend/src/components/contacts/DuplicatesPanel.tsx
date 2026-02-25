@@ -13,6 +13,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type { Contact } from '@/api/mailboxes';
 import { bulkDeleteContacts, updateContact } from '@/api/mailboxes';
 
@@ -95,19 +98,18 @@ function mergeContactFields(target: Contact, source: Contact): Partial<Omit<Cont
 }
 
 /**
- * Normalize a display name into a "firstname lastname" key.
+ * Normalize a display name for duplicate matching.
  * Strips extra whitespace, lowercases, removes special chars like quotes/asterisks.
+ * Uses the full name (all parts) to avoid false positives with different middle names.
  */
 function normalizeNameKey(displayName: string): string {
   if (!displayName) return '';
   // Strip common noise characters: quotes, asterisks, parentheses, brackets
   const cleaned = displayName.replace(/['"*()[\]{}<>]/g, '').trim();
-  // Split on whitespace, take first and last token as first/last name
+  // Split on whitespace, join all parts as the key
   const parts = cleaned.toLowerCase().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '';
-  if (parts.length === 1) return parts[0];
-  // Use first + last only (ignore middle names, suffixes, etc.)
-  return `${parts[0]} ${parts[parts.length - 1]}`;
+  return parts.join(' ');
 }
 
 function findDuplicates(contacts: Contact[]): DuplicateGroup[] {
@@ -454,6 +456,7 @@ export function DuplicatesPanel({ open, onOpenChange, contacts, mailboxId, onDel
 
               {/* Table */}
               {groups.length > 0 && (
+                <TooltipProvider delayDuration={200}>
                 <div className="flex-1 overflow-y-auto border rounded-md min-h-0">
                   <Table>
                     <TableHeader>
@@ -501,7 +504,21 @@ export function DuplicatesPanel({ open, onOpenChange, contacts, mailboxId, onDel
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
-                                  <span className="font-medium text-sm">{contact.displayName || '(no name)'}</span>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="font-medium text-sm cursor-default border-b border-dotted border-muted-foreground/40">{contact.displayName || '(no name)'}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right" className="text-xs space-y-1 max-w-72">
+                                      <div className="font-semibold">{contact.displayName || '(no name)'}</div>
+                                      {contact.companyName && <div className="text-muted-foreground">{[contact.companyName, contact.jobTitle].filter(Boolean).join(' · ')}</div>}
+                                      {contact.emailAddresses.some((e) => e.address) && (
+                                        <div className="text-muted-foreground">{contact.emailAddresses.map((e) => e.address).filter(Boolean).join(', ')}</div>
+                                      )}
+                                      {(contact.mobilePhone || contact.businessPhones?.some(Boolean)) && (
+                                        <div className="text-muted-foreground">{[contact.mobilePhone, ...contact.businessPhones].filter(Boolean).join(', ')}</div>
+                                      )}
+                                    </TooltipContent>
+                                  </Tooltip>
                                   {isKeeper && (
                                     <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-green-600 border-green-300">
                                       KEEP
@@ -537,6 +554,7 @@ export function DuplicatesPanel({ open, onOpenChange, contacts, mailboxId, onDel
                     </TableBody>
                   </Table>
                 </div>
+                </TooltipProvider>
               )}
 
               {/* Action buttons */}
