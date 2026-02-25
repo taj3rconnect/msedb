@@ -111,6 +111,8 @@ function downloadFile(content: string, filename: string, mimeType: string) {
   URL.revokeObjectURL(url);
 }
 
+const BATCH_SIZE = 80;
+
 export function ContactsPage() {
   const { data: settingsData, isLoading: settingsLoading } = useSettings();
   const contactsMailboxId = settingsData?.user.preferences.contactsMailboxId;
@@ -135,12 +137,12 @@ export function ContactsPage() {
     return saved ? parseInt(saved, 10) : 4;
   });
 
-  const [visibleLimit, setVisibleLimit] = useState(120);
+  const [visibleLimit, setVisibleLimit] = useState(BATCH_SIZE);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const searchIndexRef = useRef<MiniSearch | null>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
 
   // / key focuses search (same as InboxPage)
   useKeyboardShortcuts(useMemo(() => [
@@ -151,19 +153,19 @@ export function ContactsPage() {
     }},
   ], [query]));
 
-  // Build MiniSearch index whenever contacts change
+  // Build MiniSearch index whenever contacts change — use setTimeout to avoid blocking UI
   useEffect(() => {
     if (allContacts.length === 0) {
       searchIndexRef.current = null;
       return;
     }
     setIndexing(true);
-    // Use requestAnimationFrame to not block the UI
-    requestAnimationFrame(() => {
+    const timer = setTimeout(() => {
       searchIndexRef.current = buildIndex(allContacts);
       setIndexedAt(new Date());
       setIndexing(false);
-    });
+    }, 50);
+    return () => clearTimeout(timer);
   }, [allContacts]);
 
   const retryTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -202,7 +204,6 @@ export function ContactsPage() {
     try {
       const result = await refreshAllContacts(contactsMailboxId, contactsFolderId);
       setAllContacts(result.contacts);
-      // Fresh data from server
       setSyncedAt(result.syncedAt);
     } catch {
       // Error handled by apiFetch toast
@@ -216,9 +217,8 @@ export function ContactsPage() {
     inputRef.current?.focus();
   }, []);
 
-  // MiniSearch-powered filtered contacts
-  // Reset visible limit when query changes
-  useEffect(() => { setVisibleLimit(120); }, [query]);
+  // Reset visible limit when query or contacts change
+  useEffect(() => { setVisibleLimit(BATCH_SIZE); }, [query, allContacts]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return allContacts;
@@ -258,21 +258,52 @@ export function ContactsPage() {
     return letters;
   }, [filtered]);
 
-  // IntersectionObserver to load more contacts as user scrolls
+  // Load more on scroll — throttled via loadingMoreRef to prevent runaway loops
+  const loadMore = useCallback(() => {
+    if (loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    // Use setTimeout to yield the main thread between batches
+    setTimeout(() => {
+      setVisibleLimit((prev) => {
+        const next = prev + BATCH_SIZE;
+        return next;
+      });
+      loadingMoreRef.current = false;
+    }, 100);
+  }, []);
+
+  // Scroll-based load more (simple scroll listener instead of IntersectionObserver)
   useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setVisibleLimit((prev) => prev + 120);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    let ticking = false;
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        // Track active letter
+        const containerTop = container.getBoundingClientRect().top;
+        let current = '';
+        for (const [letter, el] of sectionRefs.current) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top - containerTop <= 40) current = letter;
         }
-      },
-      { rootMargin: '200px' },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [grouped]);
+        if (current) setActiveLetter(current);
+
+        // Load more when near bottom
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        if (scrollHeight - scrollTop - clientHeight < 400) {
+          loadMore();
+        }
+
+        ticking = false;
+      });
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [loadMore]);
 
   // Scroll to letter section — expand visible limit if needed
   const scrollToLetter = (letter: string) => {
@@ -283,8 +314,7 @@ export function ContactsPage() {
       if (getLetterKey(c.displayName) === letter) break;
     }
     if (count > visibleLimit) {
-      setVisibleLimit(count + 120);
-      // Wait for render before scrolling
+      setVisibleLimit(count + BATCH_SIZE);
       requestAnimationFrame(() => {
         const el = sectionRefs.current.get(letter);
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -296,45 +326,24 @@ export function ContactsPage() {
     setActiveLetter(letter);
   };
 
-  // Track active letter on scroll
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const containerTop = container.getBoundingClientRect().top;
-      let current = '';
-      for (const [letter, el] of sectionRefs.current) {
-        const rect = el.getBoundingClientRect();
-        if (rect.top - containerTop <= 40) {
-          current = letter;
-        }
-      }
-      if (current) setActiveLetter(current);
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [grouped]);
-
   // Selection
-  const handleSelect = (id: string, checked: boolean) => {
+  const handleSelect = useCallback((id: string, checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (checked) next.add(id);
       else next.delete(id);
       return next;
     });
-  };
+  }, []);
 
   // Card click → edit
-  const handleCardClick = (contact: Contact) => {
+  const handleCardClick = useCallback((contact: Contact) => {
     setEditContact(contact);
     setEditOpen(true);
-  };
+  }, []);
 
   // Quick delete from card
-  const handleQuickDelete = async (contact: Contact) => {
+  const handleQuickDelete = useCallback(async (contact: Contact) => {
     if (!contactsMailboxId) return;
     try {
       await deleteContact(contactsMailboxId, contact.id);
@@ -342,7 +351,7 @@ export function ContactsPage() {
     } catch {
       // Error handled by apiFetch
     }
-  };
+  }, [contactsMailboxId]);
 
   // After edit save
   const handleUpdated = (updated: Contact) => {
@@ -447,7 +456,7 @@ export function ContactsPage() {
               </Badge>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* Refresh from server — right side with timestamp */}
             {!loading && allContacts.length > 0 && (
               <div className="flex items-center gap-1.5">
@@ -473,14 +482,13 @@ export function ContactsPage() {
                 </Tooltip>
               </div>
             )}
-            <div className="flex items-center gap-1.5">
-            <DropdownMenu modal={false}>
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
                   <LayoutGrid className="h-4 w-4" /> {columnsPerRow}/row <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="z-50">
+              <DropdownMenuContent align="end">
                 {[2, 3, 4, 5, 6, 7, 8].map((n) => (
                   <DropdownMenuItem key={n} onClick={() => handleColumnsChange(n)}>
                     {n} per row {n === columnsPerRow ? '\u2713' : ''}
@@ -491,13 +499,13 @@ export function ContactsPage() {
             <Button variant="outline" size="sm" onClick={() => setDuplicatesOpen(true)}>
               <Users className="h-4 w-4" /> Duplicates
             </Button>
-            <DropdownMenu modal={false}>
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
                   <Download className="h-4 w-4" /> Export <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="z-50">
+              <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={handleExportCSV}>Export as CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={handleExportVCard}>Export as vCard</DropdownMenuItem>
               </DropdownMenuContent>
@@ -505,7 +513,6 @@ export function ContactsPage() {
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
               <Upload className="h-4 w-4" /> Import
             </Button>
-            </div>
           </div>
         </div>
 
@@ -514,7 +521,7 @@ export function ContactsPage() {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             ref={inputRef}
-            placeholder="Search all fields \u2014 name, email, company, title, department, phone... (press /)"
+            placeholder="Search all fields — name, email, company, title, department, phone... (press /)"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9 pr-9"
@@ -558,7 +565,7 @@ export function ContactsPage() {
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">Loading all contacts...</span>
+              <span className="ml-2 text-sm text-muted-foreground">Loading contacts...</span>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
@@ -589,9 +596,9 @@ export function ContactsPage() {
                   </div>
                 </div>
               ))}
-              {/* Infinite scroll sentinel */}
+              {/* Load more indicator */}
               {hasMore && (
-                <div ref={sentinelRef} className="flex items-center justify-center py-4">
+                <div className="flex items-center justify-center py-4">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                   <span className="ml-2 text-xs text-muted-foreground">
                     Showing {visibleContacts.length} of {filtered.length}...
