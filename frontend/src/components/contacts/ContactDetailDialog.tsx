@@ -13,10 +13,23 @@ import { Textarea } from '@/components/ui/textarea';
 import type { Contact } from '@/api/mailboxes';
 import { updateContact, deleteContact } from '@/api/mailboxes';
 
-/** Strip HTML tags to get plain text. */
-function stripHtml(html: string): string {
+/** Convert HTML notes to readable plain text preserving line breaks. */
+function htmlToText(html: string): string {
   if (!html) return '';
-  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /** Generate a consistent color from a name string. */
@@ -82,7 +95,7 @@ export function ContactDetailDialog({
       setJobTitle(contact.jobTitle);
       setBusinessPhones([...contact.businessPhones]);
       setMobilePhone(contact.mobilePhone);
-      setPersonalNotes(stripHtml(contact.personalNotes || ''));
+      setPersonalNotes(htmlToText(contact.personalNotes || ''));
       setDirty(false);
     }
   }, [open, contact]);
