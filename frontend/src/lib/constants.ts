@@ -5,6 +5,7 @@ import {
   Mail,
   Brain,
   Shield,
+  CalendarClock,
   Clock,
   FileText,
   Settings,
@@ -35,6 +36,7 @@ export const ROUTE_PATHS = {
   staging: '/staging',
   audit: '/audit',
   settings: '/settings',
+  pending: '/pending',
   admin: '/admin',
   login: '/login',
 } as const;
@@ -52,6 +54,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', path: ROUTE_PATHS.dashboard, icon: LayoutDashboard },
   { label: 'Inbox', path: ROUTE_PATHS.inbox, icon: Inbox },
+  { label: 'Pending', path: ROUTE_PATHS.pending, icon: CalendarClock },
   { label: 'Email Activity', path: ROUTE_PATHS.activity, icon: Mail },
   { label: 'Patterns', path: ROUTE_PATHS.patterns, icon: Brain },
   { label: 'Rules', path: ROUTE_PATHS.rules, icon: Shield },

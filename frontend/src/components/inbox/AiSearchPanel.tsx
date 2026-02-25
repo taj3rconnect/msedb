@@ -3,12 +3,8 @@ import { useMutation } from '@tanstack/react-query';
 import {
   Search,
   Loader2,
-  X,
   Paperclip,
   Star,
-  Mail,
-  MailOpen,
-  Clock,
   Brain,
   Zap,
 } from 'lucide-react';

@@ -259,7 +259,7 @@ export function InboxDataGrid({
           cell: ({ row }) => {
             const event = row.original;
             return (
-              <div className="flex items-center gap-1 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 {folderFilter === 'deleted' ? (
                   /* Deleted folder: only show Undelete button */
                   <Tooltip>

@@ -16,6 +16,7 @@ import { AuditLogPage } from '@/pages/AuditLogPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AdminPage } from '@/pages/AdminPage';
 import { InboxPage } from '@/pages/InboxPage';
+import { PendingMessagesPage } from '@/pages/PendingMessagesPage';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -86,6 +87,10 @@ const router = createBrowserRouter([
           {
             path: '/inbox/:mailboxId',
             element: <InboxPage />,
+          },
+          {
+            path: '/pending',
+            element: <PendingMessagesPage />,
           },
           {
             path: '/activity',

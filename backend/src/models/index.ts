@@ -35,3 +35,6 @@ export type { IWebhookSubscription } from './WebhookSubscription.js';
 
 export { TunnelConfig, getTunnelConfig } from './TunnelConfig.js';
 export type { ITunnelConfig } from './TunnelConfig.js';
+
+export { ScheduledEmail } from './ScheduledEmail.js';
+export type { IScheduledEmail } from './ScheduledEmail.js';

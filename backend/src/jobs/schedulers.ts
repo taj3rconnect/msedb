@@ -7,7 +7,7 @@ const schedulerJobOpts = {
 };
 
 /**
- * Initialize all 5 job schedulers using BullMQ's upsertJobScheduler API.
+ * Initialize all 6 job schedulers using BullMQ's upsertJobScheduler API.
  * This replaces the deprecated `repeat` option and is idempotent (safe to call on every startup).
  */
 export async function initializeSchedulers(): Promise<void> {
@@ -71,5 +71,17 @@ export async function initializeSchedulers(): Promise<void> {
   );
   logger.info('Scheduler registered: token-refresh (every 45 minutes)');
 
-  logger.info('All 5 job schedulers initialized');
+  // 6. Scheduled email sender -- every 1 minute (interval)
+  await queues['scheduled-email'].upsertJobScheduler(
+    'scheduled-email-schedule',
+    { every: 60 * 1000 },
+    {
+      name: 'send-scheduled-emails',
+      data: {},
+      opts: schedulerJobOpts,
+    }
+  );
+  logger.info('Scheduler registered: scheduled-email (every 1 minute)');
+
+  logger.info('All 6 job schedulers initialized');
 }

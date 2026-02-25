@@ -8,6 +8,7 @@ import { processDeltaSync } from './processors/deltaSync.js';
 import { processPatternAnalysis } from './processors/patternAnalysis.js';
 import { processStagingItems } from './processors/stagingProcessor.js';
 import { processEmailEmbedding } from './processors/emailEmbedding.js';
+import { processScheduledEmail } from './processors/scheduledEmail.js';
 
 // Connection configs (plain objects avoid ioredis version conflicts with BullMQ)
 const queueConnectionConfig = getQueueConnectionConfig();
@@ -28,11 +29,12 @@ const QUEUE_NAMES = [
   'staging-processor',
   'token-refresh',
   'email-embedding',
+  'scheduled-email',
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
 
-// Create all 7 queues
+// Create all 8 queues
 export const queues: Record<QueueName, Queue> = {
   'webhook-events': new Queue('webhook-events', {
     connection: queueConnectionConfig,
@@ -62,6 +64,10 @@ export const queues: Record<QueueName, Queue> = {
     connection: queueConnectionConfig,
     defaultJobOptions,
   }),
+  'scheduled-email': new Queue('scheduled-email', {
+    connection: queueConnectionConfig,
+    defaultJobOptions,
+  }),
 };
 
 // Map queue names to their processor functions
@@ -73,9 +79,10 @@ const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
   'staging-processor': processStagingItems,
   'token-refresh': processTokenRefresh,
   'email-embedding': processEmailEmbedding,
+  'scheduled-email': processScheduledEmail,
 };
 
-// Create all 7 workers (each with its own Redis connection via config object)
+// Create all 8 workers (each with its own Redis connection via config object)
 const workers: Worker[] = QUEUE_NAMES.map((name) => {
   const worker = new Worker(name, processorMap[name], {
     connection: workerConnectionConfig,

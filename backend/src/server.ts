@@ -26,6 +26,7 @@ import { auditRouter } from './routes/audit.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { settingsRouter } from './routes/settings.js';
 import { aiSearchRouter } from './routes/aiSearch.js';
+import { scheduledEmailsRouter } from './routes/scheduledEmails.js';
 import { createSocketServer } from './config/socket.js';
 import { ensureQdrantCollection } from './services/qdrantClient.js';
 
@@ -84,6 +85,9 @@ app.use('/api/settings', settingsRouter);
 
 // Mount AI search routes (requireAuth applied internally)
 app.use('/api/ai-search', aiSearchRouter);
+
+// Mount scheduled emails routes (requireAuth applied internally)
+app.use('/api/scheduled-emails', scheduledEmailsRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);
