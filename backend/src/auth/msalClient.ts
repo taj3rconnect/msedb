@@ -18,6 +18,7 @@ export const GRAPH_SCOPES: string[] = [
   'Mail.ReadWrite',
   'Mail.Send',
   'MailboxSettings.ReadWrite',
+  'Contacts.Read',
   'offline_access',
 ];
 
