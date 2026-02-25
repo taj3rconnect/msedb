@@ -16,6 +16,7 @@ import { ContactDetailDialog } from '@/components/contacts/ContactDetailDialog';
 import { AlphabetIndex } from '@/components/contacts/AlphabetIndex';
 import { DuplicatesPanel } from '@/components/contacts/DuplicatesPanel';
 import { ImportDialog } from '@/components/contacts/ImportDialog';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 /** Get the letter group key for a contact name. */
 function getLetterKey(name: string): string {
@@ -97,6 +98,15 @@ export function ContactsPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // / key focuses search (same as InboxPage)
+  useKeyboardShortcuts(useMemo(() => [
+    { key: '/', action: () => { inputRef.current?.focus(); } },
+    { key: 'Escape', action: () => {
+      if (query) setQuery('');
+      else inputRef.current?.blur();
+    }},
+  ], [query]));
 
   // Load all contacts on mount
   const loadContacts = useCallback(async () => {
@@ -291,7 +301,7 @@ export function ContactsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {[2, 3, 4, 5, 6].map((n) => (
+                {[2, 3, 4, 5, 6, 7, 8].map((n) => (
                   <DropdownMenuItem key={n} onClick={() => handleColumnsChange(n)}>
                     {n} per row {n === columnsPerRow ? '\u2713' : ''}
                   </DropdownMenuItem>
