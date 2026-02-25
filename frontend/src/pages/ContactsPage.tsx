@@ -23,6 +23,12 @@ import { DuplicatesPanel } from '@/components/contacts/DuplicatesPanel';
 import { ImportDialog } from '@/components/contacts/ImportDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
+/** Strip HTML tags to get plain text for indexing. */
+function stripHtml(html: string): string {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /** Flatten a Contact into a searchable document for MiniSearch. */
 function contactToDoc(c: Contact) {
   return {
@@ -34,7 +40,7 @@ function contactToDoc(c: Contact) {
     department: c.department,
     mobilePhone: c.mobilePhone,
     businessPhones: c.businessPhones.filter(Boolean).join(' '),
-    personalNotes: c.personalNotes,
+    personalNotes: stripHtml(c.personalNotes || ''),
   };
 }
 

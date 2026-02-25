@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Trash2, Plus, X, Mail, Phone, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Trash2, Plus, X, Mail, Phone, ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
 import {
   Sheet, SheetContent, SheetTitle,
 } from '@/components/ui/sheet';
@@ -9,8 +9,15 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import type { Contact } from '@/api/mailboxes';
 import { updateContact, deleteContact } from '@/api/mailboxes';
+
+/** Strip HTML tags to get plain text. */
+function stripHtml(html: string): string {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+}
 
 /** Generate a consistent color from a name string. */
 function nameToColor(name: string): string {
@@ -59,6 +66,7 @@ export function ContactDetailDialog({
   const [jobTitle, setJobTitle] = useState('');
   const [businessPhones, setBusinessPhones] = useState<string[]>([]);
   const [mobilePhone, setMobilePhone] = useState('');
+  const [personalNotes, setPersonalNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -74,6 +82,7 @@ export function ContactDetailDialog({
       setJobTitle(contact.jobTitle);
       setBusinessPhones([...contact.businessPhones]);
       setMobilePhone(contact.mobilePhone);
+      setPersonalNotes(stripHtml(contact.personalNotes || ''));
       setDirty(false);
     }
   }, [open, contact]);
@@ -92,6 +101,7 @@ export function ContactDetailDialog({
         jobTitle,
         businessPhones: businessPhones.filter(Boolean),
         mobilePhone,
+        personalNotes,
       });
       onUpdated({
         ...contact,
@@ -102,6 +112,7 @@ export function ContactDetailDialog({
         jobTitle,
         businessPhones: businessPhones.filter(Boolean),
         mobilePhone,
+        personalNotes,
       });
       setDirty(false);
     } catch {
@@ -277,6 +288,18 @@ export function ContactDetailDialog({
                 </div>
               </div>
 
+              {/* Notes section */}
+              <div className="space-y-2">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notes</span>
+                <Textarea
+                  placeholder="Add notes..."
+                  value={personalNotes}
+                  onChange={(e) => { setPersonalNotes(e.target.value); markDirty(); }}
+                  rows={4}
+                  className="resize-y text-sm"
+                />
+              </div>
+
               {/* Footer actions */}
               <div className="flex justify-between pt-2 border-t">
                 <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
@@ -341,6 +364,17 @@ export function ContactDetailDialog({
                     <span className="text-primary truncate">{e.address}</span>
                   </div>
                 ))}
+
+                {/* Notes preview */}
+                {personalNotes && (
+                  <div className="pt-2 border-t space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <StickyNote className="h-3 w-3" />
+                      Notes
+                    </div>
+                    <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-4">{personalNotes}</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
