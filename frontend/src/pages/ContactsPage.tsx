@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import MiniSearch from 'minisearch';
 import {
   Contact as ContactIcon, Search, X, Loader2, Download, Upload,
-  Users, ChevronDown, LayoutGrid,
+  Users, ChevronDown, LayoutGrid, RefreshCw, Database,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -17,6 +22,36 @@ import { AlphabetIndex } from '@/components/contacts/AlphabetIndex';
 import { DuplicatesPanel } from '@/components/contacts/DuplicatesPanel';
 import { ImportDialog } from '@/components/contacts/ImportDialog';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+
+/** Flatten a Contact into a searchable document for MiniSearch. */
+function contactToDoc(c: Contact) {
+  return {
+    id: c.id,
+    displayName: c.displayName,
+    emails: c.emailAddresses.map((e) => e.address).filter(Boolean).join(' '),
+    companyName: c.companyName,
+    jobTitle: c.jobTitle,
+    department: c.department,
+    mobilePhone: c.mobilePhone,
+    businessPhones: c.businessPhones.filter(Boolean).join(' '),
+  };
+}
+
+/** Create and populate a MiniSearch index from contacts. */
+function buildIndex(contacts: Contact[]) {
+  const ms = new MiniSearch({
+    fields: ['displayName', 'emails', 'companyName', 'jobTitle', 'department', 'mobilePhone', 'businessPhones'],
+    storeFields: ['id'],
+    searchOptions: {
+      boost: { displayName: 3, emails: 2 },
+      prefix: true,
+      fuzzy: 0.2,
+      combineWith: 'AND',
+    },
+  });
+  ms.addAll(contacts.map(contactToDoc));
+  return ms;
+}
 
 /** Get the letter group key for a contact name. */
 function getLetterKey(name: string): string {
@@ -84,6 +119,8 @@ export function ContactsPage() {
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const [indexedAt, setIndexedAt] = useState<Date | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editContact, setEditContact] = useState<Contact | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -98,6 +135,7 @@ export function ContactsPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const searchIndexRef = useRef<MiniSearch | null>(null);
 
   // / key focuses search (same as InboxPage)
   useKeyboardShortcuts(useMemo(() => [
@@ -107,6 +145,21 @@ export function ContactsPage() {
       else inputRef.current?.blur();
     }},
   ], [query]));
+
+  // Build MiniSearch index whenever contacts change
+  useEffect(() => {
+    if (allContacts.length === 0) {
+      searchIndexRef.current = null;
+      return;
+    }
+    setIndexing(true);
+    // Use requestAnimationFrame to not block the UI
+    requestAnimationFrame(() => {
+      searchIndexRef.current = buildIndex(allContacts);
+      setIndexedAt(new Date());
+      setIndexing(false);
+    });
+  }, [allContacts]);
 
   // Load all contacts on mount
   const loadContacts = useCallback(async () => {
@@ -126,24 +179,26 @@ export function ContactsPage() {
     loadContacts();
   }, [loadContacts]);
 
+  // Reindex: re-fetch from Graph API + rebuild index
+  const handleReindex = async () => {
+    await loadContacts();
+  };
+
   // Auto-focus
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Client-side filtered + grouped contacts
+  // MiniSearch-powered filtered contacts
   const filtered = useMemo(() => {
     if (!query.trim()) return allContacts;
-    const q = query.toLowerCase();
-    return allContacts.filter((c) =>
-      c.displayName.toLowerCase().includes(q) ||
-      c.emailAddresses.some((e) => e.address?.toLowerCase().includes(q)) ||
-      c.companyName.toLowerCase().includes(q) ||
-      c.jobTitle.toLowerCase().includes(q) ||
-      c.department.toLowerCase().includes(q) ||
-      c.mobilePhone.includes(q) ||
-      c.businessPhones.some((p) => p.includes(q)),
-    );
+    const index = searchIndexRef.current;
+    if (!index) return allContacts;
+
+    const results = index.search(query.trim());
+    const matchedIds = new Set(results.map((r) => r.id));
+    // Preserve alphabetical order for matched contacts
+    return allContacts.filter((c) => matchedIds.has(c.id));
   }, [allContacts, query]);
 
   const grouped = useMemo(() => {
@@ -283,14 +338,67 @@ export function ContactsPage() {
       {/* Header + toolbar */}
       <div className="shrink-0 mb-3">
         <div className="flex items-center justify-between mb-2">
-          <div>
+          <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
-            {!loading && (
-              <p className="text-muted-foreground text-sm">
-                {filtered.length === allContacts.length
-                  ? `${allContacts.length} contacts`
-                  : `${filtered.length} of ${allContacts.length} contacts`}
-              </p>
+            {/* Index status badge */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1.5">
+                    {loading ? (
+                      <Badge variant="outline" className="gap-1 text-xs font-normal">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Loading...
+                      </Badge>
+                    ) : indexing ? (
+                      <Badge variant="outline" className="gap-1 text-xs font-normal">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Indexing...
+                      </Badge>
+                    ) : indexedAt ? (
+                      <Badge variant="secondary" className="gap-1 text-xs font-normal">
+                        <Database className="h-3 w-3" />
+                        {allContacts.length} indexed
+                      </Badge>
+                    ) : null}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  <div>
+                    <strong>MiniSearch Index</strong>
+                    <br />
+                    {allContacts.length} contacts indexed across all fields
+                    <br />
+                    Searches: name, email, company, title, department, phone
+                    <br />
+                    Features: prefix matching, fuzzy search (~80% similarity)
+                    {indexedAt && (
+                      <>
+                        <br />
+                        Last indexed: {indexedAt.toLocaleTimeString()}
+                      </>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            {/* Reindex button */}
+            {!loading && allContacts.length > 0 && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={handleReindex}
+                      disabled={loading}
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Re-fetch &amp; reindex contacts</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
           <div className="flex items-center gap-1.5">
@@ -333,20 +441,29 @@ export function ContactsPage() {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             ref={inputRef}
-            placeholder="Search by name, email, company, phone..."
+            placeholder="Search all fields \u2014 name, email, company, title, department, phone... (press /)"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9 pr-9"
           />
-          {query && (
+          {query ? (
             <button
               onClick={() => setQuery('')}
               className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
+          ) : (
+            <kbd className="absolute right-2.5 top-2 pointer-events-none text-[10px] text-muted-foreground/60 border rounded px-1 py-0.5 bg-muted/50">/</kbd>
           )}
         </div>
+
+        {/* Filter count */}
+        {!loading && query.trim() && (
+          <div className="text-xs text-muted-foreground mt-1.5">
+            {filtered.length} result{filtered.length !== 1 ? 's' : ''} for &quot;{query}&quot;
+          </div>
+        )}
       </div>
 
       {/* Main content: alphabet index + card grid */}
