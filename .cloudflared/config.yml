@@ -1,0 +1,11 @@
+tunnel: acdd721a-a650-44c3-824f-6ff106899581
+credentials-file: /home/nonroot/.cloudflared/acdd721a-a650-44c3-824f-6ff106899581.json
+
+ingress:
+  - hostname: msedb.aptask.com
+    service: http://msedb-frontend:8081
+  - hostname: ax1.aptask.com
+    service: http://172.16.219.222:3000
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
