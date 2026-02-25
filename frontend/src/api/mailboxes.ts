@@ -339,6 +339,86 @@ export async function searchContacts(
   return apiFetch<{ contacts: Contact[] }>(`/mailboxes/${mailboxId}/contacts?${params}`);
 }
 
+/**
+ * Fetch ALL contacts in a folder (paginated through all pages).
+ */
+export async function fetchAllContacts(
+  mailboxId: string,
+  folderId: string,
+): Promise<{ contacts: Contact[] }> {
+  const params = new URLSearchParams({ folderId, all: 'true' });
+  return apiFetch<{ contacts: Contact[] }>(`/mailboxes/${mailboxId}/contacts?${params}`);
+}
+
+/**
+ * Delete a single contact.
+ */
+export async function deleteContact(
+  mailboxId: string,
+  contactId: string,
+): Promise<{ success: boolean }> {
+  return apiFetch<{ success: boolean }>(`/mailboxes/${mailboxId}/contacts/${contactId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Bulk delete contacts.
+ */
+export async function bulkDeleteContacts(
+  mailboxId: string,
+  contactIds: string[],
+): Promise<{ deleted: number; failed: number; total: number }> {
+  return apiFetch<{ deleted: number; failed: number; total: number }>(
+    `/mailboxes/${mailboxId}/contacts/bulk-delete`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ contactIds }),
+    },
+  );
+}
+
+/**
+ * Update a single contact.
+ */
+export async function updateContact(
+  mailboxId: string,
+  contactId: string,
+  data: Partial<Omit<Contact, 'id'>>,
+): Promise<{ contact: Contact }> {
+  return apiFetch<{ contact: Contact }>(`/mailboxes/${mailboxId}/contacts/${contactId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export interface ImportContact {
+  displayName: string;
+  emailAddresses?: Array<{ address: string; name?: string }>;
+  companyName?: string;
+  department?: string;
+  jobTitle?: string;
+  businessPhones?: string[];
+  mobilePhone?: string;
+}
+
+/**
+ * Import contacts into a folder.
+ */
+export async function importContacts(
+  mailboxId: string,
+  folderId: string,
+  contacts: ImportContact[],
+): Promise<{ created: number; failed: number; total: number }> {
+  return apiFetch<{ created: number; failed: number; total: number }>(
+    `/mailboxes/${mailboxId}/contacts/import`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ folderId, contacts }),
+    },
+  );
+}
+
 export async function applyActionsToMessages(
   mailboxId: string,
   messageIds: string[],

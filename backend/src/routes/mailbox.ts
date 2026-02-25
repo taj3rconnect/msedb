@@ -1264,9 +1264,10 @@ mailboxRouter.get('/:id/contact-folders', async (req: Request, res: Response) =>
  * Query params:
  *   - folderId: contact folder ID (required)
  *   - q: search query (optional, searches all fields)
+ *   - all: if "true", fetches ALL contacts by paginating through @odata.nextLink
  */
 mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
-  const { folderId, q } = req.query as { folderId?: string; q?: string };
+  const { folderId, q, all } = req.query as { folderId?: string; q?: string; all?: string };
 
   if (!folderId) {
     throw new ValidationError('folderId query parameter is required');
@@ -1289,31 +1290,45 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     ? `/users/${mailbox.email}/contacts`
     : `/users/${mailbox.email}/contactFolders/${folderId}/contacts`;
 
-  let graphUrl: string;
-  if (q && q.trim()) {
-    const searchTerm = q.trim().replace(/"/g, '\\"');
-    graphUrl = `${basePath}?$search="${searchTerm}"&$select=${selectFields}&$top=50&$orderby=displayName`;
-  } else {
-    graphUrl = `${basePath}?$select=${selectFields}&$top=50&$orderby=displayName`;
+  interface RawContact {
+    id: string;
+    displayName?: string;
+    emailAddresses?: Array<{ name?: string; address?: string }>;
+    companyName?: string;
+    department?: string;
+    jobTitle?: string;
+    businessPhones?: string[];
+    mobilePhone?: string;
   }
 
-  const response = await graphFetch(graphUrl, accessToken, {
-    headers: { 'ConsistencyLevel': 'eventual' },
-  });
-  const data = (await response.json()) as {
-    value: Array<{
-      id: string;
-      displayName?: string;
-      emailAddresses?: Array<{ name?: string; address?: string }>;
-      companyName?: string;
-      department?: string;
-      jobTitle?: string;
-      businessPhones?: string[];
-      mobilePhone?: string;
-    }>;
-  };
+  const allContacts: RawContact[] = [];
+  const fetchAll = all === 'true';
+  const pageSize = fetchAll ? 100 : 50;
 
-  const contacts = (data.value || []).map((c) => ({
+  let graphUrl: string | undefined;
+  if (q && q.trim()) {
+    const searchTerm = q.trim().replace(/"/g, '\\"');
+    graphUrl = `${basePath}?$search="${searchTerm}"&$select=${selectFields}&$top=${pageSize}&$orderby=displayName`;
+  } else {
+    graphUrl = `${basePath}?$select=${selectFields}&$top=${pageSize}&$orderby=displayName`;
+  }
+
+  while (graphUrl) {
+    const response = await graphFetch(graphUrl, accessToken, {
+      headers: { 'ConsistencyLevel': 'eventual' },
+    });
+    const data = (await response.json()) as {
+      value: RawContact[];
+      '@odata.nextLink'?: string;
+    };
+
+    allContacts.push(...(data.value || []));
+
+    // Only follow nextLink when fetching all
+    graphUrl = fetchAll ? data['@odata.nextLink'] : undefined;
+  }
+
+  const contacts = allContacts.map((c) => ({
     id: c.id,
     displayName: c.displayName || '',
     emailAddresses: c.emailAddresses || [],
@@ -1328,6 +1343,174 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
   contacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   res.json({ contacts });
+});
+
+// ---- Contact CRUD endpoints ----
+
+/**
+ * POST /api/mailboxes/:id/contacts/bulk-delete
+ *
+ * Delete multiple contacts at once.
+ * Body: { contactIds: string[] }
+ */
+mailboxRouter.post('/:id/contacts/bulk-delete', async (req: Request, res: Response) => {
+  const { contactIds } = req.body as { contactIds?: string[] };
+
+  if (!contactIds || !Array.isArray(contactIds) || contactIds.length === 0) {
+    throw new ValidationError('contactIds is required and must be a non-empty array');
+  }
+
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  let deleted = 0;
+  let failed = 0;
+
+  // Delete in parallel batches of 10
+  for (let i = 0; i < contactIds.length; i += 10) {
+    const batch = contactIds.slice(i, i + 10);
+    const results = await Promise.allSettled(
+      batch.map((cid) =>
+        graphFetch(`/users/${mailbox.email}/contacts/${cid}`, accessToken, {
+          method: 'DELETE',
+        }),
+      ),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') deleted++;
+      else failed++;
+    }
+  }
+
+  logger.info('Bulk deleted contacts', { mailboxId: req.params.id, deleted, failed, total: contactIds.length });
+  res.json({ deleted, failed, total: contactIds.length });
+});
+
+/**
+ * POST /api/mailboxes/:id/contacts/import
+ *
+ * Import contacts into a contact folder.
+ * Body: { folderId: string, contacts: ImportContact[] }
+ */
+mailboxRouter.post('/:id/contacts/import', async (req: Request, res: Response) => {
+  const { folderId, contacts: importContacts } = req.body as {
+    folderId?: string;
+    contacts?: Array<{
+      displayName: string;
+      emailAddresses?: Array<{ address: string; name?: string }>;
+      companyName?: string;
+      department?: string;
+      jobTitle?: string;
+      businessPhones?: string[];
+      mobilePhone?: string;
+    }>;
+  };
+
+  if (!folderId) throw new ValidationError('folderId is required');
+  if (!importContacts || !Array.isArray(importContacts) || importContacts.length === 0) {
+    throw new ValidationError('contacts is required and must be a non-empty array');
+  }
+
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const basePath = folderId === 'default'
+    ? `/users/${mailbox.email}/contacts`
+    : `/users/${mailbox.email}/contactFolders/${folderId}/contacts`;
+
+  let created = 0;
+  let failed = 0;
+
+  // Create in parallel batches of 5
+  for (let i = 0; i < importContacts.length; i += 5) {
+    const batch = importContacts.slice(i, i + 5);
+    const results = await Promise.allSettled(
+      batch.map((contact) =>
+        graphFetch(basePath, accessToken, {
+          method: 'POST',
+          body: JSON.stringify({
+            displayName: contact.displayName,
+            emailAddresses: contact.emailAddresses || [],
+            companyName: contact.companyName || null,
+            department: contact.department || null,
+            jobTitle: contact.jobTitle || null,
+            businessPhones: contact.businessPhones || [],
+            mobilePhone: contact.mobilePhone || null,
+          }),
+        }),
+      ),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') created++;
+      else failed++;
+    }
+  }
+
+  logger.info('Imported contacts', { mailboxId: req.params.id, created, failed, total: importContacts.length });
+  res.json({ created, failed, total: importContacts.length });
+});
+
+/**
+ * DELETE /api/mailboxes/:id/contacts/:contactId
+ *
+ * Delete a single contact.
+ */
+mailboxRouter.delete('/:id/contacts/:contactId', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  await graphFetch(`/users/${mailbox.email}/contacts/${req.params.contactId}`, accessToken, {
+    method: 'DELETE',
+  });
+
+  res.json({ success: true });
+});
+
+/**
+ * PATCH /api/mailboxes/:id/contacts/:contactId
+ *
+ * Update a single contact.
+ * Body: partial contact fields { displayName?, emailAddresses?, companyName?, department?, jobTitle?, businessPhones?, mobilePhone? }
+ */
+mailboxRouter.patch('/:id/contacts/:contactId', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({
+    _id: req.params.id,
+    userId: req.user!.userId,
+  });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const allowedFields = ['displayName', 'emailAddresses', 'companyName', 'department', 'jobTitle', 'businessPhones', 'mobilePhone'];
+  const updateData: Record<string, unknown> = {};
+  for (const field of allowedFields) {
+    if (req.body[field] !== undefined) {
+      updateData[field] = req.body[field];
+    }
+  }
+
+  const response = await graphFetch(
+    `/users/${mailbox.email}/contacts/${req.params.contactId}`,
+    accessToken,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(updateData),
+    },
+  );
+  const updated = await response.json();
+
+  res.json({ contact: updated });
 });
 
 export default mailboxRouter;
