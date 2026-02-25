@@ -1326,7 +1326,17 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     mobilePhone?: string;
   }
 
-  const allContacts: RawContact[] = [];
+  const mapContact = (c: RawContact) => ({
+    id: c.id,
+    displayName: c.displayName || '',
+    emailAddresses: c.emailAddresses || [],
+    companyName: c.companyName || '',
+    department: c.department || '',
+    jobTitle: c.jobTitle || '',
+    businessPhones: c.businessPhones || [],
+    mobilePhone: c.mobilePhone || '',
+  });
+
   const pageSize = fetchAll ? 100 : 50;
 
   let graphUrl: string | undefined;
@@ -1337,42 +1347,63 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     graphUrl = `${basePath}?$select=${selectFields}&$top=${pageSize}&$orderby=displayName`;
   }
 
-  while (graphUrl) {
-    const response = await graphFetch(graphUrl, accessToken, {
-      headers: { 'ConsistencyLevel': 'eventual' },
-    });
-    const data = (await response.json()) as {
-      value: RawContact[];
-      '@odata.nextLink'?: string;
-    };
+  // Fetch first page
+  const firstPageResp = await graphFetch(graphUrl!, accessToken, {
+    headers: { 'ConsistencyLevel': 'eventual' },
+  });
+  const firstPageData = (await firstPageResp.json()) as {
+    value: RawContact[];
+    '@odata.nextLink'?: string;
+  };
 
-    allContacts.push(...(data.value || []));
-    graphUrl = fetchAll ? data['@odata.nextLink'] : undefined;
-  }
+  const firstPageContacts = (firstPageData.value || []).map(mapContact);
+  const nextLink = fetchAll ? firstPageData['@odata.nextLink'] : undefined;
 
-  const contacts = allContacts.map((c) => ({
-    id: c.id,
-    displayName: c.displayName || '',
-    emailAddresses: c.emailAddresses || [],
-    companyName: c.companyName || '',
-    department: c.department || '',
-    jobTitle: c.jobTitle || '',
-    businessPhones: c.businessPhones || [],
-    mobilePhone: c.mobilePhone || '',
-  }));
+  // For fetchAll with remaining pages: return first page now, fetch rest in background
+  if (fetchAll && nextLink) {
+    firstPageContacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    // Mark as partial — a background job is populating the cache
+    redis.set(`contacts:${mailbox._id.toString()}:loading`, '1', 'EX', 120).catch(() => {});
+    res.json({ contacts: firstPageContacts, cached: false, syncedAt: null, partial: true });
 
-  contacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
-
-  // Populate cache for next visit when fetching all
-  if (fetchAll) {
-    const now = new Date().toISOString();
-    redis.set(cacheKey, JSON.stringify(contacts), 'EX', 86400).catch(() => {});
-    redis.set(metaKey, JSON.stringify({ count: contacts.length, syncedAt: now }), 'EX', 86400).catch(() => {});
-    res.json({ contacts, cached: false, syncedAt: now });
+    // Background: fetch remaining pages and populate cache
+    (async () => {
+      try {
+        const allContacts = [...firstPageContacts];
+        let nextUrl: string | undefined = nextLink;
+        while (nextUrl) {
+          const resp = await graphFetch(nextUrl, accessToken, {
+            headers: { 'ConsistencyLevel': 'eventual' },
+          });
+          const data = (await resp.json()) as { value: RawContact[]; '@odata.nextLink'?: string };
+          allContacts.push(...(data.value || []).map(mapContact));
+          nextUrl = data['@odata.nextLink'];
+        }
+        allContacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+        const now = new Date().toISOString();
+        await redis.set(cacheKey, JSON.stringify(allContacts), 'EX', 86400);
+        await redis.set(metaKey, JSON.stringify({ count: allContacts.length, syncedAt: now }), 'EX', 86400);
+        await redis.del(`contacts:${mailbox._id.toString()}:loading`);
+      } catch (err) {
+        logger.error('Background contacts fetch failed', { error: (err as Error).message });
+        await redis.del(`contacts:${mailbox._id.toString()}:loading`).catch(() => {});
+      }
+    })();
     return;
   }
 
-  res.json({ contacts });
+  // No more pages — we have everything in firstPageContacts
+  if (!fetchAll) {
+    res.json({ contacts: firstPageContacts });
+    return;
+  }
+
+  // fetchAll with no nextLink — all fit in one page
+  firstPageContacts.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const now = new Date().toISOString();
+  redis.set(cacheKey, JSON.stringify(firstPageContacts), 'EX', 86400).catch(() => {});
+  redis.set(metaKey, JSON.stringify({ count: firstPageContacts.length, syncedAt: now }), 'EX', 86400).catch(() => {});
+  res.json({ contacts: firstPageContacts, cached: false, syncedAt: now });
 });
 
 // ---- Contact CRUD endpoints ----

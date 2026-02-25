@@ -119,6 +119,7 @@ export function ContactsPage() {
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [partial, setPartial] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [indexing, setIndexing] = useState(false);
   const [indexedAt, setIndexedAt] = useState<Date | null>(null);
@@ -163,15 +164,23 @@ export function ContactsPage() {
     });
   }, [allContacts]);
 
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
   // Load contacts (cache-first — instant when cached)
-  const loadContacts = useCallback(async () => {
+  const loadContacts = useCallback(async (isRetry = false) => {
     if (!contactsMailboxId || !contactsFolderId) return;
-    setLoading(true);
+    if (!isRetry) setLoading(true);
     try {
       const result = await fetchAllContacts(contactsMailboxId, contactsFolderId);
       setAllContacts(result.contacts);
-
       setSyncedAt(result.syncedAt);
+      setPartial(!!result.partial);
+
+      // If partial (background still fetching), auto-retry to get the full set
+      if (result.partial) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(() => loadContacts(true), 3000);
+      }
     } catch {
       setAllContacts([]);
     } finally {
@@ -181,6 +190,7 @@ export function ContactsPage() {
 
   useEffect(() => {
     loadContacts();
+    return () => clearTimeout(retryTimerRef.current);
   }, [loadContacts]);
 
   // Force refresh: bypass cache, re-fetch from Graph API + rebuild cache + index
@@ -351,7 +361,7 @@ export function ContactsPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-7.5rem)] overflow-hidden">
       {/* Header + toolbar */}
-      <div className="shrink-0 mb-3">
+      <div className="shrink-0 mb-3 relative z-20">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
@@ -388,6 +398,12 @@ export function ContactsPage() {
                 </Tooltip>
               </TooltipProvider>
             ) : null}
+            {partial && !loading && (
+              <Badge variant="outline" className="gap-1 text-xs font-normal">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading remaining...
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {/* Refresh from server — right side with timestamp */}
