@@ -94,74 +94,46 @@ function mergeContactFields(target: Contact, source: Contact): Partial<Omit<Cont
   return updates;
 }
 
+/**
+ * Normalize a display name into a "firstname lastname" key.
+ * Strips extra whitespace, lowercases, removes special chars like quotes/asterisks.
+ */
+function normalizeNameKey(displayName: string): string {
+  if (!displayName) return '';
+  // Strip common noise characters: quotes, asterisks, parentheses, brackets
+  const cleaned = displayName.replace(/['"*()[\]{}<>]/g, '').trim();
+  // Split on whitespace, take first and last token as first/last name
+  const parts = cleaned.toLowerCase().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+  // Use first + last only (ignore middle names, suffixes, etc.)
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
 function findDuplicates(contacts: Contact[]): DuplicateGroup[] {
   const groups: DuplicateGroup[] = [];
-  const seenPairs = new Set<string>();
 
-  // By email
-  const emailMap = new Map<string, Contact[]>();
-  for (const c of contacts) {
-    for (const e of c.emailAddresses) {
-      if (!e.address) continue;
-      const key = e.address.toLowerCase();
-      if (!emailMap.has(key)) emailMap.set(key, []);
-      emailMap.get(key)!.push(c);
-    }
-  }
-  for (const [email, dupes] of emailMap) {
-    if (dupes.length > 1) {
-      const unique = [...new Map(dupes.map((c) => [c.id, c])).values()];
-      if (unique.length > 1) {
-        const pairKey = unique.map((c) => c.id).sort().join('|');
-        if (!seenPairs.has(pairKey)) {
-          seenPairs.add(pairKey);
-          groups.push({ reason: 'Same email', matchValue: email, contacts: unique });
-        }
-      }
-    }
-  }
-
-  // By display name (exact match, case-insensitive)
+  // Group by normalized first+last name
   const nameMap = new Map<string, Contact[]>();
   for (const c of contacts) {
-    if (!c.displayName) continue;
-    const key = c.displayName.toLowerCase().trim();
+    const key = normalizeNameKey(c.displayName);
+    if (!key) continue; // skip contacts with no name
     if (!nameMap.has(key)) nameMap.set(key, []);
     nameMap.get(key)!.push(c);
   }
+
   for (const [name, dupes] of nameMap) {
     if (dupes.length > 1) {
-      const pairKey = dupes.map((c) => c.id).sort().join('|');
-      if (!seenPairs.has(pairKey)) {
-        seenPairs.add(pairKey);
-        groups.push({ reason: 'Same name', matchValue: name, contacts: dupes });
+      // Dedupe by contact ID (shouldn't happen, but be safe)
+      const unique = [...new Map(dupes.map((c) => [c.id, c])).values()];
+      if (unique.length > 1) {
+        groups.push({ reason: 'Same name', matchValue: name, contacts: unique });
       }
     }
   }
 
-  // By phone
-  const phoneMap = new Map<string, Contact[]>();
-  for (const c of contacts) {
-    const allPhones = [c.mobilePhone, ...c.businessPhones].filter(Boolean);
-    for (const phone of allPhones) {
-      const key = phone.replace(/\D/g, '');
-      if (key.length < 7) continue;
-      if (!phoneMap.has(key)) phoneMap.set(key, []);
-      phoneMap.get(key)!.push(c);
-    }
-  }
-  for (const [phone, dupes] of phoneMap) {
-    if (dupes.length > 1) {
-      const unique = [...new Map(dupes.map((c) => [c.id, c])).values()];
-      if (unique.length > 1) {
-        const pairKey = unique.map((c) => c.id).sort().join('|');
-        if (!seenPairs.has(pairKey)) {
-          seenPairs.add(pairKey);
-          groups.push({ reason: 'Same phone', matchValue: phone, contacts: unique });
-        }
-      }
-    }
-  }
+  // Sort groups by number of duplicates (most first)
+  groups.sort((a, b) => b.contacts.length - a.contacts.length);
 
   return groups;
 }
