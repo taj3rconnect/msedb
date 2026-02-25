@@ -1309,7 +1309,7 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
 
   // --- Cache miss or refresh: fetch from Graph API ---
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
-  const selectFields = 'id,displayName,emailAddresses,companyName,department,jobTitle,businessPhones,mobilePhone';
+  const selectFields = 'id,displayName,emailAddresses,companyName,department,jobTitle,businessPhones,mobilePhone,personalNotes';
 
   const basePath = folderId === 'default'
     ? `/users/${mailbox.email}/contacts`
@@ -1324,6 +1324,7 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     jobTitle?: string;
     businessPhones?: string[];
     mobilePhone?: string;
+    personalNotes?: string;
   }
 
   const mapContact = (c: RawContact) => ({
@@ -1335,6 +1336,7 @@ mailboxRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     jobTitle: c.jobTitle || '',
     businessPhones: c.businessPhones || [],
     mobilePhone: c.mobilePhone || '',
+    personalNotes: c.personalNotes || '',
   });
 
   const pageSize = fetchAll ? 100 : 50;
@@ -1557,7 +1559,7 @@ mailboxRouter.patch('/:id/contacts/:contactId', async (req: Request, res: Respon
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
-  const allowedFields = ['displayName', 'emailAddresses', 'companyName', 'department', 'jobTitle', 'businessPhones', 'mobilePhone'];
+  const allowedFields = ['displayName', 'emailAddresses', 'companyName', 'department', 'jobTitle', 'businessPhones', 'mobilePhone', 'personalNotes'];
   const updateData: Record<string, unknown> = {};
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) {

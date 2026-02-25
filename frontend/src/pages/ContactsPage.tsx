@@ -34,13 +34,14 @@ function contactToDoc(c: Contact) {
     department: c.department,
     mobilePhone: c.mobilePhone,
     businessPhones: c.businessPhones.filter(Boolean).join(' '),
+    personalNotes: c.personalNotes,
   };
 }
 
 /** Create and populate a MiniSearch index from contacts. */
 function buildIndex(contacts: Contact[]) {
   const ms = new MiniSearch({
-    fields: ['displayName', 'emails', 'companyName', 'jobTitle', 'department', 'mobilePhone', 'businessPhones'],
+    fields: ['displayName', 'emails', 'companyName', 'jobTitle', 'department', 'mobilePhone', 'businessPhones', 'personalNotes'],
     storeFields: ['id'],
     searchOptions: {
       boost: { displayName: 3, emails: 2 },

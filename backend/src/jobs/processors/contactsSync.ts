@@ -6,7 +6,7 @@ import { getRedisClient } from '../../config/redis.js';
 import logger from '../../config/logger.js';
 
 const CONTACTS_CACHE_TTL = 86400; // 24 hours
-const CONTACTS_SELECT = 'id,displayName,emailAddresses,companyName,department,jobTitle,businessPhones,mobilePhone';
+const CONTACTS_SELECT = 'id,displayName,emailAddresses,companyName,department,jobTitle,businessPhones,mobilePhone,personalNotes';
 
 /**
  * Fetch ALL contacts from a mailbox's default Contacts folder via Graph API,
@@ -25,6 +25,7 @@ export async function syncContactsForMailbox(mailboxId: string, email: string): 
     jobTitle?: string;
     businessPhones?: string[];
     mobilePhone?: string;
+    personalNotes?: string;
   }
 
   const allContacts: RawContact[] = [];
@@ -53,6 +54,7 @@ export async function syncContactsForMailbox(mailboxId: string, email: string): 
     jobTitle: c.jobTitle || '',
     businessPhones: c.businessPhones || [],
     mobilePhone: c.mobilePhone || '',
+    personalNotes: c.personalNotes || '',
   }));
 
   const cacheKey = `contacts:${mailboxId}:all`;

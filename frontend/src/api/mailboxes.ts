@@ -315,6 +315,7 @@ export interface Contact {
   jobTitle: string;
   businessPhones: string[];
   mobilePhone: string;
+  personalNotes: string;
 }
 
 /**
