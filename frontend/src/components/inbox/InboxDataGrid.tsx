@@ -34,6 +34,7 @@ import {
   ArrowDown,
   Ban,
   CheckCircle,
+  Mail,
   MailCheck,
   MailOpen,
   Maximize2,
@@ -60,6 +61,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import type { EventItem } from '@/api/events';
+import { TrackingTooltip } from './TrackingTooltip';
 import { useUiStore } from '@/stores/uiStore';
 
 // --- Column Helper ---
@@ -146,6 +148,13 @@ function highlightText(text: string, query: string): string {
   return text.replace(pattern, '<mark class="bg-yellow-200 dark:bg-yellow-500/30 rounded-sm px-0.5">$1</mark>');
 }
 
+interface TrackingMatch {
+  trackingId: string;
+  openCount: number;
+  firstOpenedAt?: string;
+  lastOpenedAt?: string;
+}
+
 interface InboxDataGridProps {
   data: EventItem[];
   selectedIds: Set<string>;
@@ -172,6 +181,7 @@ interface InboxDataGridProps {
   searchQuery?: string;
   isUnifiedMode?: boolean;
   mailboxEmailMap?: Map<string, string>;
+  trackingMap?: Record<string, TrackingMatch>;
 }
 
 export function InboxDataGrid({
@@ -199,6 +209,7 @@ export function InboxDataGrid({
   searchQuery = '',
   isUnifiedMode = false,
   mailboxEmailMap,
+  trackingMap,
 }: InboxDataGridProps) {
   const largeIcons = useUiStore((s) => s.largeIcons);
   const toggleIconSize = useUiStore((s) => s.toggleIconSize);
@@ -517,6 +528,57 @@ export function InboxDataGrid({
           );
         },
       }),
+      // Opens (tracking column, shown only in sent folder)
+      ...(folderFilter === 'sent' && trackingMap ? [columnHelper.display({
+        id: 'opens',
+        size: 80,
+        enableSorting: false,
+        enableColumnFilter: false,
+        header: 'Opens',
+        cell: ({ row }: { row: { original: EventItem } }) => {
+          const event = row.original;
+          const key = `${event.mailboxId}:${event.subject || ''}:${event.timestamp}`;
+          const match = trackingMap[key];
+          if (!match) {
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Mail className="h-4 w-4" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>No tracking data</TooltipContent>
+              </Tooltip>
+            );
+          }
+          if (match.openCount === 0) {
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Mail className="h-4 w-4" />
+                    <span className="text-xs">0</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Not opened yet</TooltipContent>
+              </Tooltip>
+            );
+          }
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex items-center gap-1 text-green-600 dark:text-green-400 cursor-pointer">
+                  <MailOpen className="h-4 w-4" />
+                  <span className="text-xs font-medium">{match.openCount}</span>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="p-0">
+                <TrackingTooltip trackingId={match.trackingId} />
+              </TooltipContent>
+            </Tooltip>
+          );
+        },
+      })] : []),
       // Actions (hidden in deleted folder view)
       ...(folderFilter !== 'deleted' ? [columnHelper.display({
         id: 'actions',
@@ -541,7 +603,7 @@ export function InboxDataGrid({
         ),
       })] : []),
     ],
-    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onClearRules, onQuickDelete, onJustDelete, onMarkRead, onQuickMarkRead, onUndelete, folderFilter, isUnifiedMode, mailboxEmailMap],
+    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onClearRules, onQuickDelete, onJustDelete, onMarkRead, onQuickMarkRead, onUndelete, folderFilter, isUnifiedMode, mailboxEmailMap, trackingMap],
   );
 
   const table = useReactTable({

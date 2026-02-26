@@ -40,6 +40,7 @@ import type { EventItem } from '@/api/events';
 import { createRule, updateRule, fetchRules, runRule, deleteRulesBySender } from '@/api/rules';
 import type { RuleAction, RuleConditions } from '@/api/rules';
 import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, syncFolderStream, type SyncProgress, fetchMessageBody, replyToMessage, replyAllToMessage, forwardMessage, searchContacts, type Contact } from '@/api/mailboxes';
+import { batchLookupTracking, type TrackingMatch } from '@/api/tracking';
 import { useSettings } from '@/hooks/useSettings';
 import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
 import { ComposeEmailDialog } from '@/components/inbox/ComposeEmailDialog';
@@ -404,6 +405,22 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
 
   // Filter out deleted rows for display
   const visibleEvents = events.filter((e) => !deletedEventIds.has(e._id));
+
+  // Tracking data for sent folder
+  const [trackingMap, setTrackingMap] = useState<Record<string, TrackingMatch>>({});
+
+  useEffect(() => {
+    if (folderFilter !== 'sent' || visibleEvents.length === 0) {
+      setTrackingMap({});
+      return;
+    }
+    const items = visibleEvents.map((e) => ({
+      mailboxId: e.mailboxId,
+      subject: e.subject,
+      sentAt: e.timestamp,
+    }));
+    batchLookupTracking(items).then(setTrackingMap).catch(() => setTrackingMap({}));
+  }, [folderFilter, events]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Single mutation that creates/updates rules + runs them against the mailbox
   const confirmMutation = useMutation({
@@ -1505,8 +1522,31 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                 searchQuery={search}
                 isUnifiedMode={isUnifiedMode}
                 mailboxEmailMap={isUnifiedMode ? new Map(connectedMailboxes.map((mb) => [mb.id, mb.email])) : undefined}
+                trackingMap={folderFilter === 'sent' ? trackingMap : undefined}
                 toolbarSlot={
                   <>
+                    {/* Sent folder toggle */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant={folderFilter === 'sent' ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            if (folderFilter === 'sent') {
+                              setFolderFilter('inbox');
+                            } else {
+                              setFolderFilter('sent');
+                            }
+                            setPage(1);
+                          }}
+                        >
+                          <Send className="mr-1.5 h-3.5 w-3.5" />
+                          Sent
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>View Sent Items</TooltipContent>
+                    </Tooltip>
                     {/* Deleted items inline */}
                     {deletedCount > 0 && (
                       <>
@@ -2363,6 +2403,7 @@ function EmailPreviewPane({
 
             {composeMode === 'forward' && (
               <Input
+                autoFocus
                 placeholder="To: email@example.com (comma-separated for multiple)"
                 value={forwardTo}
                 onChange={(e) => setForwardTo(e.target.value)}
@@ -2371,6 +2412,7 @@ function EmailPreviewPane({
             )}
 
             <Textarea
+              autoFocus={composeMode !== 'forward'}
               placeholder={composeMode === 'forward' ? 'Add a message (optional)...' : 'Write your reply...'}
               value={composeBody}
               onChange={(e) => setComposeBody(e.target.value)}

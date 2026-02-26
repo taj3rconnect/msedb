@@ -27,6 +27,8 @@ import { notificationsRouter } from './routes/notifications.js';
 import { settingsRouter } from './routes/settings.js';
 import { aiSearchRouter } from './routes/aiSearch.js';
 import { scheduledEmailsRouter } from './routes/scheduledEmails.js';
+import trackingRouter from './routes/tracking.js';
+import { trackingApiRouter } from './routes/trackingApi.js';
 import { createSocketServer } from './config/socket.js';
 import { warmContactsCache } from './services/contactsCacheWarmer.js';
 import { ensureQdrantCollection } from './services/qdrantClient.js';
@@ -47,6 +49,9 @@ app.use(healthRouter);
 
 // Mount webhook endpoint (no rate limiting -- Microsoft controls the rate)
 app.use(webhooksRouter);
+
+// Mount tracking pixel endpoint (public, no auth — loaded by email clients)
+app.use('/track', trackingRouter);
 
 // Mount auth routes (login, callback, logout, me)
 app.use(authRouter);
@@ -89,6 +94,9 @@ app.use('/api/ai-search', aiSearchRouter);
 
 // Mount scheduled emails routes (requireAuth applied internally)
 app.use('/api/scheduled-emails', scheduledEmailsRouter);
+
+// Mount tracking API routes (requireAuth applied internally)
+app.use('/api/tracking', trackingApiRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);

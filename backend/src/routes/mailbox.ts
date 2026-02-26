@@ -20,8 +20,21 @@ import { buildSelectParam } from '../utils/graph.js';
 import { config } from '../config/index.js';
 import logger from '../config/logger.js';
 import { NotFoundError, ValidationError } from '../middleware/errorHandler.js';
+import { createTrackedEmail } from '../services/trackingService.js';
 
 const mailboxRouter = Router();
+
+/**
+ * Inject tracking pixel HTML into an email body.
+ * Inserts before </body> if present, otherwise appends.
+ */
+function injectTrackingPixel(html: string, pixelHtml: string): string {
+  const bodyCloseIdx = html.lastIndexOf('</body>');
+  if (bodyCloseIdx !== -1) {
+    return html.slice(0, bodyCloseIdx) + pixelHtml + html.slice(bodyCloseIdx);
+  }
+  return html + pixelHtml;
+}
 
 /** Folders to hide from the folder browser (not useful for mail management). */
 const HIDDEN_FOLDERS = new Set([
@@ -865,7 +878,21 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
   const draft = (await createRes.json()) as { id: string; body: { content: string; contentType: string } };
 
   // Step 2: Prepend user's reply as Outlook-formatted HTML into the draft body
-  const updatedContent = prependReplyHtml(draft.body.content, body.trim());
+  let updatedContent = prependReplyHtml(draft.body.content, body.trim());
+
+  // Inject tracking pixel
+  const replyDraft = (await graphFetch(
+    `/users/${mailbox.email}/messages/${draft.id}?$select=subject,toRecipients`,
+    accessToken,
+  ).then((r) => r.json())) as { subject?: string; toRecipients?: { emailAddress: { address?: string } }[] };
+
+  const { pixelHtml: replyPixel } = await createTrackedEmail({
+    userId: req.user!.userId,
+    mailboxId: req.params.id as string,
+    subject: replyDraft.subject,
+    recipients: replyDraft.toRecipients?.map((r) => r.emailAddress.address || '').filter(Boolean) || [],
+  });
+  updatedContent = injectTrackingPixel(updatedContent, replyPixel);
 
   await graphFetch(
     `/users/${mailbox.email}/messages/${draft.id}`,
@@ -886,7 +913,7 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
     { method: 'POST' },
   );
 
-  logger.info('Reply sent (two-step)', {
+  logger.info('Reply sent (tracked)', {
     mailboxId: req.params.id,
     messageId,
     userId: req.user!.userId,
@@ -927,7 +954,26 @@ mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
   const draft = (await createRes.json()) as { id: string; body: { content: string; contentType: string } };
 
   // Step 2: Prepend user's reply as Outlook-formatted HTML
-  const updatedContent = prependReplyHtml(draft.body.content, body.trim());
+  let updatedContentAll = prependReplyHtml(draft.body.content, body.trim());
+
+  // Inject tracking pixel
+  const replyAllDraft = (await graphFetch(
+    `/users/${mailbox.email}/messages/${draft.id}?$select=subject,toRecipients,ccRecipients`,
+    accessToken,
+  ).then((r) => r.json())) as { subject?: string; toRecipients?: { emailAddress: { address?: string } }[]; ccRecipients?: { emailAddress: { address?: string } }[] };
+
+  const allRecips = [
+    ...(replyAllDraft.toRecipients || []),
+    ...(replyAllDraft.ccRecipients || []),
+  ].map((r) => r.emailAddress.address || '').filter(Boolean);
+
+  const { pixelHtml: replyAllPixel } = await createTrackedEmail({
+    userId: req.user!.userId,
+    mailboxId: req.params.id as string,
+    subject: replyAllDraft.subject,
+    recipients: allRecips,
+  });
+  updatedContentAll = injectTrackingPixel(updatedContentAll, replyAllPixel);
 
   await graphFetch(
     `/users/${mailbox.email}/messages/${draft.id}`,
@@ -935,7 +981,7 @@ mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
     {
       method: 'PATCH',
       body: JSON.stringify({
-        body: { contentType: 'HTML', content: updatedContent },
+        body: { contentType: 'HTML', content: updatedContentAll },
         importance: 'normal',
       }),
     },
@@ -948,7 +994,7 @@ mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
     { method: 'POST' },
   );
 
-  logger.info('Reply-all sent (two-step)', {
+  logger.info('Reply-all sent (tracked)', {
     mailboxId: req.params.id,
     messageId,
     userId: req.user!.userId,
@@ -990,10 +1036,19 @@ mailboxRouter.post('/:id/forward', async (req: Request, res: Response) => {
     accessToken,
     { method: 'POST', body: JSON.stringify({}) },
   );
-  const draft = (await createRes.json()) as { id: string; body: { content: string; contentType: string } };
+  const draft = (await createRes.json()) as { id: string; subject?: string; body: { content: string; contentType: string } };
 
   // Step 2: Set recipients and prepend user's comment
-  const updatedContent = prependReplyHtml(draft.body.content, body.trim());
+  let fwdContent = prependReplyHtml(draft.body.content, body.trim());
+
+  // Inject tracking pixel
+  const { pixelHtml: fwdPixel } = await createTrackedEmail({
+    userId: req.user!.userId,
+    mailboxId: req.params.id as string,
+    subject: draft.subject,
+    recipients: toRecipients.map((r) => r.email),
+  });
+  fwdContent = injectTrackingPixel(fwdContent, fwdPixel);
 
   await graphFetch(
     `/users/${mailbox.email}/messages/${draft.id}`,
@@ -1004,7 +1059,7 @@ mailboxRouter.post('/:id/forward', async (req: Request, res: Response) => {
         toRecipients: toRecipients.map((r) => ({
           emailAddress: { address: r.email, name: r.name || r.email },
         })),
-        body: { contentType: 'HTML', content: updatedContent },
+        body: { contentType: 'HTML', content: fwdContent },
         importance: 'normal',
       }),
     },
@@ -1017,7 +1072,7 @@ mailboxRouter.post('/:id/forward', async (req: Request, res: Response) => {
     { method: 'POST' },
   );
 
-  logger.info('Message forwarded (two-step)', {
+  logger.info('Message forwarded (tracked)', {
     mailboxId: req.params.id,
     messageId,
     toRecipients: toRecipients.map((r) => r.email),
@@ -1062,20 +1117,56 @@ mailboxRouter.post('/:id/send-email', async (req: Request, res: Response) => {
   const mapRecipients = (addrs: string[]) =>
     addrs.map((address) => ({ emailAddress: { address } }));
 
-  const message: Record<string, unknown> = {
+  // Step 1: Create draft message
+  const draftMsg: Record<string, unknown> = {
     subject,
     body: { contentType: contentType || 'Text', content: body },
     toRecipients: mapRecipients(to),
   };
-  if (cc && cc.length > 0) message.ccRecipients = mapRecipients(cc);
-  if (bcc && bcc.length > 0) message.bccRecipients = mapRecipients(bcc);
+  if (cc && cc.length > 0) draftMsg.ccRecipients = mapRecipients(cc);
+  if (bcc && bcc.length > 0) draftMsg.bccRecipients = mapRecipients(bcc);
 
-  await graphFetch(`/users/${mailbox.email}/sendMail`, accessToken, {
-    method: 'POST',
-    body: JSON.stringify({ message, saveToSentItems: true }),
+  const draftRes = await graphFetch(
+    `/users/${mailbox.email}/messages`,
+    accessToken,
+    { method: 'POST', body: JSON.stringify(draftMsg) },
+  );
+  const draft = (await draftRes.json()) as { id: string; body: { content: string; contentType: string } };
+
+  // Step 2: Inject tracking pixel
+  const { pixelHtml } = await createTrackedEmail({
+    userId: req.user!.userId,
+    mailboxId: req.params.id as string,
+    subject,
+    recipients: [...to, ...(cc || []), ...(bcc || [])],
   });
 
-  logger.info('New email sent', {
+  let htmlContent = draft.body.content;
+  if (draft.body.contentType === 'Text' || (!contentType || contentType === 'Text')) {
+    // Wrap plain text in basic HTML
+    htmlContent = `<html><body><pre>${htmlContent}</pre></body></html>`;
+  }
+  htmlContent = injectTrackingPixel(htmlContent, pixelHtml);
+
+  await graphFetch(
+    `/users/${mailbox.email}/messages/${draft.id}`,
+    accessToken,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        body: { contentType: 'HTML', content: htmlContent },
+      }),
+    },
+  );
+
+  // Step 3: Send the draft
+  await graphFetch(
+    `/users/${mailbox.email}/messages/${draft.id}/send`,
+    accessToken,
+    { method: 'POST' },
+  );
+
+  logger.info('New email sent (tracked)', {
     mailboxId: req.params.id,
     from: mailbox.email,
     to,

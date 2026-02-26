@@ -38,3 +38,6 @@ export type { ITunnelConfig } from './TunnelConfig.js';
 
 export { ScheduledEmail } from './ScheduledEmail.js';
 export type { IScheduledEmail } from './ScheduledEmail.js';
+
+export { TrackedEmail } from './TrackedEmail.js';
+export type { ITrackedEmail, ITrackedEmailOpen } from './TrackedEmail.js';
