@@ -44,6 +44,7 @@ import { batchLookupTracking, type TrackingMatch } from '@/api/tracking';
 import { useSettings } from '@/hooks/useSettings';
 import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
 import { ComposeEmailDialog } from '@/components/inbox/ComposeEmailDialog';
+import { EmailAutocomplete } from '@/components/inbox/EmailAutocomplete';
 import { AiSearchPanel } from '@/components/inbox/AiSearchPanel';
 import type { AiSearchResult } from '@/api/aiSearch';
 import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
@@ -2076,13 +2077,13 @@ function EmailPreviewPane({
   // Compose mode: reply, replyAll, forward, or null
   const [composeMode, setComposeMode] = useState<'reply' | 'replyAll' | 'forward' | null>(null);
   const [composeBody, setComposeBody] = useState('');
-  const [forwardTo, setForwardTo] = useState('');
+  const [forwardTo, setForwardTo] = useState<string[]>([]);
 
   // Reset compose mode when switching emails
   useEffect(() => {
     setComposeMode(null);
     setComposeBody('');
-    setForwardTo('');
+    setForwardTo([]);
   }, [event._id]);
 
   // Reply mutation
@@ -2114,18 +2115,14 @@ function EmailPreviewPane({
   // Forward mutation
   const forwardMutation = useMutation({
     mutationFn: () => {
-      const recipients = forwardTo
-        .split(/[,;]+/)
-        .map((e) => e.trim())
-        .filter(Boolean)
-        .map((email) => ({ email }));
+      const recipients = forwardTo.map((email) => ({ email }));
       return forwardMessage(mailboxId, event.messageId, recipients, composeBody);
     },
     onSuccess: () => {
       toast.success('Message forwarded');
       setComposeMode(null);
       setComposeBody('');
-      setForwardTo('');
+      setForwardTo([]);
     },
     onError: (err: Error) => {
       toast.error(`Forward failed: ${err.message}`);
@@ -2287,7 +2284,7 @@ function EmailPreviewPane({
                 onClick={() => {
                   setComposeMode(composeMode === 'reply' ? null : 'reply');
                   setComposeBody('');
-                  setForwardTo('');
+                  setForwardTo([]);
                 }}
               >
                 <Reply className="h-3.5 w-3.5" />
@@ -2304,7 +2301,7 @@ function EmailPreviewPane({
                 onClick={() => {
                   setComposeMode(composeMode === 'replyAll' ? null : 'replyAll');
                   setComposeBody('');
-                  setForwardTo('');
+                  setForwardTo([]);
                 }}
               >
                 <ReplyAll className="h-3.5 w-3.5" />
@@ -2321,7 +2318,7 @@ function EmailPreviewPane({
                 onClick={() => {
                   setComposeMode(composeMode === 'forward' ? null : 'forward');
                   setComposeBody('');
-                  setForwardTo('');
+                  setForwardTo([]);
                 }}
               >
                 <Forward className="h-3.5 w-3.5" />
@@ -2402,11 +2399,11 @@ function EmailPreviewPane({
             )}
 
             {composeMode === 'forward' && (
-              <Input
+              <EmailAutocomplete
                 autoFocus
-                placeholder="To: email@example.com (comma-separated for multiple)"
                 value={forwardTo}
-                onChange={(e) => setForwardTo(e.target.value)}
+                onChange={setForwardTo}
+                placeholder="email@example.com"
                 className="text-sm"
               />
             )}
@@ -2427,7 +2424,7 @@ function EmailPreviewPane({
                 disabled={
                   isSending ||
                   !composeBody.trim() ||
-                  (composeMode === 'forward' && !forwardTo.trim())
+                  (composeMode === 'forward' && forwardTo.length === 0)
                 }
                 onClick={() => {
                   if (composeMode === 'reply') {
@@ -2453,7 +2450,7 @@ function EmailPreviewPane({
                 onClick={() => {
                   setComposeMode(null);
                   setComposeBody('');
-                  setForwardTo('');
+                  setForwardTo([]);
                 }}
                 disabled={isSending}
               >

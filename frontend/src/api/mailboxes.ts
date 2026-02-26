@@ -436,6 +436,17 @@ export async function importContacts(
   );
 }
 
+/**
+ * Fetch email autocomplete suggestions (contacts + recent senders).
+ */
+export async function fetchAutocompleteSuggestions(
+  query: string,
+): Promise<{ suggestions: Array<{ email: string; name?: string }> }> {
+  return apiFetch<{ suggestions: Array<{ email: string; name?: string }> }>(
+    `/mailboxes/autocomplete?q=${encodeURIComponent(query)}`,
+  );
+}
+
 export async function applyActionsToMessages(
   mailboxId: string,
   messageIds: string[],

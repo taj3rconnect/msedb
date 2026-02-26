@@ -24,17 +24,11 @@ import { useAuthStore } from '@/stores/authStore';
 import { sendNewEmail } from '@/api/mailboxes';
 import { scheduleEmail } from '@/api/scheduledEmails';
 import { useQueryClient } from '@tanstack/react-query';
+import { EmailAutocomplete } from './EmailAutocomplete';
 
 interface ComposeEmailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-function parseEmails(input: string): string[] {
-  return input
-    .split(',')
-    .map((e) => e.trim())
-    .filter((e) => e.length > 0);
 }
 
 export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogProps) {
@@ -42,9 +36,9 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
   const connected = mailboxes.filter((m) => m.isConnected);
 
   const [fromMailboxId, setFromMailboxId] = useState(connected[0]?.id ?? '');
-  const [to, setTo] = useState('');
-  const [cc, setCc] = useState('');
-  const [bcc, setBcc] = useState('');
+  const [to, setTo] = useState<string[]>([]);
+  const [cc, setCc] = useState<string[]>([]);
+  const [bcc, setBcc] = useState<string[]>([]);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [showCcBcc, setShowCcBcc] = useState(false);
@@ -54,9 +48,9 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
   const queryClient = useQueryClient();
 
   const resetForm = useCallback(() => {
-    setTo('');
-    setCc('');
-    setBcc('');
+    setTo([]);
+    setCc([]);
+    setBcc([]);
     setSubject('');
     setBody('');
     setShowCcBcc(false);
@@ -73,36 +67,31 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
     [onOpenChange, resetForm],
   );
 
-  const validateForm = (): string[] | null => {
-    const toEmails = parseEmails(to);
-    if (toEmails.length === 0) {
+  const validateForm = (): boolean => {
+    if (to.length === 0) {
       toast.error('At least one recipient is required');
-      return null;
+      return false;
     }
     if (!subject.trim()) {
       toast.error('Subject is required');
-      return null;
+      return false;
     }
     if (!body.trim()) {
       toast.error('Message body is required');
-      return null;
+      return false;
     }
-    return toEmails;
+    return true;
   };
 
   const handleSend = async () => {
-    const toEmails = validateForm();
-    if (!toEmails) return;
+    if (!validateForm()) return;
 
     setSending(true);
     try {
-      const ccEmails = parseEmails(cc);
-      const bccEmails = parseEmails(bcc);
-
       await sendNewEmail(fromMailboxId, {
-        to: toEmails,
-        ...(ccEmails.length > 0 && { cc: ccEmails }),
-        ...(bccEmails.length > 0 && { bcc: bccEmails }),
+        to,
+        ...(cc.length > 0 && { cc }),
+        ...(bcc.length > 0 && { bcc }),
         subject: subject.trim(),
         body: body.trim(),
       });
@@ -116,8 +105,7 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
   };
 
   const handleSchedule = async () => {
-    const toEmails = validateForm();
-    if (!toEmails) return;
+    if (!validateForm()) return;
 
     if (!scheduleDateTime) {
       toast.error('Please select a date and time');
@@ -132,13 +120,10 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
 
     setSending(true);
     try {
-      const ccEmails = parseEmails(cc);
-      const bccEmails = parseEmails(bcc);
-
       await scheduleEmail(fromMailboxId, {
-        to: toEmails,
-        ...(ccEmails.length > 0 && { cc: ccEmails }),
-        ...(bccEmails.length > 0 && { bcc: bccEmails }),
+        to,
+        ...(cc.length > 0 && { cc }),
+        ...(bcc.length > 0 && { bcc }),
         subject: subject.trim(),
         body: body.trim(),
         scheduledAt: scheduledDate.toISOString(),
@@ -207,11 +192,11 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
                 </button>
               )}
             </div>
-            <Input
+            <EmailAutocomplete
               id="compose-to"
-              placeholder="recipient@example.com, ..."
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={setTo}
+              placeholder="recipient@example.com"
             />
           </div>
 
@@ -220,20 +205,20 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
             <>
               <div className="grid gap-1.5">
                 <Label htmlFor="compose-cc">CC</Label>
-                <Input
+                <EmailAutocomplete
                   id="compose-cc"
-                  placeholder="cc@example.com, ..."
                   value={cc}
-                  onChange={(e) => setCc(e.target.value)}
+                  onChange={setCc}
+                  placeholder="cc@example.com"
                 />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="compose-bcc">BCC</Label>
-                <Input
+                <EmailAutocomplete
                   id="compose-bcc"
-                  placeholder="bcc@example.com, ..."
                   value={bcc}
-                  onChange={(e) => setBcc(e.target.value)}
+                  onChange={setBcc}
+                  placeholder="bcc@example.com"
                 />
               </div>
             </>
