@@ -155,7 +155,8 @@ export function RuleEditDialog({
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const actions: RuleAction[] = [];
+      // Start with actions not managed by UI checkboxes (preserve popup etc.)
+      const actions: RuleAction[] = [...unhandledActions];
       if (deleteChecked) {
         actions.push({ actionType: 'delete' });
       }
@@ -215,8 +216,14 @@ export function RuleEditDialog({
     );
   }, [allMailboxes, mailboxSearch]);
 
+  // Actions not represented by UI checkboxes (e.g. popup) — must be preserved
+  const unhandledActions = rule.actions.filter(
+    (a) => !['delete', 'move', 'markRead'].includes(a.actionType),
+  );
+
   const hasActions =
-    deleteChecked || markReadChecked || (moveChecked && selectedFolder);
+    deleteChecked || markReadChecked || (moveChecked && selectedFolder) ||
+    unhandledActions.length > 0;
 
   function handleFolderMailboxChange(id: string) {
     setFolderMailboxId(id);
