@@ -123,15 +123,12 @@
     }
 }
 
-/* AG Grid: sender cell hover swap — hide name, show action buttons */
-.sender-actions {
-  display: none;
+/* AG Grid: row actions column — hidden until row hover */
+.row-actions-cell {
+  visibility: hidden;
 }
-.ag-row-hover .sender-info {
-  display: none !important;
-}
-.ag-row-hover .sender-actions {
-  display: flex !important;
+.ag-row-hover .row-actions-cell {
+  visibility: visible;
 }
 
 /* AG Grid active row highlight */

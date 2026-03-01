@@ -122,16 +122,125 @@ interface GridContext {
 
 // --- Cell Renderers ---
 
-function SenderCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
+function RowActionsCellRenderer(props: CustomCellRendererProps<EventItem, unknown, GridContext>) {
   const event = props.data!;
   const ctx = props.context!;
   const iconSize = ctx.largeIcons ? 20 : 16;
   const btnPad = ctx.largeIcons ? 8 : 6;
 
   return (
+    <div className="h-full flex items-center gap-0.5">
+      {ctx.folderFilter === 'deleted' ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="shrink-0 rounded text-green-600 hover:!text-green-500 transition-all"
+              style={{ padding: btnPad }}
+              onClick={(e) => { e.stopPropagation(); ctx.onUndelete?.(event); }}
+            >
+              <Undo2 style={{ width: iconSize, height: iconSize }} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Undelete & remove rules for this sender</TooltipContent>
+        </Tooltip>
+      ) : (
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="shrink-0 rounded text-green-600 hover:!text-green-500 transition-all"
+                style={{ padding: btnPad }}
+                onClick={(e) => { e.stopPropagation(); ctx.onClearRules(event); }}
+                disabled={!event.sender?.email}
+              >
+                <CheckCircle style={{ width: iconSize, height: iconSize }} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Remove all rules for this sender</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="shrink-0 rounded text-muted-foreground hover:!text-destructive transition-all"
+                style={{ padding: btnPad }}
+                onClick={(e) => { e.stopPropagation(); ctx.onJustDelete(event); }}
+              >
+                <Trash2 style={{ width: iconSize, height: iconSize }} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Delete this email</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="shrink-0 rounded text-muted-foreground hover:!text-destructive transition-all"
+                style={{ padding: btnPad }}
+                onClick={(e) => { e.stopPropagation(); ctx.onQuickDelete(event); }}
+                disabled={!event.sender?.email}
+              >
+                <Ban style={{ width: iconSize, height: iconSize }} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Always delete from this sender</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={`shrink-0 rounded transition-all ${event.isRead ? 'text-muted-foreground/30 cursor-default' : 'text-muted-foreground hover:!text-green-500'}`}
+                style={{ padding: btnPad }}
+                onClick={(e) => { e.stopPropagation(); if (!event.isRead) ctx.onMarkRead(event); }}
+                disabled={event.isRead}
+              >
+                <MailCheck style={{ width: iconSize, height: iconSize }} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{event.isRead ? 'Already read' : 'Mark as read'}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="shrink-0 rounded text-muted-foreground hover:!text-blue-500 transition-all"
+                style={{ padding: btnPad }}
+                onClick={(e) => { e.stopPropagation(); ctx.onQuickMarkRead(event); }}
+                disabled={!event.sender?.email}
+              >
+                <MailOpen style={{ width: iconSize, height: iconSize }} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Always mark read from this sender</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="shrink-0 rounded text-muted-foreground hover:!text-foreground transition-all"
+                style={{ padding: btnPad }}
+                onClick={(e) => { e.stopPropagation(); ctx.onAction(event); }}
+              >
+                <MoreHorizontal style={{ width: iconSize, height: iconSize }} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Create custom rule</TooltipContent>
+          </Tooltip>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SenderCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
+  const event = props.data!;
+  const ctx = props.context!;
+
+  return (
     <div className="min-w-0 h-full flex items-center">
-      {/* Sender info — left-aligned, hidden on row hover */}
-      <div className="sender-info min-w-0">
+      <div className="min-w-0">
         <div
           className="font-medium truncate text-left"
           dangerouslySetInnerHTML={{
@@ -145,110 +254,6 @@ function SenderCellRenderer(props: CustomCellRendererProps<EventItem, string, Gr
               __html: highlightText(event.sender.email, ctx.searchQuery),
             }}
           />
-        )}
-      </div>
-
-      {/* Action buttons — shown on row hover */}
-      <div className="sender-actions items-center gap-0.5">
-        {ctx.folderFilter === 'deleted' ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="shrink-0 rounded text-green-600 hover:!text-green-500 transition-all"
-                style={{ padding: btnPad }}
-                onClick={(e) => { e.stopPropagation(); ctx.onUndelete?.(event); }}
-              >
-                <Undo2 style={{ width: iconSize, height: iconSize }} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Undelete & remove rules for this sender</TooltipContent>
-          </Tooltip>
-        ) : (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="shrink-0 rounded text-green-600 hover:!text-green-500 transition-all"
-                  style={{ padding: btnPad }}
-                  onClick={(e) => { e.stopPropagation(); ctx.onClearRules(event); }}
-                  disabled={!event.sender?.email}
-                >
-                  <CheckCircle style={{ width: iconSize, height: iconSize }} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Remove all rules for this sender</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="shrink-0 rounded text-muted-foreground hover:!text-destructive transition-all"
-                  style={{ padding: btnPad }}
-                  onClick={(e) => { e.stopPropagation(); ctx.onJustDelete(event); }}
-                >
-                  <Trash2 style={{ width: iconSize, height: iconSize }} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Delete this email</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="shrink-0 rounded text-muted-foreground hover:!text-destructive transition-all"
-                  style={{ padding: btnPad }}
-                  onClick={(e) => { e.stopPropagation(); ctx.onQuickDelete(event); }}
-                  disabled={!event.sender?.email}
-                >
-                  <Ban style={{ width: iconSize, height: iconSize }} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Always delete from this sender</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className={`shrink-0 rounded transition-all ${event.isRead ? 'text-muted-foreground/30 cursor-default' : 'text-muted-foreground hover:!text-green-500'}`}
-                  style={{ padding: btnPad }}
-                  onClick={(e) => { e.stopPropagation(); if (!event.isRead) ctx.onMarkRead(event); }}
-                  disabled={event.isRead}
-                >
-                  <MailCheck style={{ width: iconSize, height: iconSize }} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{event.isRead ? 'Already read' : 'Mark as read'}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="shrink-0 rounded text-muted-foreground hover:!text-blue-500 transition-all"
-                  style={{ padding: btnPad }}
-                  onClick={(e) => { e.stopPropagation(); ctx.onQuickMarkRead(event); }}
-                  disabled={!event.sender?.email}
-                >
-                  <MailOpen style={{ width: iconSize, height: iconSize }} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Always mark read from this sender</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="shrink-0 rounded text-muted-foreground hover:!text-foreground transition-all"
-                  style={{ padding: btnPad }}
-                  onClick={(e) => { e.stopPropagation(); ctx.onAction(event); }}
-                >
-                  <MoreHorizontal style={{ width: iconSize, height: iconSize }} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Create custom rule</TooltipContent>
-            </Tooltip>
-          </>
         )}
       </div>
     </div>
@@ -504,7 +509,29 @@ export function InboxDataGrid({
 
   // Column definitions
   const columnDefs = useMemo<ColDef<EventItem>[]>(() => {
+    const isDeleted = folderFilter === 'deleted';
+    // Fixed width to guarantee all icons always fit: 5 icons (normal) or 1 (deleted)
+    // button size = icon + padding×2 | gap-0.5 = 2px between buttons
+    const actionsWidth = isDeleted
+      ? (largeIcons ? 44 : 36)       // 1 icon: 36px (small) / 44px (large)
+      : (largeIcons ? 230 : 182);    // 6 icons: 6×28+10=178→182 | 6×36+10=226→230
+
     const cols: ColDef<EventItem>[] = [
+      // Row actions — fixed-width left column, icons appear on row hover
+      {
+        colId: 'rowActions',
+        headerName: '',
+        cellRenderer: RowActionsCellRenderer,
+        width: actionsWidth,
+        minWidth: actionsWidth,
+        maxWidth: actionsWidth,
+        sortable: false,
+        resizable: false,
+        suppressMovable: true,
+        pinned: 'left' as const,
+        suppressHeaderMenuButton: true,
+        cellClass: 'row-actions-cell',
+      },
       // Sender — left-aligned
       {
         colId: 'sender',
@@ -630,7 +657,7 @@ export function InboxDataGrid({
         : []),
     ];
     return cols;
-  }, [isUnifiedMode, mailboxEmailMap, folderFilter]);
+  }, [isUnifiedMode, mailboxEmailMap, folderFilter, largeIcons]);
 
   // Row ID getter
   const getRowId = useCallback((params: GetRowIdParams<EventItem>) => params.data._id, []);
