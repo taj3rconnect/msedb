@@ -5,7 +5,9 @@ ingress:
   - hostname: msedb.aptask.com
     service: http://msedb-frontend:8081
   - hostname: ax1.aptask.com
-    service: http://172.16.219.222:3000
+    service: https://172.16.219.222:3000
     originRequest:
       noTLSVerify: true
+  - hostname: jpm.aptask.com
+    service: http://172.16.219.222:3005
   - service: http_status:404
