@@ -46,8 +46,12 @@ export async function createTrackedEmail(params: {
   return { trackingId, pixelHtml };
 }
 
+/** Dedup window: skip duplicate opens from same IP+UA within this many ms. */
+const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Record an open event for a tracked email. Fire-and-forget.
+ * Deduplicates by IP + User-Agent within a 5-minute window.
  */
 export async function recordOpen(
   trackingId: string,
@@ -55,6 +59,25 @@ export async function recordOpen(
   userAgent?: string,
 ): Promise<void> {
   try {
+    // Dedup: check if same IP+UA opened this email within the window
+    if (ip && userAgent) {
+      const cutoff = new Date(Date.now() - DEDUP_WINDOW_MS);
+      const duplicate = await TrackedEmail.findOne({
+        trackingId,
+        opens: {
+          $elemMatch: {
+            ip,
+            userAgent,
+            timestamp: { $gte: cutoff },
+          },
+        },
+      });
+      if (duplicate) {
+        logger.debug('Skipping duplicate open', { trackingId, ip });
+        return;
+      }
+    }
+
     const parser = new UAParser(userAgent || '');
     const result = parser.getResult();
 

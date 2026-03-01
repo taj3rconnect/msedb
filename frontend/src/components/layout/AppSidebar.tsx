@@ -62,6 +62,25 @@ const FOLDER_FILTER_MAP: Record<string, string> = {
   'Archive': 'archive',
 };
 
+/** Priority order for well-known folders (lower = higher in list). */
+const FOLDER_SORT_ORDER: Record<string, number> = {
+  'Inbox': 0,
+  'Deleted Items': 1,
+  'Sent Items': 2,
+  'Drafts': 3,
+  'Archive': 4,
+  'Junk Email': 5,
+};
+
+function sortFolders(folders: MailFolder[]): MailFolder[] {
+  return [...folders].sort((a, b) => {
+    const pa = FOLDER_SORT_ORDER[a.displayName] ?? 99;
+    const pb = FOLDER_SORT_ORDER[b.displayName] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return a.displayName.localeCompare(b.displayName);
+  });
+}
+
 /** Expandable folder item with lazy-loaded children. */
 function FolderItem({
   folder,
@@ -334,7 +353,7 @@ export function AppSidebar() {
                       </div>
                     ) : (
                       <SidebarMenuSub>
-                        {folders.map((folder) => (
+                        {sortFolders(folders).map((folder) => (
                           <FolderItem
                             key={folder.id}
                             folder={folder}
