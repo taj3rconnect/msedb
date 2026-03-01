@@ -117,7 +117,14 @@ export function Topbar() {
             >
               Deleted Items
             </Badge>
-            {inboxFolder !== 'inbox' && inboxFolder !== 'deleted' && (
+            <Badge
+              variant={inboxFolder === 'sent' ? 'default' : 'outline'}
+              className="cursor-pointer text-xs px-2.5 py-0.5"
+              onClick={() => setInboxFolder('sent')}
+            >
+              Sent
+            </Badge>
+            {inboxFolder !== 'inbox' && inboxFolder !== 'deleted' && inboxFolder !== 'sent' && (
               <Badge
                 variant="default"
                 className="text-xs px-2.5 py-0.5"
