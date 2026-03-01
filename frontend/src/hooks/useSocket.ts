@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { useRulePopupStore } from '@/stores/rulePopupStore';
 
 /**
  * Socket.IO connection hook.
@@ -40,6 +41,10 @@ export function useSocket() {
       useNotificationStore.getState().incrementUnread();
       // Invalidate notification queries to refetch list
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    });
+
+    socket.on('rule:popup', (data: { message: string; sender: string; subject: string }) => {
+      useRulePopupStore.getState().showPopup(data);
     });
 
     socket.on('connect_error', (err) => {

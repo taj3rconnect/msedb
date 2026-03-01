@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/authStore';
 import { useSocket } from '@/hooks/useSocket';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { RulePopupModal } from '@/components/shared/RulePopupModal';
 import { AppShell } from '@/components/layout/AppShell';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
@@ -155,6 +156,7 @@ export default function App() {
         <RouterProvider router={router} />
       </TooltipProvider>
       <Toaster />
+      <RulePopupModal />
     </QueryClientProvider>
   );
 }

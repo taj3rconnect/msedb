@@ -299,6 +299,23 @@ async function handleCreated(
         skipStaging: result.skipStaging,
       });
 
+      // Emit popup socket event for any popup actions (non-blocking)
+      const popupAction = result.actions.find((a) => a.actionType === 'popup');
+      if (popupAction) {
+        try {
+          const io = getIO();
+          io.to(`user:${userId}`).emit('rule:popup', {
+            message: popupAction.popupMessage || 'Rule triggered',
+            sender: graphMessage.from?.emailAddress?.address || '',
+            subject: graphMessage.subject || '',
+          });
+        } catch { /* non-blocking */ }
+      }
+
+      // Skip executeActions for popup-only rules (nothing else to do)
+      const nonPopupActions = result.actions.filter((a) => a.actionType !== 'popup');
+      if (nonPopupActions.length === 0) return;
+
       await executeActions({
         mailboxEmail,
         messageId,

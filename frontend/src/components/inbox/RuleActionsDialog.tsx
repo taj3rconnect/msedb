@@ -58,6 +58,8 @@ export function RuleActionsDialog({
   const [deleteChecked, setDeleteChecked] = useState(false);
   const [moveChecked, setMoveChecked] = useState(false);
   const [markReadChecked, setMarkReadChecked] = useState(false);
+  const [popupChecked, setPopupChecked] = useState(false);
+  const [popupMessage, setPopupMessage] = useState('');
   const [selectedFolder, setSelectedFolder] = useState<{
     id: string;
     name: string;
@@ -170,7 +172,7 @@ export function RuleActionsDialog({
   }, [foldersData?.folders, folderSearch]);
 
   const hasSelection =
-    deleteChecked || markReadChecked || (moveChecked && selectedFolder);
+    deleteChecked || markReadChecked || (moveChecked && selectedFolder) || popupChecked;
 
   const uniqueSenders = useMemo(
     () => [...new Set(senderEmails)],
@@ -207,6 +209,10 @@ export function RuleActionsDialog({
     if (markReadChecked) {
       actions.push({ actionType: 'markRead' });
       parts.push('mark read');
+    }
+    if (popupChecked) {
+      actions.push({ actionType: 'popup', popupMessage: popupMessage.trim() || 'Rule triggered' });
+      parts.push('popup');
     }
 
     const actionLabel = parts.join(' + ');
@@ -262,6 +268,8 @@ export function RuleActionsDialog({
       setRunNow(true);
       setSimulationResult(null);
       setSimDateRange('30d');
+      setPopupChecked(false);
+      setPopupMessage('');
     }
     onOpenChange(nextOpen);
   }
@@ -628,6 +636,29 @@ export function RuleActionsDialog({
               onCheckedChange={(v) => setMarkReadChecked(v === true)}
             />
             <Label htmlFor="action-markread">Mark as read always</Label>
+          </div>
+
+          {/* Popup Window */}
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="action-popup"
+                checked={popupChecked}
+                onCheckedChange={(v) => setPopupChecked(v === true)}
+              />
+              <Label htmlFor="action-popup">Show popup window</Label>
+            </div>
+            {popupChecked && (
+              <div className="ml-6">
+                <Input
+                  autoFocus
+                  placeholder="Popup message (e.g. Message from Boss)"
+                  value={popupMessage}
+                  onChange={(e) => setPopupMessage(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+            )}
           </div>
 
           {/* Additional conditions */}
