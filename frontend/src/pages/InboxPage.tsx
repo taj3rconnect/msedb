@@ -1526,28 +1526,6 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                 trackingMap={folderFilter === 'sent' ? trackingMap : undefined}
                 toolbarSlot={
                   <>
-                    {/* Sent folder toggle */}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant={folderFilter === 'sent' ? 'default' : 'outline'}
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            if (folderFilter === 'sent') {
-                              setFolderFilter('inbox');
-                            } else {
-                              setFolderFilter('sent');
-                            }
-                            setPage(1);
-                          }}
-                        >
-                          <Send className="mr-1.5 h-3.5 w-3.5" />
-                          Sent
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>View Sent Items</TooltipContent>
-                    </Tooltip>
                     {/* Deleted items inline */}
                     {deletedCount > 0 && (
                       <>
@@ -1571,6 +1549,28 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                         <span className="mx-0.5 h-5 w-px bg-border" />
                       </>
                     )}
+                    {/* Sent folder toggle */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant={folderFilter === 'sent' ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            if (folderFilter === 'sent') {
+                              setFolderFilter('inbox');
+                            } else {
+                              setFolderFilter('sent');
+                            }
+                            setPage(1);
+                          }}
+                        >
+                          <Send className="mr-1.5 h-3.5 w-3.5" />
+                          Sent
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>View Sent Items with tracking</TooltipContent>
+                    </Tooltip>
                     {/* Pagination inline */}
                     {totalPages > 1 && (
                       <>
