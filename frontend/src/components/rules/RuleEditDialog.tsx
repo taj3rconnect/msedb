@@ -57,6 +57,8 @@ export function RuleEditDialog({
   const [deleteChecked, setDeleteChecked] = useState(false);
   const [moveChecked, setMoveChecked] = useState(false);
   const [markReadChecked, setMarkReadChecked] = useState(false);
+  const [popupChecked, setPopupChecked] = useState(false);
+  const [popupMessage, setPopupMessage] = useState('');
   const [selectedFolder, setSelectedFolder] = useState<{
     id: string;
     name: string;
@@ -96,6 +98,9 @@ export function RuleEditDialog({
     setDeleteChecked(rule.actions.some((a) => a.actionType === 'delete'));
     setMoveChecked(rule.actions.some((a) => a.actionType === 'move'));
     setMarkReadChecked(rule.actions.some((a) => a.actionType === 'markRead'));
+    const popupAction = rule.actions.find((a) => a.actionType === 'popup');
+    setPopupChecked(!!popupAction);
+    setPopupMessage(popupAction?.popupMessage ?? '');
 
     const moveAction = rule.actions.find((a) => a.actionType === 'move');
     if (moveAction?.toFolder) {
@@ -155,8 +160,7 @@ export function RuleEditDialog({
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      // Start with actions not managed by UI checkboxes (preserve popup etc.)
-      const actions: RuleAction[] = [...unhandledActions];
+      const actions: RuleAction[] = [];
       if (deleteChecked) {
         actions.push({ actionType: 'delete' });
       }
@@ -165,6 +169,9 @@ export function RuleEditDialog({
       }
       if (markReadChecked) {
         actions.push({ actionType: 'markRead' });
+      }
+      if (popupChecked) {
+        actions.push({ actionType: 'popup', popupMessage: popupMessage.trim() || 'Rule triggered' });
       }
 
       const conditions = { ...rule.conditions };
@@ -216,14 +223,8 @@ export function RuleEditDialog({
     );
   }, [allMailboxes, mailboxSearch]);
 
-  // Actions not represented by UI checkboxes (e.g. popup) — must be preserved
-  const unhandledActions = rule.actions.filter(
-    (a) => !['delete', 'move', 'markRead'].includes(a.actionType),
-  );
-
   const hasActions =
-    deleteChecked || markReadChecked || (moveChecked && selectedFolder) ||
-    unhandledActions.length > 0;
+    deleteChecked || markReadChecked || (moveChecked && selectedFolder) || popupChecked;
 
   function handleFolderMailboxChange(id: string) {
     setFolderMailboxId(id);
@@ -285,6 +286,8 @@ export function RuleEditDialog({
       setNewSenderEmail('');
       setSimulationResult(null);
       setSimDateRange('30d');
+      setPopupChecked(false);
+      setPopupMessage('');
     }
     onOpenChange(nextOpen);
   }
@@ -308,99 +311,6 @@ export function RuleEditDialog({
               onChange={(e) => setName(e.target.value)}
               className="text-sm"
             />
-          </div>
-
-          {/* Conditions section */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Conditions</span>
-              <div className="flex-1 border-t" />
-            </div>
-
-          {/* Sender emails */}
-          <div className="space-y-1.5">
-            <Label>Sender emails</Label>
-            {senderEmails.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {senderEmails.map((email) => (
-                  <Badge
-                    key={email}
-                    variant="secondary"
-                    className="text-xs gap-1"
-                  >
-                    {email}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSender(email)}
-                      className="ml-0.5 hover:text-destructive"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-1.5">
-              <Input
-                placeholder="Add sender email..."
-                value={newSenderEmail}
-                onChange={(e) => setNewSenderEmail(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddSender();
-                  }
-                }}
-                className="h-8 text-sm flex-1"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 px-3 text-xs"
-                onClick={handleAddSender}
-                disabled={!newSenderEmail.trim()}
-              >
-                Add
-              </Button>
-            </div>
-          </div>
-
-          {/* Sender domain */}
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-sender-domain">Sender domain</Label>
-            <Input
-              id="edit-sender-domain"
-              placeholder="e.g. newsletter.com"
-              value={senderDomain}
-              onChange={(e) => setSenderDomain(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </div>
-
-          {/* Subject contains */}
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-subject-contains">Subject contains</Label>
-            <Input
-              id="edit-subject-contains"
-              placeholder="e.g. invoice, newsletter"
-              value={subjectContains}
-              onChange={(e) => setSubjectContains(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </div>
-
-          {/* Body contains */}
-          <div className="space-y-1.5">
-            <Label htmlFor="edit-body-contains">Body contains</Label>
-            <Input
-              id="edit-body-contains"
-              placeholder="e.g. unsubscribe, promotion"
-              value={bodyContains}
-              onChange={(e) => setBodyContains(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </div>
-
           </div>
 
           {/* Actions section */}
@@ -658,6 +568,107 @@ export function RuleEditDialog({
               />
               <Label htmlFor="edit-action-markread">Mark as read always</Label>
             </div>
+
+            {/* Popup Window */}
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="edit-action-popup"
+                  checked={popupChecked}
+                  onCheckedChange={(v) => setPopupChecked(v === true)}
+                />
+                <Label htmlFor="edit-action-popup">Show popup window</Label>
+              </div>
+              {popupChecked && (
+                <div className="ml-6">
+                  <Input
+                    autoFocus
+                    placeholder="Popup message (e.g. Message from Boss)"
+                    value={popupMessage}
+                    onChange={(e) => setPopupMessage(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Conditions section */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Conditions</span>
+              <div className="flex-1 border-t" />
+            </div>
+
+            {/* Sender emails */}
+            <div className="space-y-1.5">
+              <Label>Sender emails</Label>
+              {senderEmails.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {senderEmails.map((email) => (
+                    <Badge
+                      key={email}
+                      variant="secondary"
+                      className="text-xs gap-1"
+                    >
+                      {email}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSender(email)}
+                        className="ml-0.5 hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-1.5">
+                <Input
+                  placeholder="Add sender email..."
+                  value={newSenderEmail}
+                  onChange={(e) => setNewSenderEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddSender();
+                    }
+                  }}
+                  className="h-8 text-sm flex-1"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 text-xs"
+                  onClick={handleAddSender}
+                  disabled={!newSenderEmail.trim()}
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+
+            {/* Domain / Subject / Body — grouped plain inputs matching create rule style */}
+            <div className="space-y-1.5">
+              <Input
+                placeholder="Sender domain (e.g. newsletter.com)"
+                value={senderDomain}
+                onChange={(e) => setSenderDomain(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <Input
+                placeholder="Subject contains..."
+                value={subjectContains}
+                onChange={(e) => setSubjectContains(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <Input
+                placeholder="Body contains..."
+                value={bodyContains}
+                onChange={(e) => setBodyContains(e.target.value)}
+                className="h-8 text-sm"
+              />
+            </div>
           </div>
         </div>
 
@@ -683,7 +694,7 @@ export function RuleEditDialog({
             ) : (
               <FlaskConical className="mr-2 h-4 w-4" />
             )}
-            Test Rule
+            Simulate
           </Button>
           <div className="flex gap-2">
             <Button
