@@ -2078,21 +2078,33 @@ function EmailPreviewPane({
   const [composeMode, setComposeMode] = useState<'reply' | 'replyAll' | 'forward' | null>(null);
   const [composeBody, setComposeBody] = useState('');
   const [forwardTo, setForwardTo] = useState<string[]>([]);
+  const [replyCC, setReplyCC] = useState<string[]>([]);
+  const [replyBCC, setReplyBCC] = useState<string[]>([]);
+  const [showCC, setShowCC] = useState(false);
+  const [showBCC, setShowBCC] = useState(false);
 
   // Reset compose mode when switching emails
   useEffect(() => {
     setComposeMode(null);
     setComposeBody('');
     setForwardTo([]);
+    setReplyCC([]);
+    setReplyBCC([]);
+    setShowCC(false);
+    setShowBCC(false);
   }, [event._id]);
 
   // Reply mutation
   const replyMutation = useMutation({
-    mutationFn: () => replyToMessage(mailboxId, event.messageId, composeBody),
+    mutationFn: () => replyToMessage(mailboxId, event.messageId, composeBody, replyCC, replyBCC),
     onSuccess: () => {
       toast.success('Reply sent');
       setComposeMode(null);
       setComposeBody('');
+      setReplyCC([]);
+      setReplyBCC([]);
+      setShowCC(false);
+      setShowBCC(false);
     },
     onError: (err: Error) => {
       toast.error(`Reply failed: ${err.message}`);
@@ -2101,11 +2113,15 @@ function EmailPreviewPane({
 
   // Reply All mutation
   const replyAllMutation = useMutation({
-    mutationFn: () => replyAllToMessage(mailboxId, event.messageId, composeBody),
+    mutationFn: () => replyAllToMessage(mailboxId, event.messageId, composeBody, replyCC, replyBCC),
     onSuccess: () => {
       toast.success('Reply-all sent');
       setComposeMode(null);
       setComposeBody('');
+      setReplyCC([]);
+      setReplyBCC([]);
+      setShowCC(false);
+      setShowBCC(false);
     },
     onError: (err: Error) => {
       toast.error(`Reply-all failed: ${err.message}`);
@@ -2393,8 +2409,56 @@ function EmailPreviewPane({
             </div>
 
             {(composeMode === 'reply' || composeMode === 'replyAll') && (
-              <div className="text-xs text-muted-foreground">
-                To: {composeMode === 'replyAll' ? 'All recipients' : (event.sender.email || 'Unknown')}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    To: {composeMode === 'replyAll' ? 'All recipients' : (event.sender.email || 'Unknown')}
+                  </span>
+                  <div className="flex items-center gap-1 ml-auto">
+                    {!showCC && (
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                        onClick={() => setShowCC(true)}
+                      >
+                        CC
+                      </button>
+                    )}
+                    {!showBCC && (
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                        onClick={() => setShowBCC(true)}
+                      >
+                        BCC
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {showCC && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-8 shrink-0">CC:</span>
+                    <EmailAutocomplete
+                      autoFocus
+                      value={replyCC}
+                      onChange={setReplyCC}
+                      placeholder="Add CC recipients..."
+                      className="text-sm flex-1"
+                    />
+                  </div>
+                )}
+                {showBCC && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-8 shrink-0">BCC:</span>
+                    <EmailAutocomplete
+                      autoFocus={!showCC}
+                      value={replyBCC}
+                      onChange={setReplyBCC}
+                      placeholder="Add BCC recipients..."
+                      className="text-sm flex-1"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -2451,6 +2515,10 @@ function EmailPreviewPane({
                   setComposeMode(null);
                   setComposeBody('');
                   setForwardTo([]);
+                  setReplyCC([]);
+                  setReplyBCC([]);
+                  setShowCC(false);
+                  setShowBCC(false);
                 }}
                 disabled={isSending}
               >

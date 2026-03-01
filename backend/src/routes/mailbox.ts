@@ -940,9 +940,11 @@ mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response
  * Body: { messageId, body, contentType? }
  */
 mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
-  const { messageId, body } = req.body as {
+  const { messageId, body, cc, bcc } = req.body as {
     messageId?: string;
     body?: string;
+    cc?: string[];
+    bcc?: string[];
   };
 
   if (!messageId) throw new ValidationError('messageId is required');
@@ -981,16 +983,17 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
   });
   updatedContent = injectTrackingPixel(updatedContent, replyPixel);
 
+  const replyPatch: Record<string, unknown> = {
+    body: { contentType: 'HTML', content: updatedContent },
+    importance: 'normal',
+  };
+  if (cc?.length) replyPatch.ccRecipients = cc.map((e) => ({ emailAddress: { address: e } }));
+  if (bcc?.length) replyPatch.bccRecipients = bcc.map((e) => ({ emailAddress: { address: e } }));
+
   await graphFetch(
     `/users/${mailbox.email}/messages/${draft.id}`,
     accessToken,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({
-        body: { contentType: 'HTML', content: updatedContent },
-        importance: 'normal',
-      }),
-    },
+    { method: 'PATCH', body: JSON.stringify(replyPatch) },
   );
 
   // Step 3: Send the draft
@@ -1016,9 +1019,11 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
  * Body: { messageId, body, contentType? }
  */
 mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
-  const { messageId, body } = req.body as {
+  const { messageId, body, cc, bcc } = req.body as {
     messageId?: string;
     body?: string;
+    cc?: string[];
+    bcc?: string[];
   };
 
   if (!messageId) throw new ValidationError('messageId is required');
@@ -1062,16 +1067,17 @@ mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
   });
   updatedContentAll = injectTrackingPixel(updatedContentAll, replyAllPixel);
 
+  const replyAllPatch: Record<string, unknown> = {
+    body: { contentType: 'HTML', content: updatedContentAll },
+    importance: 'normal',
+  };
+  if (cc?.length) replyAllPatch.ccRecipients = cc.map((e) => ({ emailAddress: { address: e } }));
+  if (bcc?.length) replyAllPatch.bccRecipients = bcc.map((e) => ({ emailAddress: { address: e } }));
+
   await graphFetch(
     `/users/${mailbox.email}/messages/${draft.id}`,
     accessToken,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({
-        body: { contentType: 'HTML', content: updatedContentAll },
-        importance: 'normal',
-      }),
-    },
+    { method: 'PATCH', body: JSON.stringify(replyAllPatch) },
   );
 
   // Step 3: Send

@@ -243,10 +243,12 @@ export async function replyToMessage(
   mailboxId: string,
   messageId: string,
   body: string,
+  cc?: string[],
+  bcc?: string[],
 ): Promise<void> {
   await apiFetch(`/mailboxes/${mailboxId}/reply`, {
     method: 'POST',
-    body: JSON.stringify({ messageId, body }),
+    body: JSON.stringify({ messageId, body, cc, bcc }),
   });
 }
 
@@ -257,10 +259,12 @@ export async function replyAllToMessage(
   mailboxId: string,
   messageId: string,
   body: string,
+  cc?: string[],
+  bcc?: string[],
 ): Promise<void> {
   await apiFetch(`/mailboxes/${mailboxId}/reply-all`, {
     method: 'POST',
-    body: JSON.stringify({ messageId, body }),
+    body: JSON.stringify({ messageId, body, cc, bcc }),
   });
 }
 
