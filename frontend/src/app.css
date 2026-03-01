@@ -122,3 +122,26 @@
     @apply bg-background text-foreground;
     }
 }
+
+/* AG Grid: sender cell hover swap — hide name, show action buttons */
+.sender-actions {
+  display: none;
+}
+.ag-row-hover .sender-info {
+  display: none !important;
+}
+.ag-row-hover .sender-actions {
+  display: flex !important;
+}
+
+/* AG Grid active row highlight */
+.ag-row.ag-row-active {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, hsl(var(--primary)) 40%, transparent);
+  background-color: color-mix(in srgb, hsl(var(--primary)) 5%, transparent) !important;
+}
+
+/* AG Grid custom focused row */
+.ag-row.ag-row-focused-custom {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, hsl(var(--primary)) 30%, transparent);
+  background-color: color-mix(in srgb, hsl(var(--primary)) 2%, transparent) !important;
+}

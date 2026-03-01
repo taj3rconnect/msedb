@@ -1500,7 +1500,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
           className="flex-1 min-h-0"
         >
           <Panel defaultSize={previewEvent ? 60 : 100} minSize={30}>
-            <div className="space-y-2 h-full overflow-auto">
+            <div className="flex flex-col gap-2 h-full min-h-0 overflow-hidden">
               {/* Data Grid (pagination is inside toolbar slot) */}
               <InboxDataGrid
                 data={visibleEvents}

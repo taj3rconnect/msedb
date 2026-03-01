@@ -1,37 +1,20 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { AgGridReact } from 'ag-grid-react';
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  flexRender,
-  createColumnHelper,
-  type SortingState,
-  type ColumnFiltersState,
-  type ColumnOrderState,
-  type VisibilityState,
-  type Header,
-} from '@tanstack/react-table';
+  AllCommunityModule,
+  ModuleRegistry,
+  themeQuartz,
+  type ColDef,
+  type GridReadyEvent,
+  type SelectionChangedEvent,
+  type ColumnState,
+  type StateUpdatedEvent,
+  type GridApi,
+  type RowClassRules,
+  type GetRowIdParams,
+} from 'ag-grid-community';
+import type { CustomCellRendererProps } from 'ag-grid-react';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  horizontalListSortingStrategy,
-  useSortable,
-  arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import {
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Ban,
   CheckCircle,
   Mail,
@@ -40,7 +23,6 @@ import {
   Maximize2,
   Minimize2,
   MoreHorizontal,
-  GripVertical,
   SlidersHorizontal,
   Trash2,
   Undo2,
@@ -51,94 +33,62 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import type { EventItem } from '@/api/events';
 import { TrackingTooltip } from './TrackingTooltip';
 import { useUiStore } from '@/stores/uiStore';
 
-// --- Column Helper ---
-const columnHelper = createColumnHelper<EventItem>();
+// Register all community modules once
+ModuleRegistry.registerModules([AllCommunityModule]);
 
-// --- Sortable Header Cell ---
-function SortableHeaderCell({
-  header,
-}: {
-  header: Header<EventItem, unknown>;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: header.column.id });
+// --- AG Grid Theme ---
+const COLUMN_STATE_KEY_PREFIX = 'inbox-ag-grid-column-state';
 
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    cursor: 'grab',
-    position: 'relative' as const,
-    zIndex: isDragging ? 1 : 0,
-  };
+// Light theme customized for the app
+const gridThemeLight = themeQuartz.withParams({
+  fontSize: 13,
+  headerFontSize: 12,
+  rowHeight: 42,
+  headerHeight: 38,
+  borderRadius: 6,
+  wrapperBorderRadius: 6,
+  spacing: 4,
+  rowBorder: { color: 'hsl(var(--border))' },
+  borderColor: 'hsl(var(--border))',
+  headerBackgroundColor: 'hsl(var(--muted))',
+  headerTextColor: 'hsl(var(--muted-foreground))',
+  backgroundColor: 'hsl(var(--background))',
+  foregroundColor: 'hsl(var(--foreground))',
+  selectedRowBackgroundColor: 'hsl(var(--muted))',
+  rowHoverColor: 'color-mix(in srgb, hsl(var(--muted)) 50%, transparent)',
+  columnBorder: false,
+  headerColumnBorder: false,
+  headerColumnResizeHandleColor: 'hsl(var(--primary))',
+});
 
-  const canSort = header.column.getCanSort();
+// Dark theme
+const gridThemeDark = themeQuartz.withParams({
+  fontSize: 13,
+  headerFontSize: 12,
+  rowHeight: 42,
+  headerHeight: 38,
+  borderRadius: 6,
+  wrapperBorderRadius: 6,
+  spacing: 4,
+  rowBorder: { color: 'hsl(var(--border))' },
+  borderColor: 'hsl(var(--border))',
+  headerBackgroundColor: 'hsl(var(--muted))',
+  headerTextColor: 'hsl(var(--muted-foreground))',
+  backgroundColor: 'hsl(var(--background))',
+  foregroundColor: 'hsl(var(--foreground))',
+  selectedRowBackgroundColor: 'hsl(var(--muted))',
+  rowHoverColor: 'color-mix(in srgb, hsl(var(--muted)) 50%, transparent)',
+  columnBorder: false,
+  headerColumnBorder: false,
+  headerColumnResizeHandleColor: 'hsl(var(--primary))',
+});
 
-  return (
-    <th
-      ref={setNodeRef}
-      style={style}
-      className="h-10 px-3 text-left align-middle text-xs font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0 whitespace-nowrap select-none"
-      colSpan={header.colSpan}
-    >
-      <div className="flex items-center gap-1">
-        {/* Drag handle */}
-        <button
-          type="button"
-          className="text-muted-foreground/50 hover:text-muted-foreground shrink-0 cursor-grab active:cursor-grabbing touch-none"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
-
-        {/* Header label + sort button */}
-        {canSort ? (
-          <button
-            type="button"
-            className="flex items-center gap-1 hover:text-foreground transition-colors"
-            onClick={header.column.getToggleSortingHandler()}
-          >
-            {flexRender(header.column.columnDef.header, header.getContext())}
-            {header.column.getIsSorted() === 'asc' ? (
-              <ArrowUp className="h-3.5 w-3.5" />
-            ) : header.column.getIsSorted() === 'desc' ? (
-              <ArrowDown className="h-3.5 w-3.5" />
-            ) : (
-              <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />
-            )}
-          </button>
-        ) : (
-          flexRender(header.column.columnDef.header, header.getContext())
-        )}
-      </div>
-    </th>
-  );
-}
-
-// --- Main Component ---
-/**
- * Highlight search terms in text by wrapping matches in <mark> tags.
- */
+// --- Helpers ---
 function highlightText(text: string, query: string): string {
   if (!query || !text) return text;
   const words = query.split(/\s+/).filter((w) => w.length >= 2);
@@ -155,6 +105,305 @@ interface TrackingMatch {
   lastOpenedAt?: string;
 }
 
+// --- Context type for cell renderers ---
+interface GridContext {
+  onAction: (event: EventItem) => void;
+  onClearRules: (event: EventItem) => void;
+  onQuickDelete: (event: EventItem) => void;
+  onJustDelete: (event: EventItem) => void;
+  onMarkRead: (event: EventItem) => void;
+  onQuickMarkRead: (event: EventItem) => void;
+  onUndelete?: (event: EventItem) => void;
+  folderFilter: string;
+  searchQuery: string;
+  largeIcons: boolean;
+  trackingMap?: Record<string, TrackingMatch>;
+}
+
+// --- Cell Renderers ---
+
+function SenderCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
+  const event = props.data!;
+  const ctx = props.context!;
+  const iconSize = ctx.largeIcons ? 20 : 16;
+  const btnPad = ctx.largeIcons ? 8 : 6;
+
+  return (
+    <div className="min-w-0 h-full flex items-center">
+      {/* Sender info — left-aligned, hidden on row hover */}
+      <div className="sender-info min-w-0">
+        <div
+          className="font-medium truncate text-left"
+          dangerouslySetInnerHTML={{
+            __html: highlightText(event.sender?.name || event.sender?.email || '', ctx.searchQuery),
+          }}
+        />
+        {event.sender?.name && event.sender?.email && (
+          <div
+            className="text-xs text-muted-foreground truncate text-left"
+            dangerouslySetInnerHTML={{
+              __html: highlightText(event.sender.email, ctx.searchQuery),
+            }}
+          />
+        )}
+      </div>
+
+      {/* Action buttons — shown on row hover */}
+      <div className="sender-actions items-center gap-0.5">
+        {ctx.folderFilter === 'deleted' ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="shrink-0 rounded text-green-600 hover:!text-green-500 transition-all"
+                style={{ padding: btnPad }}
+                onClick={(e) => { e.stopPropagation(); ctx.onUndelete?.(event); }}
+              >
+                <Undo2 style={{ width: iconSize, height: iconSize }} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Undelete & remove rules for this sender</TooltipContent>
+          </Tooltip>
+        ) : (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded text-green-600 hover:!text-green-500 transition-all"
+                  style={{ padding: btnPad }}
+                  onClick={(e) => { e.stopPropagation(); ctx.onClearRules(event); }}
+                  disabled={!event.sender?.email}
+                >
+                  <CheckCircle style={{ width: iconSize, height: iconSize }} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Remove all rules for this sender</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded text-muted-foreground hover:!text-destructive transition-all"
+                  style={{ padding: btnPad }}
+                  onClick={(e) => { e.stopPropagation(); ctx.onJustDelete(event); }}
+                >
+                  <Trash2 style={{ width: iconSize, height: iconSize }} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Delete this email</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded text-muted-foreground hover:!text-destructive transition-all"
+                  style={{ padding: btnPad }}
+                  onClick={(e) => { e.stopPropagation(); ctx.onQuickDelete(event); }}
+                  disabled={!event.sender?.email}
+                >
+                  <Ban style={{ width: iconSize, height: iconSize }} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Always delete from this sender</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={`shrink-0 rounded transition-all ${event.isRead ? 'text-muted-foreground/30 cursor-default' : 'text-muted-foreground hover:!text-green-500'}`}
+                  style={{ padding: btnPad }}
+                  onClick={(e) => { e.stopPropagation(); if (!event.isRead) ctx.onMarkRead(event); }}
+                  disabled={event.isRead}
+                >
+                  <MailCheck style={{ width: iconSize, height: iconSize }} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{event.isRead ? 'Already read' : 'Mark as read'}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded text-muted-foreground hover:!text-blue-500 transition-all"
+                  style={{ padding: btnPad }}
+                  onClick={(e) => { e.stopPropagation(); ctx.onQuickMarkRead(event); }}
+                  disabled={!event.sender?.email}
+                >
+                  <MailOpen style={{ width: iconSize, height: iconSize }} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Always mark read from this sender</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded text-muted-foreground hover:!text-foreground transition-all"
+                  style={{ padding: btnPad }}
+                  onClick={(e) => { e.stopPropagation(); ctx.onAction(event); }}
+                >
+                  <MoreHorizontal style={{ width: iconSize, height: iconSize }} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Create custom rule</TooltipContent>
+            </Tooltip>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SubjectCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
+  const event = props.data!;
+  const ctx = props.context!;
+  return (
+    <span
+      className="truncate block text-left"
+      dangerouslySetInnerHTML={{
+        __html: highlightText(event.subject || '(no subject)', ctx.searchQuery),
+      }}
+    />
+  );
+}
+
+function TimeCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
+  const d = new Date(props.value!);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  let hh = d.getHours();
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  hh = hh % 12 || 12;
+  const min = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return (
+    <span className="text-sm text-muted-foreground whitespace-nowrap tabular-nums">
+      {mm}-{dd}-{yy} {hh}:{min}:{ss} {ampm}
+    </span>
+  );
+}
+
+function StatusCellRenderer(props: CustomCellRendererProps<EventItem, boolean, GridContext>) {
+  const isRead = props.value;
+  return isRead ? (
+    <span className="text-xs text-muted-foreground">Read</span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+      <span className="h-2 w-2 rounded-full bg-blue-600 dark:bg-blue-400" />
+      Unread
+    </span>
+  );
+}
+
+function ImportanceCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
+  const v = props.value;
+  if (v === 'high') {
+    return <span className="text-xs font-medium text-red-600 dark:text-red-400">High</span>;
+  }
+  if (v === 'low') {
+    return <span className="text-xs text-muted-foreground">Low</span>;
+  }
+  return <span className="text-xs text-muted-foreground">Normal</span>;
+}
+
+function FolderCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
+  const val = props.value;
+  return (
+    <span className="text-sm text-muted-foreground truncate block">
+      {val || '\u2014'}
+    </span>
+  );
+}
+
+function MailboxCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
+  const email = props.value || '';
+  const truncated = email.length > 20 ? email.slice(0, 20) + '...' : email;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="text-sm text-muted-foreground truncate block max-w-[160px]">
+          {truncated}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{email}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ActionsCellRenderer(props: CustomCellRendererProps<EventItem, unknown, GridContext>) {
+  const event = props.data!;
+  const ctx = props.context!;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={(e) => { e.stopPropagation(); ctx.onAction(event); }}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Create rule</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function OpensCellRenderer(props: CustomCellRendererProps<EventItem, unknown, GridContext>) {
+  const event = props.data!;
+  const ctx = props.context!;
+  const trackingMap = ctx.trackingMap;
+  if (!trackingMap) return null;
+
+  const key = `${event.mailboxId}:${event.subject || ''}:${event.timestamp}`;
+  const match = trackingMap[key];
+
+  if (!match) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Mail className="h-4 w-4" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>No tracking data</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  if (match.openCount === 0) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Mail className="h-4 w-4" />
+            <span className="text-xs">0</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>Not opened yet</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="flex items-center gap-1 text-green-600 dark:text-green-400 cursor-pointer">
+          <MailOpen className="h-4 w-4" />
+          <span className="text-xs font-medium">{match.openCount}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left" className="p-0">
+        <TrackingTooltip trackingId={match.trackingId} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// --- Props ---
 interface InboxDataGridProps {
   data: EventItem[];
   selectedIds: Set<string>;
@@ -184,13 +433,14 @@ interface InboxDataGridProps {
   trackingMap?: Record<string, TrackingMatch>;
 }
 
+// --- Main Component ---
 export function InboxDataGrid({
   data,
   selectedIds,
   onToggleSelect,
-  onToggleSelectAll,
-  allSelected,
-  someSelected,
+  onToggleSelectAll: _onToggleSelectAll,
+  allSelected: _allSelected,
+  someSelected: _someSelected,
   onAction,
   onClearRules,
   onQuickDelete,
@@ -213,461 +463,322 @@ export function InboxDataGrid({
 }: InboxDataGridProps) {
   const largeIcons = useUiStore((s) => s.largeIcons);
   const toggleIconSize = useUiStore((s) => s.toggleIconSize);
-  const iconSize = largeIcons ? 20 : 16;
-  const btnPad = largeIcons ? 8 : 6;
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const gridRef = useRef<AgGridReact<EventItem>>(null);
+  const apiRef = useRef<GridApi<EventItem> | null>(null);
   const [showFiltersInternal, setShowFiltersInternal] = useState(false);
   const showFilters = showFiltersProp ?? showFiltersInternal;
   const setShowFilters = onToggleFilters ?? setShowFiltersInternal;
+  const suppressSelectionSync = useRef(false);
 
-  // Default column order
-  const defaultColumnOrder = [
-    'select',
-    'sender',
-    ...(isUnifiedMode ? ['mailbox'] : []),
-    'subject',
-    'time',
-    'folder',
-    'status',
-    'importance',
-    'actions',
-  ];
-  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(defaultColumnOrder);
+  // Detect dark mode
+  const [isDark, setIsDark] = useState(() =>
+    document.documentElement.classList.contains('dark'),
+  );
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  const theme = isDark ? gridThemeDark : gridThemeLight;
+
+  // Grid context passed to cell renderers
+  const gridContext = useMemo<GridContext>(
+    () => ({
+      onAction,
+      onClearRules,
+      onQuickDelete,
+      onJustDelete,
+      onMarkRead,
+      onQuickMarkRead,
+      onUndelete,
+      folderFilter,
+      searchQuery,
+      largeIcons,
+      trackingMap,
+    }),
+    [onAction, onClearRules, onQuickDelete, onJustDelete, onMarkRead, onQuickMarkRead, onUndelete, folderFilter, searchQuery, largeIcons, trackingMap],
+  );
 
   // Column definitions
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const columns = useMemo<any[]>(
-    () => [
-      // Select checkbox (not sortable, not filterable, not reorderable)
-      columnHelper.display({
-        id: 'select',
-        size: 40,
-        enableSorting: false,
-        enableColumnFilter: false,
-        header: () => (
-          <Checkbox
-            checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-            onCheckedChange={onToggleSelectAll}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={selectedIds.has(row.original._id)}
-            onCheckedChange={() => onToggleSelect(row.original._id)}
-          />
-        ),
-      }),
-      // Sender
-      columnHelper.accessor(
-        (row) => row.sender?.name || row.sender?.email || '',
-        {
-          id: 'sender',
-          header: 'Sender',
-          size: 240,
-          filterFn: 'includesString',
-          cell: ({ row }) => {
-            const event = row.original;
-            return (
-              <div className="flex items-center gap-2 min-w-0">
-                {folderFilter === 'deleted' ? (
-                  /* Deleted folder: only show Undelete button */
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-green-600 hover:!text-green-500 transition-all"
-                        style={{ padding: btnPad }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onUndelete?.(event);
-                        }}
-                      >
-                        <Undo2 style={{ width: iconSize, height: iconSize }} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>Undelete & remove rules for this sender</TooltipContent>
-                  </Tooltip>
-                ) : (
-                  /* Inbox: show all action buttons */
-                  <>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-green-600 hover:!text-green-500 transition-all"
-                        style={{ padding: btnPad }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onClearRules(event);
-                          }}
-                          disabled={!event.sender?.email}
-                        >
-                          <CheckCircle style={{ width: iconSize, height: iconSize }} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Remove all rules for this sender</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all"
-                          style={{ padding: btnPad }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onJustDelete(event);
-                          }}
-                        >
-                          <Trash2 style={{ width: iconSize, height: iconSize }} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Delete this email</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-destructive transition-all"
-                          style={{ padding: btnPad }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onQuickDelete(event);
-                          }}
-                          disabled={!event.sender?.email}
-                        >
-                          <Ban style={{ width: iconSize, height: iconSize }} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Always delete from this sender</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className={`shrink-0 rounded opacity-0 group-hover/row:opacity-100 transition-all ${event.isRead ? 'text-muted-foreground/30 cursor-default' : 'text-muted-foreground hover:!text-green-500'}`}
-                          style={{ padding: btnPad }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!event.isRead) onMarkRead(event);
-                          }}
-                          disabled={event.isRead}
-                        >
-                          <MailCheck style={{ width: iconSize, height: iconSize }} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>{event.isRead ? 'Already read' : 'Mark as read'}</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-blue-500 transition-all"
-                          style={{ padding: btnPad }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onQuickMarkRead(event);
-                          }}
-                          disabled={!event.sender?.email}
-                        >
-                          <MailOpen style={{ width: iconSize, height: iconSize }} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Always mark read from this sender</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="shrink-0 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:!text-foreground transition-all"
-                          style={{ padding: btnPad }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onAction(event);
-                          }}
-                        >
-                          <MoreHorizontal style={{ width: iconSize, height: iconSize }} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Create custom rule</TooltipContent>
-                    </Tooltip>
-                  </>
-                )}
-                <div className="min-w-0">
-                  <div className="font-medium truncate" dangerouslySetInnerHTML={{
-                    __html: highlightText(event.sender?.name || event.sender?.email || '', searchQuery),
-                  }} />
-                  {event.sender?.name && event.sender?.email && (
-                    <div className="text-xs text-muted-foreground truncate" dangerouslySetInnerHTML={{
-                      __html: highlightText(event.sender.email, searchQuery),
-                    }} />
-                  )}
-                </div>
-              </div>
-            );
-          },
-        },
-      ),
+  const columnDefs = useMemo<ColDef<EventItem>[]>(() => {
+    const cols: ColDef<EventItem>[] = [
+      // Sender — left-aligned
+      {
+        colId: 'sender',
+        headerName: 'Sender',
+        valueGetter: (p) => p.data?.sender?.name || p.data?.sender?.email || '',
+        cellRenderer: SenderCellRenderer,
+        minWidth: 150,
+        width: 280,
+        filter: 'agTextColumnFilter',
+        sortable: true,
+        resizable: true,
+        cellClass: 'text-left',
+      },
       // Mailbox (unified mode only)
-      ...(isUnifiedMode ? [columnHelper.accessor(
-        (row) => mailboxEmailMap?.get(row.mailboxId) || row.mailboxId,
-        {
-          id: 'mailbox',
-          header: 'Mailbox',
-          size: 180,
-          filterFn: 'includesString',
-          cell: ({ getValue }) => {
-            const email = getValue();
-            const truncated = email.length > 20 ? email.slice(0, 20) + '...' : email;
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="text-sm text-muted-foreground truncate block max-w-[160px]">
-                    {truncated}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>{email}</TooltipContent>
-              </Tooltip>
-            );
-          },
-        },
-      )] : []),
+      ...(isUnifiedMode
+        ? [
+            {
+              colId: 'mailbox',
+              headerName: 'Mailbox',
+              valueGetter: (p: { data?: EventItem }) =>
+                mailboxEmailMap?.get(p.data?.mailboxId || '') || p.data?.mailboxId || '',
+              cellRenderer: MailboxCellRenderer,
+              minWidth: 100,
+              width: 180,
+              filter: 'agTextColumnFilter',
+              sortable: true,
+              resizable: true,
+            } as ColDef<EventItem>,
+          ]
+        : []),
       // Subject
-      columnHelper.accessor('subject', {
-        id: 'subject',
-        header: 'Subject',
-        size: 300,
-        filterFn: 'includesString',
-        cell: ({ getValue }) => (
-          <span className="truncate block max-w-xs" dangerouslySetInnerHTML={{
-            __html: highlightText(getValue() || '(no subject)', searchQuery),
-          }} />
-        ),
-      }),
+      {
+        colId: 'subject',
+        field: 'subject',
+        headerName: 'Subject',
+        cellRenderer: SubjectCellRenderer,
+        minWidth: 150,
+        width: 300,
+        flex: 1,
+        filter: 'agTextColumnFilter',
+        sortable: true,
+        resizable: true,
+      },
+      // Date/Time
+      {
+        colId: 'time',
+        field: 'timestamp',
+        headerName: 'Date/Time',
+        cellRenderer: TimeCellRenderer,
+        minWidth: 120,
+        width: 170,
+        sortable: true,
+        resizable: true,
+        comparator: (a: string, b: string) => new Date(a).getTime() - new Date(b).getTime(),
+      },
       // Folder
-      columnHelper.accessor(
-        (row) => row.toFolder || row.fromFolder || '',
-        {
-          id: 'folder',
-          header: 'Folder',
-          size: 120,
-          filterFn: 'includesString',
-          cell: ({ getValue }) => (
-            <span className="text-sm text-muted-foreground truncate block">
-              {getValue() || '—'}
-            </span>
-          ),
-        },
-      ),
+      {
+        colId: 'folder',
+        headerName: 'Folder',
+        valueGetter: (p) => p.data?.toFolder || p.data?.fromFolder || '',
+        cellRenderer: FolderCellRenderer,
+        minWidth: 80,
+        width: 120,
+        filter: 'agTextColumnFilter',
+        sortable: true,
+        resizable: true,
+      },
       // Status
-      columnHelper.accessor('isRead', {
-        id: 'status',
-        header: 'Status',
-        size: 80,
-        filterFn: (row, _columnId, filterValue) => {
-          if (!filterValue) return true;
-          const lower = String(filterValue).toLowerCase();
-          if (lower === 'unread') return !row.original.isRead;
-          if (lower === 'read') return row.original.isRead;
-          return true;
-        },
-        cell: ({ getValue }) =>
-          getValue() ? (
-            <span className="text-xs text-muted-foreground">Read</span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
-              <span className="h-2 w-2 rounded-full bg-blue-600 dark:bg-blue-400" />
-              Unread
-            </span>
-          ),
-      }),
-      // Importance
-      columnHelper.accessor('importance', {
-        id: 'importance',
-        header: 'Priority',
-        size: 80,
-        filterFn: 'includesString',
-        cell: ({ getValue }) => {
-          const v = getValue();
-          if (v === 'high') {
-            return (
-              <span className="text-xs font-medium text-red-600 dark:text-red-400">
-                High
-              </span>
-            );
-          }
-          if (v === 'low') {
-            return (
-              <span className="text-xs text-muted-foreground">Low</span>
-            );
-          }
-          return <span className="text-xs text-muted-foreground">Normal</span>;
-        },
-      }),
-      // Time
-      columnHelper.accessor('timestamp', {
-        id: 'time',
-        header: 'Date/Time',
-        size: 170,
-        enableColumnFilter: false,
-        cell: ({ getValue }) => {
-          const d = new Date(getValue());
-          const mm = String(d.getMonth() + 1).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          const yy = String(d.getFullYear()).slice(-2);
-          let hh = d.getHours();
-          const ampm = hh >= 12 ? 'PM' : 'AM';
-          hh = hh % 12 || 12;
-          const min = String(d.getMinutes()).padStart(2, '0');
-          const ss = String(d.getSeconds()).padStart(2, '0');
-          return (
-            <span className="text-sm text-muted-foreground whitespace-nowrap tabular-nums">
-              {mm}-{dd}-{yy} {hh}:{min}:{ss} {ampm}
-            </span>
-          );
-        },
-      }),
-      // Opens (tracking column, shown only in sent folder)
-      ...(folderFilter === 'sent' && trackingMap ? [columnHelper.display({
-        id: 'opens',
-        size: 80,
-        enableSorting: false,
-        enableColumnFilter: false,
-        header: 'Opens',
-        cell: ({ row }: { row: { original: EventItem } }) => {
-          const event = row.original;
-          const key = `${event.mailboxId}:${event.subject || ''}:${event.timestamp}`;
-          const match = trackingMap[key];
-          if (!match) {
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Mail className="h-4 w-4" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>No tracking data</TooltipContent>
-              </Tooltip>
-            );
-          }
-          if (match.openCount === 0) {
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Mail className="h-4 w-4" />
-                    <span className="text-xs">0</span>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>Not opened yet</TooltipContent>
-              </Tooltip>
-            );
-          }
-          return (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex items-center gap-1 text-green-600 dark:text-green-400 cursor-pointer">
-                  <MailOpen className="h-4 w-4" />
-                  <span className="text-xs font-medium">{match.openCount}</span>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="left" className="p-0">
-                <TrackingTooltip trackingId={match.trackingId} />
-              </TooltipContent>
-            </Tooltip>
-          );
-        },
-      })] : []),
-      // Actions (hidden in deleted folder view)
-      ...(folderFilter !== 'deleted' ? [columnHelper.display({
-        id: 'actions',
-        size: 60,
-        enableSorting: false,
-        enableColumnFilter: false,
-        header: '',
-        cell: ({ row }: { row: { original: EventItem } }) => (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => onAction(row.original)}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Create rule</TooltipContent>
-          </Tooltip>
-        ),
-      })] : []),
-    ],
-    [allSelected, someSelected, selectedIds, onToggleSelectAll, onToggleSelect, onAction, onClearRules, onQuickDelete, onJustDelete, onMarkRead, onQuickMarkRead, onUndelete, folderFilter, isUnifiedMode, mailboxEmailMap, trackingMap],
-  );
+      {
+        colId: 'status',
+        field: 'isRead',
+        headerName: 'Status',
+        cellRenderer: StatusCellRenderer,
+        minWidth: 60,
+        width: 80,
+        sortable: true,
+        resizable: true,
+        filter: 'agTextColumnFilter',
+        filterValueGetter: (p) => (p.data?.isRead ? 'read' : 'unread'),
+      },
+      // Priority
+      {
+        colId: 'importance',
+        field: 'importance',
+        headerName: 'Priority',
+        cellRenderer: ImportanceCellRenderer,
+        minWidth: 60,
+        width: 80,
+        filter: 'agTextColumnFilter',
+        sortable: true,
+        resizable: true,
+      },
+      // Opens (sent folder only — always present so columnDefs stay stable)
+      ...(folderFilter === 'sent'
+        ? [
+            {
+              colId: 'opens',
+              headerName: 'Opens',
+              cellRenderer: OpensCellRenderer,
+              minWidth: 60,
+              width: 80,
+              sortable: false,
+              resizable: true,
+            } as ColDef<EventItem>,
+          ]
+        : []),
+      // Actions column (not in deleted folder)
+      ...(folderFilter !== 'deleted'
+        ? [
+            {
+              colId: 'actions',
+              headerName: '',
+              cellRenderer: ActionsCellRenderer,
+              width: 60,
+              minWidth: 50,
+              maxWidth: 80,
+              sortable: false,
+              resizable: false,
+              suppressMovable: true,
+              pinned: 'right' as const,
+            } as ColDef<EventItem>,
+          ]
+        : []),
+    ];
+    return cols;
+  }, [isUnifiedMode, mailboxEmailMap, folderFilter]);
 
-  const table = useReactTable({
-    data,
-    columns,
-    state: {
-      sorting,
-      columnFilters,
-      columnOrder,
-      columnVisibility,
-    },
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    onColumnOrderChange: setColumnOrder,
-    onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-  });
+  // Row ID getter
+  const getRowId = useCallback((params: GetRowIdParams<EventItem>) => params.data._id, []);
 
-  // DnD sensors for column reordering
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
+  // Row class rules for styling
+  const rowClassRules = useMemo<RowClassRules<EventItem>>(
+    () => ({
+      'group/row': () => true,
+      'bg-muted/30': (params) => !params.data?.isRead,
+      'ag-row-active': (params) => params.data?._id === activeEventId,
+      'ag-row-focused-custom': (params) =>
+        params.data?._id === focusedEventId && params.data?._id !== activeEventId,
     }),
-    useSensor(KeyboardSensor),
+    [activeEventId, focusedEventId],
   );
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
+  // Sync parent selectedIds → AG Grid selection
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
 
-      setColumnOrder((prev) => {
-        const oldIndex = prev.indexOf(String(active.id));
-        const newIndex = prev.indexOf(String(over.id));
-        if (oldIndex === -1 || newIndex === -1) return prev;
-        return arrayMove(prev, oldIndex, newIndex);
-      });
+    suppressSelectionSync.current = true;
+    api.forEachNode((node) => {
+      const shouldSelect = selectedIds.has(node.data?._id || '');
+      if (node.isSelected() !== shouldSelect) {
+        node.setSelected(shouldSelect);
+      }
+    });
+    suppressSelectionSync.current = false;
+  }, [selectedIds, data]);
+
+  // AG Grid selection changed → sync to parent
+  const onSelectionChanged = useCallback(
+    (event: SelectionChangedEvent<EventItem>) => {
+      if (suppressSelectionSync.current) return;
+      const selected = event.api.getSelectedRows();
+      const newIds = new Set(selected.map((e) => e._id));
+
+      // Compute changes
+      for (const id of newIds) {
+        if (!selectedIds.has(id)) onToggleSelect(id);
+      }
+      for (const id of selectedIds) {
+        if (!newIds.has(id)) onToggleSelect(id);
+      }
     },
-    [],
+    [selectedIds, onToggleSelect],
   );
 
-  const activeFilterCount = columnFilters.length;
-  const headerGroups = table.getHeaderGroups();
-  const rows = table.getRowModel().rows;
+  // Row click handler
+  const onRowClicked = useCallback(
+    (params: { data?: EventItem; event?: Event | null }) => {
+      if (!params.data || !onRowClick) return;
+      // Don't trigger row click if user clicked a button/checkbox
+      const target = params.event?.target as HTMLElement | undefined;
+      if (target?.closest('button, [role="checkbox"], .ag-checkbox')) return;
+      onRowClick(params.data);
+    },
+    [onRowClick],
+  );
+
+  // Per-folder storage key
+  const columnStateKey = `${COLUMN_STATE_KEY_PREFIX}-${folderFilter}`;
+
+  // Save column state to localStorage
+  const saveColumnState = useCallback((api: GridApi) => {
+    const state = api.getColumnState();
+    if (state?.length) {
+      localStorage.setItem(columnStateKey, JSON.stringify(state));
+    }
+  }, [columnStateKey]);
+
+  // Restore column state from localStorage
+  const restoreColumnState = useCallback((api: GridApi) => {
+    try {
+      const saved = localStorage.getItem(columnStateKey);
+      if (saved) {
+        const state: ColumnState[] = JSON.parse(saved);
+        api.applyColumnState({ state, applyOrder: true });
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }, [columnStateKey]);
+
+  // Grid ready event
+  const onGridReady = useCallback(
+    (params: GridReadyEvent<EventItem>) => {
+      apiRef.current = params.api;
+      restoreColumnState(params.api);
+    },
+    [restoreColumnState],
+  );
+
+  // Re-apply saved column state when folder changes (columnDefs change)
+  useEffect(() => {
+    const api = apiRef.current;
+    if (api) {
+      // Small delay to let AG Grid process the new columnDefs first
+      const t = setTimeout(() => restoreColumnState(api), 50);
+      return () => clearTimeout(t);
+    }
+  }, [columnStateKey, restoreColumnState]);
+
+  // State updated → save column state
+  const onStateUpdated = useCallback(
+    (params: StateUpdatedEvent<EventItem>) => {
+      // Only save on column-related state changes
+      const sources = params.sources;
+      if (
+        sources.includes('columnOrder') ||
+        sources.includes('columnSizing') ||
+        sources.includes('columnVisibility') ||
+        sources.includes('columnPinning') ||
+        sources.includes('sort')
+      ) {
+        saveColumnState(params.api);
+      }
+    },
+    [saveColumnState],
+  );
 
   // Scroll focused row into view
-  const tableRef = useRef<HTMLTableElement>(null);
   useEffect(() => {
-    if (!focusedEventId || !tableRef.current) return;
-    const row = tableRef.current.querySelector(`[data-focused="true"]`);
-    if (row) {
-      row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const api = apiRef.current;
+    if (!focusedEventId || !api) return;
+    const rowNode = api.getRowNode(focusedEventId);
+    if (rowNode?.rowIndex != null) {
+      api.ensureIndexVisible(rowNode.rowIndex, 'middle');
     }
   }, [focusedEventId]);
 
-  // Columns that can be toggled
-  const toggleableColumns = table
-    .getAllLeafColumns()
-    .filter((col) => col.id !== 'select' && col.id !== 'actions');
+  // Default column settings
+  const defaultColDef = useMemo<ColDef<EventItem>>(
+    () => ({
+      resizable: true,
+      sortable: true,
+      filter: showFilters,
+      floatingFilter: showFilters,
+      suppressHeaderMenuButton: true,
+      wrapHeaderText: false,
+      autoHeaderHeight: false,
+    }),
+    [showFilters],
+  );
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2 h-full min-h-0">
       {/* Toolbar */}
       {!hideToolbar && (
         <div className="flex items-center gap-2">
@@ -680,11 +791,6 @@ export function InboxDataGrid({
           >
             <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
             Filters
-            {activeFilterCount > 0 && (
-              <span className="ml-1.5 rounded-full bg-primary text-primary-foreground px-1.5 text-[10px]">
-                {activeFilterCount}
-              </span>
-            )}
           </Button>
 
           {/* Icon size toggle */}
@@ -702,137 +808,69 @@ export function InboxDataGrid({
             <TooltipContent>{largeIcons ? 'Smaller icons' : 'Larger icons'}</TooltipContent>
           </Tooltip>
 
-          {activeFilterCount > 0 && (
+          {showFilters && (
             <Button
               variant="ghost"
               size="sm"
               className="h-8 text-xs"
-              onClick={() => setColumnFilters([])}
+              onClick={() => {
+                apiRef.current?.setFilterModel(null);
+                setShowFilters(false);
+              }}
             >
               Clear filters
               <X className="ml-1 h-3.5 w-3.5" />
             </Button>
           )}
 
-          {/* Column visibility */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="ml-auto h-8 text-xs">
-                Columns
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-[180px] p-2">
-              <div className="space-y-1">
-                {toggleableColumns.map((column) => (
-                  <label
-                    key={column.id}
-                    className="flex items-center gap-2 px-2 py-1 text-sm rounded hover:bg-muted cursor-pointer"
-                  >
-                    <Checkbox
-                      checked={column.getIsVisible()}
-                      onCheckedChange={(v) => column.toggleVisibility(!!v)}
-                    />
-                    {String(column.columnDef.header || column.id)}
-                  </label>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+          {/* Reset column layout */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto h-8 text-xs"
+            onClick={() => {
+              localStorage.removeItem(columnStateKey);
+              apiRef.current?.resetColumnState();
+            }}
+          >
+            Reset Columns
+          </Button>
         </div>
       )}
 
-      {/* Table */}
-      <div className="rounded-md border overflow-x-auto">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <table ref={tableRef} className="w-full caption-bottom text-sm">
-            <thead className="[&_tr]:border-b">
-              {headerGroups.map((headerGroup) => (
-                <tr key={headerGroup.id} className="border-b transition-colors">
-                  <SortableContext
-                    items={columnOrder}
-                    strategy={horizontalListSortingStrategy}
-                  >
-                    {headerGroup.headers.map((header) => (
-                      <SortableHeaderCell key={header.id} header={header} />
-                    ))}
-                  </SortableContext>
-                </tr>
-              ))}
-
-              {/* Filter row */}
-              {showFilters && (
-                <tr className="border-b bg-muted/30">
-                  {headerGroups[0]?.headers.map((header) => (
-                    <th key={header.id} className="px-3 py-1.5">
-                      {header.column.getCanFilter() ? (
-                        <Input
-                          placeholder={`Filter...`}
-                          value={
-                            (header.column.getFilterValue() as string) ?? ''
-                          }
-                          onChange={(e) =>
-                            header.column.setFilterValue(
-                              e.target.value || undefined,
-                            )
-                          }
-                          className="h-7 text-xs"
-                        />
-                      ) : null}
-                    </th>
-                  ))}
-                </tr>
-              )}
-            </thead>
-
-            <tbody className="[&_tr:last-child]:border-0">
-              {rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={headerGroups[0]?.headers.length ?? 1}
-                    className="h-24 text-center text-muted-foreground"
-                  >
-                    No results match your filters.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    data-state={
-                      selectedIds.has(row.original._id)
-                        ? 'selected'
-                        : undefined
-                    }
-                    data-focused={focusedEventId === row.original._id ? 'true' : undefined}
-                    className={`group/row border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted ${
-                      row.original.isRead ? '' : 'bg-muted/30'
-                    } ${activeEventId === row.original._id ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''} ${focusedEventId === row.original._id && activeEventId !== row.original._id ? 'ring-1 ring-inset ring-dashed ring-primary/30 bg-primary/[0.02]' : ''} ${onRowClick ? 'cursor-pointer' : ''}`}
-                    onClick={() => onRowClick?.(row.original)}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-3 py-2 align-middle">
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </DndContext>
+      {/* AG Grid */}
+      <div className="rounded-md border overflow-hidden flex-1 min-h-[200px]">
+        <AgGridReact<EventItem>
+          ref={gridRef}
+          theme={theme}
+          rowData={data}
+          columnDefs={columnDefs}
+          defaultColDef={defaultColDef}
+          context={gridContext}
+          getRowId={getRowId}
+          rowSelection={{ mode: 'multiRow', headerCheckbox: true, checkboxes: true }}
+          rowClassRules={rowClassRules}
+          onGridReady={onGridReady}
+          onSelectionChanged={onSelectionChanged}
+          onRowClicked={onRowClicked}
+          onStateUpdated={onStateUpdated}
+          suppressRowClickSelection={true}
+          animateRows={false}
+          enableCellTextSelection={true}
+          suppressCellFocus={true}
+          suppressColumnVirtualisation={true}
+          domLayout="normal"
+          headerHeight={38}
+          rowHeight={42}
+          rowDragManaged={true}
+          tooltipShowDelay={300}
+        />
       </div>
 
       {/* Row count */}
       <div className="text-xs text-muted-foreground">
-        {table.getFilteredRowModel().rows.length} of {data.length} rows
-        {activeFilterCount > 0 && ' (filtered)'}
+        {data.length} rows
+        {showFilters && ' (filters enabled)'}
       </div>
     </div>
   );

@@ -15,6 +15,8 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-table": "^8.21.3",
+    "ag-grid-community": "^35.1.0",
+    "ag-grid-react": "^35.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
