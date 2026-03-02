@@ -1184,13 +1184,14 @@ mailboxRouter.post('/:id/forward', async (req: Request, res: Response) => {
  * Body: { to: string[], cc?: string[], bcc?: string[], subject: string, body: string, contentType?: 'Text' | 'HTML' }
  */
 mailboxRouter.post('/:id/send-email', async (req: Request, res: Response) => {
-  const { to, cc, bcc, subject, body, contentType } = req.body as {
+  const { to, cc, bcc, subject, body, contentType, track } = req.body as {
     to?: string[];
     cc?: string[];
     bcc?: string[];
     subject?: string;
     body?: string;
     contentType?: 'Text' | 'HTML';
+    track?: boolean;
   };
 
   if (!to || !Array.isArray(to) || to.length === 0) {
@@ -1226,20 +1227,21 @@ mailboxRouter.post('/:id/send-email', async (req: Request, res: Response) => {
   );
   const draft = (await draftRes.json()) as { id: string; body: { content: string; contentType: string } };
 
-  // Step 2: Inject tracking pixel
-  const { pixelHtml } = await createTrackedEmail({
-    userId: req.user!.userId,
-    mailboxId: req.params.id as string,
-    subject,
-    recipients: [...to, ...(cc || []), ...(bcc || [])],
-  });
-
+  // Step 2: Optionally inject tracking pixel
   let htmlContent = draft.body.content;
   if (draft.body.contentType === 'Text' || (!contentType || contentType === 'Text')) {
     // Wrap plain text in basic HTML
     htmlContent = `<html><body><pre>${htmlContent}</pre></body></html>`;
   }
-  htmlContent = injectTrackingPixel(htmlContent, pixelHtml);
+  if (track !== false) {
+    const { pixelHtml } = await createTrackedEmail({
+      userId: req.user!.userId,
+      mailboxId: req.params.id as string,
+      subject,
+      recipients: [...to, ...(cc || []), ...(bcc || [])],
+    });
+    htmlContent = injectTrackingPixel(htmlContent, pixelHtml);
+  }
 
   await graphFetch(
     `/users/${mailbox.email}/messages/${draft.id}`,

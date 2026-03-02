@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import { SquarePen, ExternalLink, CalendarClock } from 'lucide-react';
+import { SquarePen, ExternalLink, CalendarClock, Eye } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -45,6 +46,7 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
   const [sending, setSending] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleDateTime, setScheduleDateTime] = useState('');
+  const [trackEmail, setTrackEmail] = useState(true);
   const queryClient = useQueryClient();
 
   const resetForm = useCallback(() => {
@@ -57,6 +59,7 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
     setSending(false);
     setShowSchedule(false);
     setScheduleDateTime('');
+    setTrackEmail(true);
   }, []);
 
   const handleClose = useCallback(
@@ -94,6 +97,7 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
         ...(bcc.length > 0 && { bcc }),
         subject: subject.trim(),
         body: body.trim(),
+        track: trackEmail,
       });
 
       toast.success('Email sent');
@@ -263,6 +267,21 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
             />
           </div>
         )}
+
+        <div className="flex items-center gap-2 px-1">
+          <Checkbox
+            id="track-email"
+            checked={trackEmail}
+            onCheckedChange={(v) => setTrackEmail(!!v)}
+          />
+          <label
+            htmlFor="track-email"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Track email opens
+          </label>
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => handleClose(false)} disabled={sending}>

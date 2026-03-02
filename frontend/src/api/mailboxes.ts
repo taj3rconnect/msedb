@@ -294,6 +294,7 @@ export async function sendNewEmail(
     bcc?: string[];
     subject: string;
     body: string;
+    track?: boolean;
   },
 ): Promise<void> {
   await apiFetch(`/mailboxes/${mailboxId}/send-email`, {

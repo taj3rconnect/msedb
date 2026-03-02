@@ -722,8 +722,15 @@ export function InboxDataGrid({
   // Per-folder storage key
   const columnStateKey = `${COLUMN_STATE_KEY_PREFIX}-${folderFilter}`;
 
+  // Suppress saves while a folder transition / restore is in progress.
+  // AG Grid fires onStateUpdated (with columnOrder source) when columnDefs change,
+  // which would overwrite the saved Sent-folder preferences with the default layout
+  // before the 50 ms restore timeout fires.
+  const suppressSaveRef = useRef(false);
+
   // Save column state to localStorage
   const saveColumnState = useCallback((api: GridApi) => {
+    if (suppressSaveRef.current) return;
     const state = api.getColumnState();
     if (state?.length) {
       localStorage.setItem(columnStateKey, JSON.stringify(state));
@@ -737,9 +744,14 @@ export function InboxDataGrid({
       if (saved) {
         const state: ColumnState[] = JSON.parse(saved);
         api.applyColumnState({ state, applyOrder: true });
+        // Keep saves suppressed for one more tick so any post-applyColumnState
+        // stateUpdated events don't overwrite what we just restored.
+        setTimeout(() => { suppressSaveRef.current = false; }, 0);
+      } else {
+        suppressSaveRef.current = false;
       }
     } catch {
-      // Ignore parse errors
+      suppressSaveRef.current = false;
     }
   }, [columnStateKey]);
 
@@ -752,13 +764,19 @@ export function InboxDataGrid({
     [restoreColumnState],
   );
 
-  // Re-apply saved column state when folder changes (columnDefs change)
+  // Re-apply saved column state when folder changes (columnDefs change).
+  // Suppress saves immediately so the stateUpdated event AG Grid fires when
+  // processing the new columnDefs doesn't clobber the stored preferences.
   useEffect(() => {
     const api = apiRef.current;
     if (api) {
+      suppressSaveRef.current = true;
       // Small delay to let AG Grid process the new columnDefs first
       const t = setTimeout(() => restoreColumnState(api), 50);
-      return () => clearTimeout(t);
+      return () => {
+        clearTimeout(t);
+        suppressSaveRef.current = false;
+      };
     }
   }, [columnStateKey, restoreColumnState]);
 
