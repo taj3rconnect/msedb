@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Pattern, type IPattern } from '../models/Pattern.js';
+import { User } from '../models/User.js';
 import logger from '../config/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -14,7 +15,7 @@ export const SUGGESTION_THRESHOLDS: Record<string, number> = {
   markRead: 80,
 };
 
-export const MIN_OBSERVATION_DAYS = 5;
+export const MIN_OBSERVATION_DAYS = 1;
 export const DEFAULT_OBSERVATION_WINDOW = 90;
 
 const RECENCY_WINDOW_DAYS = 7;
@@ -22,6 +23,24 @@ const REJECTION_COOLDOWN_DAYS = 30;
 const MIN_SENDER_EVENTS = 5;
 const MIN_FOLDER_MOVES = 5;
 const MAX_EVIDENCE_ITEMS = 10;
+
+export interface PatternEngineSettings {
+  thresholdDelete: number;
+  thresholdMove: number;
+  thresholdMarkRead: number;
+  observationWindowDays: number;
+  rejectionCooldownDays: number;
+  minSenderEvents: number;
+}
+
+export const DEFAULT_PATTERN_SETTINGS: PatternEngineSettings = {
+  thresholdDelete: 98,
+  thresholdMove: 85,
+  thresholdMarkRead: 80,
+  observationWindowDays: 90,
+  rejectionCooldownDays: 30,
+  minSenderEvents: 5,
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -132,6 +151,7 @@ export function shouldSuggestPattern(
   confidence: number,
   actionType: string,
   firstSeen: Date,
+  thresholds: Record<string, number> = SUGGESTION_THRESHOLDS,
 ): boolean {
   // Check observation period
   const daysSinceFirstSeen = (Date.now() - firstSeen.getTime()) / (1000 * 60 * 60 * 24);
@@ -140,7 +160,7 @@ export function shouldSuggestPattern(
   }
 
   // Check threshold
-  const threshold = SUGGESTION_THRESHOLDS[actionType];
+  const threshold = thresholds[actionType];
   if (threshold === undefined) {
     // Unknown action type -- do not suggest
     return false;
@@ -205,6 +225,7 @@ export async function detectSenderPatterns(
   userId: Types.ObjectId,
   mailboxId: Types.ObjectId,
   observationWindowDays: number = DEFAULT_OBSERVATION_WINDOW,
+  minSenderEvents: number = MIN_SENDER_EVENTS,
 ): Promise<SenderAggregationResult[]> {
   const windowStart = new Date(Date.now() - observationWindowDays * 24 * 60 * 60 * 1000);
 
@@ -238,7 +259,7 @@ export async function detectSenderPatterns(
     },
     {
       $match: {
-        totalEvents: { $gte: MIN_SENDER_EVENTS },
+        totalEvents: { $gte: minSenderEvents },
       },
     },
     {
@@ -494,8 +515,28 @@ export async function analyzeMailboxPatterns(
 ): Promise<{ senderPatterns: number; folderRoutingPatterns: number }> {
   const counters = { senderPatterns: 0, folderRoutingPatterns: 0 };
 
+  // Fetch user's pattern settings (fall back to defaults if not set)
+  const userDoc = await User.findById(userId).select('patternSettings').lean();
+  const settings: PatternEngineSettings = {
+    ...DEFAULT_PATTERN_SETTINGS,
+    ...(userDoc?.patternSettings ?? {}),
+  };
+
+  // Build thresholds map for shouldSuggestPattern
+  const thresholds: Record<string, number> = {
+    delete: settings.thresholdDelete,
+    move: settings.thresholdMove,
+    archive: settings.thresholdMove,  // archive uses same threshold as move
+    markRead: settings.thresholdMarkRead,
+  };
+
   // --- Sender-level detection ---
-  const senderResults = await detectSenderPatterns(userId, mailboxId);
+  const senderResults = await detectSenderPatterns(
+    userId,
+    mailboxId,
+    settings.observationWindowDays,
+    settings.minSenderEvents,
+  );
 
   for (const result of senderResults) {
     const { senderEmail, senderDomain } = result._id;
@@ -536,7 +577,7 @@ export async function analyzeMailboxPatterns(
         recentTotalEvents: recency.recentTotalEvents,
       });
 
-      const suggest = shouldSuggestPattern(confidence, actionType, result.firstSeen);
+      const suggest = shouldSuggestPattern(confidence, actionType, result.firstSeen, thresholds);
 
       // Only persist if confidence is meaningful (> 50% avoids noise)
       if (confidence >= 50) {
@@ -564,7 +605,11 @@ export async function analyzeMailboxPatterns(
   }
 
   // --- Folder routing detection ---
-  const folderResults = await detectFolderRoutingPatterns(userId, mailboxId);
+  const folderResults = await detectFolderRoutingPatterns(
+    userId,
+    mailboxId,
+    settings.observationWindowDays,
+  );
 
   for (const result of folderResults) {
     const { senderEmail, toFolder } = result._id;
@@ -592,7 +637,7 @@ export async function analyzeMailboxPatterns(
       recentTotalEvents: recency.recentTotalEvents,
     });
 
-    const suggest = shouldSuggestPattern(confidence, 'move', result.firstSeen);
+    const suggest = shouldSuggestPattern(confidence, 'move', result.firstSeen, thresholds);
 
     await upsertPattern({
       userId,
