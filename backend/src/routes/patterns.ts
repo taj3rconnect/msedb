@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { requireAuth } from '../auth/middleware.js';
 import { Pattern } from '../models/Pattern.js';
 import { AuditLog } from '../models/AuditLog.js';
+import { User } from '../models/User.js';
 import { queues } from '../jobs/queues.js';
 import { convertPatternToRule } from '../services/ruleConverter.js';
 import logger from '../config/logger.js';
@@ -172,9 +173,13 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
     throw new ConflictError(`Pattern is already ${pattern.status}`);
   }
 
+  // Fetch user's pattern settings for cooldown duration
+  const user = await User.findById(userId).select('patternSettings').lean();
+  const cooldownDays = user?.patternSettings?.rejectionCooldownDays ?? 30;
+
   pattern.status = 'rejected';
   pattern.rejectedAt = new Date();
-  pattern.rejectionCooldownUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  pattern.rejectionCooldownUntil = new Date(Date.now() + cooldownDays * 24 * 60 * 60 * 1000);
   await pattern.save();
 
   await AuditLog.create({
