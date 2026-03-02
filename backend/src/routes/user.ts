@@ -84,4 +84,75 @@ userRouter.patch('/preferences', async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * PATCH /api/user/pattern-settings
+ *
+ * Update pattern engine settings. All fields optional.
+ * Validates ranges: thresholds 50-100, window 7-365, cooldown 3-90, minEvents 2-20.
+ */
+userRouter.patch('/pattern-settings', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const {
+    thresholdDelete,
+    thresholdMove,
+    thresholdMarkRead,
+    observationWindowDays,
+    rejectionCooldownDays,
+    minSenderEvents,
+  } = req.body;
+
+  const updateFields: Record<string, unknown> = {};
+
+  function validateThreshold(value: unknown, name: string): number {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 50 || value > 100) {
+      throw new ValidationError(`${name} must be an integer between 50 and 100`);
+    }
+    return value;
+  }
+
+  if (thresholdDelete !== undefined) {
+    updateFields['patternSettings.thresholdDelete'] = validateThreshold(thresholdDelete, 'thresholdDelete');
+  }
+  if (thresholdMove !== undefined) {
+    updateFields['patternSettings.thresholdMove'] = validateThreshold(thresholdMove, 'thresholdMove');
+  }
+  if (thresholdMarkRead !== undefined) {
+    updateFields['patternSettings.thresholdMarkRead'] = validateThreshold(thresholdMarkRead, 'thresholdMarkRead');
+  }
+  if (observationWindowDays !== undefined) {
+    if (typeof observationWindowDays !== 'number' || !Number.isInteger(observationWindowDays) || observationWindowDays < 7 || observationWindowDays > 365) {
+      throw new ValidationError('observationWindowDays must be an integer between 7 and 365');
+    }
+    updateFields['patternSettings.observationWindowDays'] = observationWindowDays;
+  }
+  if (rejectionCooldownDays !== undefined) {
+    if (typeof rejectionCooldownDays !== 'number' || !Number.isInteger(rejectionCooldownDays) || rejectionCooldownDays < 3 || rejectionCooldownDays > 90) {
+      throw new ValidationError('rejectionCooldownDays must be an integer between 3 and 90');
+    }
+    updateFields['patternSettings.rejectionCooldownDays'] = rejectionCooldownDays;
+  }
+  if (minSenderEvents !== undefined) {
+    if (typeof minSenderEvents !== 'number' || !Number.isInteger(minSenderEvents) || minSenderEvents < 2 || minSenderEvents > 20) {
+      throw new ValidationError('minSenderEvents must be an integer between 2 and 20');
+    }
+    updateFields['patternSettings.minSenderEvents'] = minSenderEvents;
+  }
+
+  if (Object.keys(updateFields).length === 0) {
+    throw new ValidationError('No valid pattern setting fields provided');
+  }
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $set: updateFields },
+    { new: true },
+  );
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  res.json({ patternSettings: user.patternSettings });
+});
+
 export { userRouter };

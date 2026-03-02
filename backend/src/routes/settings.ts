@@ -26,7 +26,7 @@ settingsRouter.get('/', async (req: Request, res: Response) => {
 
   const [user, mailboxes] = await Promise.all([
     User.findById(userId)
-      .select('email displayName preferences createdAt')
+      .select('email displayName preferences patternSettings createdAt')
       .lean(),
     Mailbox.find({ userId })
       .select('email displayName isConnected encryptedTokens.expiresAt lastSyncAt settings createdAt')
