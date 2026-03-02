@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-18)
 Milestone: v1.0 MVP — SHIPPED
 Phase: 8 of 8 (all complete)
 Status: Milestone complete
-Last activity: 2026-02-18 -- v1.0 milestone archived
+Last activity: 2026-03-02 - Completed quick task 1: sent columns fixed
 
 Progress: [██████████████████████] 100%
 
@@ -49,6 +49,12 @@ None.
 ### Blockers/Concerns
 
 - Cloudflare Tunnel not yet configured -- webhook subscriptions will fail until operational
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | sent columns fixed | 2026-03-02 | c9cf674 | [1-sent-columns-fixed](.planning/quick/1-sent-columns-fixed/) |
 
 ## Session Continuity
 
