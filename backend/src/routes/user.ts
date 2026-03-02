@@ -3,8 +3,6 @@ import { requireAuth } from '../auth/middleware.js';
 import { User } from '../models/User.js';
 import { ValidationError, NotFoundError } from '../middleware/errorHandler.js';
 
-const VALID_AGGRESSIVENESS = ['conservative', 'moderate', 'aggressive'] as const;
-
 const userRouter = Router();
 
 // All user routes require authentication
@@ -17,13 +15,11 @@ userRouter.use(requireAuth);
  * - automationPaused (boolean) -- kill switch toggle
  * - workingHoursStart (number 0-23)
  * - workingHoursEnd (number 0-23)
- * - aggressiveness ('conservative' | 'moderate' | 'aggressive')
- *
  * Only provided fields are updated (field-level $set to prevent kill switch overwrite).
  */
 userRouter.patch('/preferences', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const { automationPaused, workingHoursStart, workingHoursEnd, aggressiveness, contactsMailboxId, contactsFolderId } = req.body;
+  const { automationPaused, workingHoursStart, workingHoursEnd, contactsMailboxId, contactsFolderId } = req.body;
 
   const updateFields: Record<string, unknown> = {};
 
@@ -49,15 +45,6 @@ userRouter.patch('/preferences', async (req: Request, res: Response) => {
     updateFields['preferences.workingHoursEnd'] = workingHoursEnd;
   } else if (workingHoursEnd !== undefined) {
     throw new ValidationError('workingHoursEnd must be a number');
-  }
-
-  if (typeof aggressiveness === 'string') {
-    if (!(VALID_AGGRESSIVENESS as readonly string[]).includes(aggressiveness)) {
-      throw new ValidationError('aggressiveness must be "conservative", "moderate", or "aggressive"');
-    }
-    updateFields['preferences.aggressiveness'] = aggressiveness;
-  } else if (aggressiveness !== undefined) {
-    throw new ValidationError('aggressiveness must be a string');
   }
 
   if (typeof contactsMailboxId === 'string') {
@@ -91,7 +78,6 @@ userRouter.patch('/preferences', async (req: Request, res: Response) => {
       automationPaused: user.preferences.automationPaused,
       workingHoursStart: user.preferences.workingHoursStart,
       workingHoursEnd: user.preferences.workingHoursEnd,
-      aggressiveness: user.preferences.aggressiveness,
       contactsMailboxId: user.preferences.contactsMailboxId,
       contactsFolderId: user.preferences.contactsFolderId,
     },

@@ -10,9 +10,17 @@ export interface IUserPreferences {
   automationPaused: boolean;
   workingHoursStart: number;
   workingHoursEnd: number;
-  aggressiveness: 'conservative' | 'moderate' | 'aggressive';
   contactsMailboxId?: string;
   contactsFolderId?: string;
+}
+
+export interface IPatternSettings {
+  thresholdDelete: number;
+  thresholdMove: number;
+  thresholdMarkRead: number;
+  observationWindowDays: number;
+  rejectionCooldownDays: number;
+  minSenderEvents: number;
 }
 
 export interface IEncryptedTokens {
@@ -28,6 +36,7 @@ export interface IUser extends Document {
   role: 'admin' | 'user';
   isActive: boolean;
   preferences: IUserPreferences;
+  patternSettings: IPatternSettings;
   encryptedTokens?: IEncryptedTokens;
   msalCache?: string;
   invitedBy?: Types.ObjectId;
@@ -56,13 +65,16 @@ const userSchema = new Schema<IUser>(
       automationPaused: { type: Boolean, default: false },
       workingHoursStart: { type: Number, default: 9 },
       workingHoursEnd: { type: Number, default: 17 },
-      aggressiveness: {
-        type: String,
-        enum: ['conservative', 'moderate', 'aggressive'],
-        default: 'moderate',
-      },
       contactsMailboxId: { type: String },
       contactsFolderId: { type: String },
+    },
+    patternSettings: {
+      thresholdDelete: { type: Number, default: 98 },
+      thresholdMove: { type: Number, default: 85 },
+      thresholdMarkRead: { type: Number, default: 80 },
+      observationWindowDays: { type: Number, default: 90 },
+      rejectionCooldownDays: { type: Number, default: 30 },
+      minSenderEvents: { type: Number, default: 5 },
     },
     encryptedTokens: {
       accessToken: { type: encryptedTokenSchema },
