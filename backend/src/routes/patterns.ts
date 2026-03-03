@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
 import { requireAuth } from '../auth/middleware.js';
 import { Pattern } from '../models/Pattern.js';
+import { Rule } from '../models/Rule.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { User } from '../models/User.js';
 import { queues } from '../jobs/queues.js';
@@ -72,8 +73,19 @@ patternsRouter.get('/', async (req: Request, res: Response) => {
     Pattern.countDocuments(filter),
   ]);
 
+  // Enrich patterns with hasRule (one extra lookup, keyed on sourcePatternId)
+  const patternIds = patterns.map((p) => p._id);
+  const rulesForPatterns = await Rule.find({ sourcePatternId: { $in: patternIds } })
+    .select('sourcePatternId')
+    .lean();
+  const rulePatternIdSet = new Set(rulesForPatterns.map((r) => r.sourcePatternId!.toString()));
+  const enrichedPatterns = patterns.map((p) => ({
+    ...p,
+    hasRule: rulePatternIdSet.has(p._id.toString()),
+  }));
+
   res.json({
-    patterns,
+    patterns: enrichedPatterns,
     pagination: {
       page,
       limit,
