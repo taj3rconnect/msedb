@@ -533,10 +533,23 @@ export function InboxDataGrid({
         cellClass: 'row-actions-cell',
       },
       // Sender — left-aligned
+      // IMPORTANT: The valueGetter must return a value that is unique per row
+      // (not just per sender). AG Grid uses props.value to decide whether to
+      // re-render a recycled cell renderer component. If two rows from the same
+      // sender share the same props.value, React skips the re-render and
+      // props.data stays stale from the previously-rendered row — causing the
+      // sender name and email address to appear offset by one row.
+      // Including the row _id makes props.value unique per row, guaranteeing
+      // the renderer always sees the correct props.data.
       {
         colId: 'sender',
         headerName: 'Sender',
-        valueGetter: (p) => p.data?.sender?.name || p.data?.sender?.email || '',
+        valueGetter: (p) => {
+          const s = p.data?.sender;
+          // Prefix with _id so this value is unique per row even when multiple
+          // emails share the same sender name or email address.
+          return `${p.data?._id ?? ''}\x00${s?.name ?? ''}\x00${s?.email ?? ''}`;
+        },
         cellRenderer: SenderCellRenderer,
         minWidth: 150,
         width: 280,
