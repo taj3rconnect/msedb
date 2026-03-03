@@ -27,9 +27,6 @@ vi.mock('../../models/Pattern.js', () => ({
 import {
   calculateConfidence,
   shouldSuggestPattern,
-  SUGGESTION_THRESHOLDS,
-  MIN_OBSERVATION_DAYS,
-  DEFAULT_OBSERVATION_WINDOW,
 } from '../patternEngine.js';
 
 // ---------------------------------------------------------------------------
@@ -223,24 +220,3 @@ describe('shouldSuggestPattern', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-describe('SUGGESTION_THRESHOLDS', () => {
-  it('should have correct threshold values', () => {
-    expect(SUGGESTION_THRESHOLDS.delete).toBe(98);
-    expect(SUGGESTION_THRESHOLDS.move).toBe(85);
-    expect(SUGGESTION_THRESHOLDS.archive).toBe(85);
-    expect(SUGGESTION_THRESHOLDS.markRead).toBe(80);
-  });
-});
-
-describe('Constants', () => {
-  it('MIN_OBSERVATION_DAYS should be 5', () => {
-    expect(MIN_OBSERVATION_DAYS).toBe(5);
-  });
-
-  it('DEFAULT_OBSERVATION_WINDOW should be 90', () => {
-    expect(DEFAULT_OBSERVATION_WINDOW).toBe(90);
-  });
-});

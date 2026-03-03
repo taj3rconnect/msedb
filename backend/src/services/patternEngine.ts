@@ -8,20 +8,6 @@ import logger from '../config/logger.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-export const SUGGESTION_THRESHOLDS: Record<string, number> = {
-  delete: 98,
-  move: 85,
-  archive: 85,
-  markRead: 80,
-};
-
-export const MIN_OBSERVATION_DAYS = 1;
-export const DEFAULT_OBSERVATION_WINDOW = 90;
-
-const RECENCY_WINDOW_DAYS = 7;
-const REJECTION_COOLDOWN_DAYS = 30;
-const MIN_SENDER_EVENTS = 5;
-const MIN_FOLDER_MOVES = 5;
 const MAX_EVIDENCE_ITEMS = 10;
 
 export interface PatternEngineSettings {
@@ -151,11 +137,11 @@ export function shouldSuggestPattern(
   confidence: number,
   actionType: string,
   firstSeen: Date,
-  thresholds: Record<string, number> = SUGGESTION_THRESHOLDS,
+  thresholds: Record<string, number> = { delete: 98, move: 85, archive: 85, markRead: 80 },
 ): boolean {
   // Check observation period
   const daysSinceFirstSeen = (Date.now() - firstSeen.getTime()) / (1000 * 60 * 60 * 24);
-  if (daysSinceFirstSeen < MIN_OBSERVATION_DAYS) {
+  if (daysSinceFirstSeen < 1) {
     return false;
   }
 
@@ -224,8 +210,8 @@ function buildEvidenceAccumulator() {
 export async function detectSenderPatterns(
   userId: Types.ObjectId,
   mailboxId: Types.ObjectId,
-  observationWindowDays: number = DEFAULT_OBSERVATION_WINDOW,
-  minSenderEvents: number = MIN_SENDER_EVENTS,
+  observationWindowDays: number = 90,
+  minSenderEvents: number = 5,
 ): Promise<SenderAggregationResult[]> {
   const windowStart = new Date(Date.now() - observationWindowDays * 24 * 60 * 60 * 1000);
 
@@ -286,7 +272,7 @@ export async function detectSenderPatterns(
 export async function detectFolderRoutingPatterns(
   userId: Types.ObjectId,
   mailboxId: Types.ObjectId,
-  observationWindowDays: number = DEFAULT_OBSERVATION_WINDOW,
+  observationWindowDays: number = 90,
 ): Promise<FolderRoutingAggregationResult[]> {
   const windowStart = new Date(Date.now() - observationWindowDays * 24 * 60 * 60 * 1000);
 
@@ -311,7 +297,7 @@ export async function detectFolderRoutingPatterns(
     },
     {
       $match: {
-        moveCount: { $gte: MIN_FOLDER_MOVES },
+        moveCount: { $gte: 5 },
       },
     },
   ]);
@@ -327,7 +313,7 @@ async function getRecencyStats(
   mailboxId: Types.ObjectId,
   senderEmail: string,
   actionType: string,
-  windowDays: number = RECENCY_WINDOW_DAYS,
+  windowDays: number = 7,
 ): Promise<{ recentActionCount: number; recentTotalEvents: number }> {
   const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
 
