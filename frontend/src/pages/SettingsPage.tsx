@@ -2,7 +2,7 @@ import { Settings } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { PreferencesSection } from '@/components/settings/PreferencesSection';
+import { PatternSettingsSection } from '@/components/settings/PatternSettingsSection';
 import { MailboxSection } from '@/components/settings/MailboxSection';
 import { WhitelistSection } from '@/components/settings/WhitelistSection';
 import { DataManagement } from '@/components/settings/DataManagement';
@@ -10,11 +10,8 @@ import { ContactsSection } from '@/components/settings/ContactsSection';
 import { useSettings } from '@/hooks/useSettings';
 
 /**
- * Settings page with 4 tabbed sections:
- * - Preferences: working hours, aggressiveness
- * - Mailboxes: connection status, token health
- * - Whitelists: per-mailbox sender/domain whitelists
- * - Data: export and delete account
+ * Settings page with tabbed sections.
+ * Preferences tab replaced by Patterns tab (working hours + pattern engine config).
  */
 export function SettingsPage() {
   const { data: settings, isLoading, isError } = useSettings();
@@ -35,24 +32,22 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         <p className="text-muted-foreground">Manage your preferences and account</p>
       </div>
 
-      {/* Tabbed Sections */}
-      <Tabs defaultValue="preferences">
+      <Tabs defaultValue="patterns">
         <TabsList>
-          <TabsTrigger value="preferences">Preferences</TabsTrigger>
+          <TabsTrigger value="patterns">Patterns</TabsTrigger>
           <TabsTrigger value="mailboxes">Mailboxes</TabsTrigger>
           <TabsTrigger value="whitelists">Whitelists</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="data">Data</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="preferences">
-          <PreferencesSection settings={settings} />
+        <TabsContent value="patterns">
+          <PatternSettingsSection settings={settings} />
         </TabsContent>
 
         <TabsContent value="mailboxes">
