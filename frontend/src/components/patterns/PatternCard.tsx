@@ -105,6 +105,16 @@ export function PatternCard({
           <Badge variant="outline" className={statusConfig.className}>
             {statusConfig.label}
           </Badge>
+          {pattern.hasRule === true && (
+            <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+              Rule Active
+            </Badge>
+          )}
+          {pattern.status === 'approved' && pattern.hasRule === false && (
+            <Badge variant="outline" className="bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+              No Rule
+            </Badge>
+          )}
         </div>
       </CardHeader>
 
