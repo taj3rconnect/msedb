@@ -6,10 +6,27 @@ export interface UserPreferences {
   automationPaused: boolean;
   workingHoursStart: number;
   workingHoursEnd: number;
-  aggressiveness: 'conservative' | 'moderate' | 'aggressive';
   contactsMailboxId?: string;
   contactsFolderId?: string;
 }
+
+export interface PatternSettings {
+  thresholdDelete: number;
+  thresholdMove: number;
+  thresholdMarkRead: number;
+  observationWindowDays: number;
+  rejectionCooldownDays: number;
+  minSenderEvents: number;
+}
+
+export const DEFAULT_PATTERN_SETTINGS: PatternSettings = {
+  thresholdDelete: 98,
+  thresholdMove: 85,
+  thresholdMarkRead: 80,
+  observationWindowDays: 90,
+  rejectionCooldownDays: 30,
+  minSenderEvents: 5,
+};
 
 export interface MailboxInfo {
   id: string;
@@ -28,6 +45,7 @@ export interface SettingsResponse {
     email: string;
     displayName?: string;
     preferences: UserPreferences;
+    patternSettings: PatternSettings;
     createdAt: string;
   };
   mailboxes: MailboxInfo[];
@@ -51,6 +69,18 @@ export async function updatePreferences(
   return apiFetch<{ preferences: UserPreferences }>('/user/preferences', {
     method: 'PATCH',
     body: JSON.stringify(prefs),
+  });
+}
+
+/**
+ * Update user pattern engine settings (field-level $set).
+ */
+export async function updatePatternSettings(
+  settings: Partial<PatternSettings>,
+): Promise<{ patternSettings: PatternSettings }> {
+  return apiFetch<{ patternSettings: PatternSettings }>('/user/pattern-settings', {
+    method: 'PATCH',
+    body: JSON.stringify(settings),
   });
 }
 
