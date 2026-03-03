@@ -239,17 +239,17 @@ function SenderCellRenderer(props: CustomCellRendererProps<EventItem, string, Gr
   const ctx = props.context!;
 
   return (
-    <div className="min-w-0 h-full flex items-center">
-      <div className="min-w-0">
+    <div className="min-w-0 w-full h-full flex items-center overflow-hidden">
+      <div className="min-w-0 w-full flex flex-col justify-center overflow-hidden">
         <div
-          className="font-medium truncate text-left"
+          className="font-medium truncate text-left leading-tight"
           dangerouslySetInnerHTML={{
             __html: highlightText(event.sender?.name || event.sender?.email || '', ctx.searchQuery),
           }}
         />
         {event.sender?.name && event.sender?.email && (
           <div
-            className="text-xs text-muted-foreground truncate text-left"
+            className="text-xs text-muted-foreground truncate text-left leading-tight"
             dangerouslySetInnerHTML={{
               __html: highlightText(event.sender.email, ctx.searchQuery),
             }}
