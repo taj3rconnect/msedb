@@ -3,11 +3,12 @@ import { toast } from 'sonner';
 import {
   fetchSettings,
   updatePreferences,
+  updatePatternSettings,
   exportData,
   deleteData,
   updateMailboxWhitelist,
 } from '@/api/settings';
-import type { SettingsResponse, UserPreferences } from '@/api/settings';
+import type { SettingsResponse, UserPreferences, PatternSettings } from '@/api/settings';
 
 /**
  * TanStack Query hook for fetching user settings.
@@ -34,6 +35,25 @@ export function useUpdatePreferences() {
     },
     onError: () => {
       toast.error('Failed to save preferences');
+    },
+  });
+}
+
+/**
+ * Mutation hook to update pattern engine settings.
+ * Shows toast on success and invalidates settings query.
+ */
+export function useUpdatePatternSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (settings: Partial<PatternSettings>) => updatePatternSettings(settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      toast.success('Pattern settings saved');
+    },
+    onError: () => {
+      toast.error('Failed to save pattern settings');
     },
   });
 }
