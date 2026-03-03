@@ -30,7 +30,7 @@ const VALID_ACTION_TYPES = ['delete', 'move', 'archive', 'markRead', 'flag', 'ca
  */
 patternsRouter.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const { mailboxId, status } = req.query;
+  const { mailboxId, status, hasRule } = req.query;
 
   // Pagination
   let page = 1;
@@ -60,6 +60,22 @@ patternsRouter.get('/', async (req: Request, res: Response) => {
       filter.status = statuses[0];
     } else if (statuses.length > 1) {
       filter.status = { $in: statuses };
+    }
+  }
+
+  // If hasRule filter is specified, pre-lookup pattern IDs from the Rules collection
+  // so pagination reflects the correct filtered total
+  if (hasRule === 'true' || hasRule === 'false') {
+    const ruleFilter: Record<string, unknown> = { userId };
+    if (mailboxId && typeof mailboxId === 'string') ruleFilter.mailboxId = mailboxId;
+    const rulesAll = await Rule.find(ruleFilter).select('sourcePatternId').lean();
+    const rulePatternIds = rulesAll
+      .map((r) => r.sourcePatternId?.toString())
+      .filter(Boolean) as string[];
+    if (hasRule === 'true') {
+      filter._id = { $in: rulePatternIds };
+    } else {
+      filter._id = { $nin: rulePatternIds };
     }
   }
 

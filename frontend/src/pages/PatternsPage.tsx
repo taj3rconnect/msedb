@@ -35,11 +35,12 @@ export function PatternsPage() {
   // Customize dialog state
   const [customizeTarget, setCustomizeTarget] = useState<Pattern | null>(null);
 
-  // Build status query param
+  // Build query params — status and hasRule are server-side; patternType is client-side
   const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
+  const hasRuleParam = ruleFilter === 'has-rule' ? true : ruleFilter === 'no-rule' ? false : undefined;
 
   // Data hook
-  const { data, isLoading, isError } = usePatterns(selectedMailboxId, statusParam);
+  const { data, isLoading, isError } = usePatterns(selectedMailboxId, statusParam, hasRuleParam);
 
   // Mutation hooks
   const approveMutation = useApprovePattern();
@@ -47,13 +48,9 @@ export function PatternsPage() {
   const customizeMutation = useCustomizePattern();
   const triggerMutation = useTriggerAnalysis();
 
-  // Filter by pattern type and rule status client-side (API doesn't support these filters)
+  // Filter by pattern type client-side (API doesn't support patternType filter)
   const filteredPatterns = data?.patterns.filter(
-    (p) =>
-      (typeFilter === 'all' || p.patternType === typeFilter) &&
-      (ruleFilter === 'all' ||
-        (ruleFilter === 'has-rule' && p.hasRule) ||
-        (ruleFilter === 'no-rule' && !p.hasRule)),
+    (p) => typeFilter === 'all' || p.patternType === typeFilter,
   ) ?? [];
 
   // Pagination

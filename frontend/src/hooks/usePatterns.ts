@@ -11,13 +11,14 @@ import type { PatternsResponse, PatternSuggestedAction } from '@/api/patterns';
 /**
  * TanStack Query hook for fetching patterns with optional filters.
  */
-export function usePatterns(mailboxId?: string | null, status?: string) {
+export function usePatterns(mailboxId?: string | null, status?: string, hasRule?: boolean) {
   return useQuery<PatternsResponse>({
-    queryKey: ['patterns', mailboxId ?? null, status ?? null],
+    queryKey: ['patterns', mailboxId ?? null, status ?? null, hasRule ?? null],
     queryFn: () =>
       fetchPatterns({
         mailboxId: mailboxId ?? undefined,
         status: status ?? undefined,
+        hasRule,
       }),
   });
 }
