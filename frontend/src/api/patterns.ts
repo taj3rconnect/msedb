@@ -39,6 +39,7 @@ export interface Pattern {
   lastAnalyzedAt?: string;
   createdAt: string;
   updatedAt: string;
+  hasRule?: boolean;
 }
 
 export interface PatternsResponse {
