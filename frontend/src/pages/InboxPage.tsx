@@ -31,6 +31,7 @@ import {
   FileText,
   SquarePen,
   Brain,
+  Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
@@ -53,6 +54,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Tooltip,
   TooltipContent,
@@ -2082,6 +2084,7 @@ function EmailPreviewPane({
   const [replyBCC, setReplyBCC] = useState<string[]>([]);
   const [showCC, setShowCC] = useState(false);
   const [showBCC, setShowBCC] = useState(false);
+  const [trackReply, setTrackReply] = useState(true);
 
   // Reset compose mode when switching emails
   useEffect(() => {
@@ -2092,11 +2095,12 @@ function EmailPreviewPane({
     setReplyBCC([]);
     setShowCC(false);
     setShowBCC(false);
+    setTrackReply(true);
   }, [event._id]);
 
   // Reply mutation
   const replyMutation = useMutation({
-    mutationFn: () => replyToMessage(mailboxId, event.messageId, composeBody, replyCC, replyBCC),
+    mutationFn: () => replyToMessage(mailboxId, event.messageId, composeBody, replyCC, replyBCC, trackReply),
     onSuccess: () => {
       toast.success('Reply sent');
       setComposeMode(null);
@@ -2113,7 +2117,7 @@ function EmailPreviewPane({
 
   // Reply All mutation
   const replyAllMutation = useMutation({
-    mutationFn: () => replyAllToMessage(mailboxId, event.messageId, composeBody, replyCC, replyBCC),
+    mutationFn: () => replyAllToMessage(mailboxId, event.messageId, composeBody, replyCC, replyBCC, trackReply),
     onSuccess: () => {
       toast.success('Reply-all sent');
       setComposeMode(null);
@@ -2480,6 +2484,23 @@ function EmailPreviewPane({
               rows={4}
               className="text-sm resize-none"
             />
+
+            {(composeMode === 'reply' || composeMode === 'replyAll') && (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="track-reply"
+                  checked={trackReply}
+                  onCheckedChange={(v) => setTrackReply(!!v)}
+                />
+                <label
+                  htmlFor="track-reply"
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none"
+                >
+                  <Eye className="h-3 w-3" />
+                  Track email opens
+                </label>
+              </div>
+            )}
 
             <div className="flex gap-2">
               <Button

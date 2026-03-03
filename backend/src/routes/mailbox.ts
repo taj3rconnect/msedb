@@ -940,11 +940,12 @@ mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response
  * Body: { messageId, body, contentType? }
  */
 mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
-  const { messageId, body, cc, bcc } = req.body as {
+  const { messageId, body, cc, bcc, track = true } = req.body as {
     messageId?: string;
     body?: string;
     cc?: string[];
     bcc?: string[];
+    track?: boolean;
   };
 
   if (!messageId) throw new ValidationError('messageId is required');
@@ -969,19 +970,21 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
   // Step 2: Prepend user's reply as Outlook-formatted HTML into the draft body
   let updatedContent = prependReplyHtml(draft.body.content, body.trim());
 
-  // Inject tracking pixel
-  const replyDraft = (await graphFetch(
-    `/users/${mailbox.email}/messages/${draft.id}?$select=subject,toRecipients`,
-    accessToken,
-  ).then((r) => r.json())) as { subject?: string; toRecipients?: { emailAddress: { address?: string } }[] };
+  // Inject tracking pixel (only if tracking is enabled)
+  if (track) {
+    const replyDraft = (await graphFetch(
+      `/users/${mailbox.email}/messages/${draft.id}?$select=subject,toRecipients`,
+      accessToken,
+    ).then((r) => r.json())) as { subject?: string; toRecipients?: { emailAddress: { address?: string } }[] };
 
-  const { pixelHtml: replyPixel } = await createTrackedEmail({
-    userId: req.user!.userId,
-    mailboxId: req.params.id as string,
-    subject: replyDraft.subject,
-    recipients: replyDraft.toRecipients?.map((r) => r.emailAddress.address || '').filter(Boolean) || [],
-  });
-  updatedContent = injectTrackingPixel(updatedContent, replyPixel);
+    const { pixelHtml: replyPixel } = await createTrackedEmail({
+      userId: req.user!.userId,
+      mailboxId: req.params.id as string,
+      subject: replyDraft.subject,
+      recipients: replyDraft.toRecipients?.map((r) => r.emailAddress.address || '').filter(Boolean) || [],
+    });
+    updatedContent = injectTrackingPixel(updatedContent, replyPixel);
+  }
 
   const replyPatch: Record<string, unknown> = {
     body: { contentType: 'HTML', content: updatedContent },
@@ -1019,11 +1022,12 @@ mailboxRouter.post('/:id/reply', async (req: Request, res: Response) => {
  * Body: { messageId, body, contentType? }
  */
 mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
-  const { messageId, body, cc, bcc } = req.body as {
+  const { messageId, body, cc, bcc, track = true } = req.body as {
     messageId?: string;
     body?: string;
     cc?: string[];
     bcc?: string[];
+    track?: boolean;
   };
 
   if (!messageId) throw new ValidationError('messageId is required');
@@ -1048,24 +1052,26 @@ mailboxRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
   // Step 2: Prepend user's reply as Outlook-formatted HTML
   let updatedContentAll = prependReplyHtml(draft.body.content, body.trim());
 
-  // Inject tracking pixel
-  const replyAllDraft = (await graphFetch(
-    `/users/${mailbox.email}/messages/${draft.id}?$select=subject,toRecipients,ccRecipients`,
-    accessToken,
-  ).then((r) => r.json())) as { subject?: string; toRecipients?: { emailAddress: { address?: string } }[]; ccRecipients?: { emailAddress: { address?: string } }[] };
+  // Inject tracking pixel (only if tracking is enabled)
+  if (track) {
+    const replyAllDraft = (await graphFetch(
+      `/users/${mailbox.email}/messages/${draft.id}?$select=subject,toRecipients,ccRecipients`,
+      accessToken,
+    ).then((r) => r.json())) as { subject?: string; toRecipients?: { emailAddress: { address?: string } }[]; ccRecipients?: { emailAddress: { address?: string } }[] };
 
-  const allRecips = [
-    ...(replyAllDraft.toRecipients || []),
-    ...(replyAllDraft.ccRecipients || []),
-  ].map((r) => r.emailAddress.address || '').filter(Boolean);
+    const allRecips = [
+      ...(replyAllDraft.toRecipients || []),
+      ...(replyAllDraft.ccRecipients || []),
+    ].map((r) => r.emailAddress.address || '').filter(Boolean);
 
-  const { pixelHtml: replyAllPixel } = await createTrackedEmail({
-    userId: req.user!.userId,
-    mailboxId: req.params.id as string,
-    subject: replyAllDraft.subject,
-    recipients: allRecips,
-  });
-  updatedContentAll = injectTrackingPixel(updatedContentAll, replyAllPixel);
+    const { pixelHtml: replyAllPixel } = await createTrackedEmail({
+      userId: req.user!.userId,
+      mailboxId: req.params.id as string,
+      subject: replyAllDraft.subject,
+      recipients: allRecips,
+    });
+    updatedContentAll = injectTrackingPixel(updatedContentAll, replyAllPixel);
+  }
 
   const replyAllPatch: Record<string, unknown> = {
     body: { contentType: 'HTML', content: updatedContentAll },
