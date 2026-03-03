@@ -29,6 +29,7 @@ export function PatternsPage() {
   // Filter state
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [ruleFilter, setRuleFilter] = useState('all');
   const [page, setPage] = useState(1);
 
   // Customize dialog state
@@ -46,9 +47,13 @@ export function PatternsPage() {
   const customizeMutation = useCustomizePattern();
   const triggerMutation = useTriggerAnalysis();
 
-  // Filter by pattern type client-side (API doesn't support patternType filter)
+  // Filter by pattern type and rule status client-side (API doesn't support these filters)
   const filteredPatterns = data?.patterns.filter(
-    (p) => typeFilter === 'all' || p.patternType === typeFilter,
+    (p) =>
+      (typeFilter === 'all' || p.patternType === typeFilter) &&
+      (ruleFilter === 'all' ||
+        (ruleFilter === 'has-rule' && p.hasRule) ||
+        (ruleFilter === 'no-rule' && !p.hasRule)),
   ) ?? [];
 
   // Pagination
@@ -62,6 +67,11 @@ export function PatternsPage() {
 
   const handleTypeChange = useCallback((value: string) => {
     setTypeFilter(value);
+    setPage(1);
+  }, []);
+
+  const handleRuleFilterChange = useCallback((value: string) => {
+    setRuleFilter(value);
     setPage(1);
   }, []);
 
@@ -119,8 +129,10 @@ export function PatternsPage() {
       <PatternFilters
         status={statusFilter}
         patternType={typeFilter}
+        ruleFilter={ruleFilter}
         onStatusChange={handleStatusChange}
         onPatternTypeChange={handleTypeChange}
+        onRuleFilterChange={handleRuleFilterChange}
       />
 
       {/* Content */}
@@ -141,7 +153,7 @@ export function PatternsPage() {
           icon={Brain}
           title="No patterns found"
           description={
-            statusFilter !== 'all' || typeFilter !== 'all'
+            statusFilter !== 'all' || typeFilter !== 'all' || ruleFilter !== 'all'
               ? 'Try adjusting your filters to see more patterns.'
               : 'The system needs more observation time to detect email patterns. Try running an analysis.'
           }
