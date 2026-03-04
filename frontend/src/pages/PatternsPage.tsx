@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AlertCircle, Brain, Sparkles } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -30,17 +30,25 @@ export function PatternsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [ruleFilter, setRuleFilter] = useState('all');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchDebounced, setSearchDebounced] = useState('');
   const [page, setPage] = useState(1);
+
+  // Debounce search input by 400ms
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(searchInput.trim()), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   // Customize dialog state
   const [customizeTarget, setCustomizeTarget] = useState<Pattern | null>(null);
 
-  // Build query params — status and hasRule are server-side; patternType is client-side
+  // Build query params — status, hasRule, search are server-side; patternType is client-side
   const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
   const hasRuleParam = ruleFilter === 'has-rule' ? true : ruleFilter === 'no-rule' ? false : undefined;
 
   // Data hook
-  const { data, isLoading, isError } = usePatterns(selectedMailboxId, statusParam, hasRuleParam);
+  const { data, isLoading, isError } = usePatterns(selectedMailboxId, statusParam, hasRuleParam, searchDebounced || undefined, page);
 
   // Mutation hooks
   const approveMutation = useApprovePattern();
@@ -69,6 +77,11 @@ export function PatternsPage() {
 
   const handleRuleFilterChange = useCallback((value: string) => {
     setRuleFilter(value);
+    setPage(1);
+  }, []);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInput(value);
     setPage(1);
   }, []);
 
@@ -122,15 +135,25 @@ export function PatternsPage() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <PatternFilters
-        status={statusFilter}
-        patternType={typeFilter}
-        ruleFilter={ruleFilter}
-        onStatusChange={handleStatusChange}
-        onPatternTypeChange={handleTypeChange}
-        onRuleFilterChange={handleRuleFilterChange}
-      />
+      {/* Filters + count */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PatternFilters
+          status={statusFilter}
+          patternType={typeFilter}
+          ruleFilter={ruleFilter}
+          search={searchInput}
+          onStatusChange={handleStatusChange}
+          onPatternTypeChange={handleTypeChange}
+          onRuleFilterChange={handleRuleFilterChange}
+          onSearchChange={handleSearchChange}
+        />
+        {data && (
+          <span className="text-sm text-muted-foreground shrink-0">
+            {data.pagination.total.toLocaleString()} pattern{data.pagination.total !== 1 ? 's' : ''}
+            {(statusFilter !== 'all' || typeFilter !== 'all' || ruleFilter !== 'all' || searchDebounced) && ' matching filters'}
+          </span>
+        )}
+      </div>
 
       {/* Content */}
       {isLoading ? (
@@ -150,8 +173,8 @@ export function PatternsPage() {
           icon={Brain}
           title="No patterns found"
           description={
-            statusFilter !== 'all' || typeFilter !== 'all' || ruleFilter !== 'all'
-              ? 'Try adjusting your filters to see more patterns.'
+            statusFilter !== 'all' || typeFilter !== 'all' || ruleFilter !== 'all' || searchDebounced
+              ? 'Try adjusting your filters or search to see more patterns.'
               : 'The system needs more observation time to detect email patterns. Try running an analysis.'
           }
         />

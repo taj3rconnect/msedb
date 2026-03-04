@@ -42,7 +42,7 @@ import { useUiStore } from '@/stores/uiStore';
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 // --- AG Grid Theme ---
-const COLUMN_STATE_KEY_PREFIX = 'inbox-ag-grid-column-state';
+const COLUMN_STATE_KEY_PREFIX = 'inbox-ag-grid-column-state-v2';
 
 // Light theme customized for the app
 const gridThemeLight = themeQuartz.withParams({
@@ -741,10 +741,10 @@ export function InboxDataGrid({
   // before the 50 ms restore timeout fires.
   const suppressSaveRef = useRef(false);
 
-  // Save column state to localStorage
+  // Save column state to localStorage (exclude AG Grid's internal selection column)
   const saveColumnState = useCallback((api: GridApi) => {
     if (suppressSaveRef.current) return;
-    const state = api.getColumnState();
+    const state = api.getColumnState().filter((c) => c.colId !== 'ag-Grid-SelectionColumn');
     if (state?.length) {
       localStorage.setItem(columnStateKey, JSON.stringify(state));
     }
@@ -755,7 +755,9 @@ export function InboxDataGrid({
     try {
       const saved = localStorage.getItem(columnStateKey);
       if (saved) {
-        const state: ColumnState[] = JSON.parse(saved);
+        const state: ColumnState[] = (JSON.parse(saved) as ColumnState[]).filter(
+          (c) => c.colId !== 'ag-Grid-SelectionColumn',
+        );
         api.applyColumnState({ state, applyOrder: true });
         // Keep saves suppressed for one more tick so any post-applyColumnState
         // stateUpdated events don't overwrite what we just restored.

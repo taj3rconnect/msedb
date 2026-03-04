@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router';
 import { AlertCircle, Search, Shield, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -41,8 +42,10 @@ export function RulesPage() {
   const firstConnected = mailboxes.find((m) => m.isConnected);
   const selectedMailboxId = globalMailboxId ?? firstConnected?.id ?? null;
   const [page, setPage] = useState(1);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get('search') ?? '';
+  const [searchInput, setSearchInput] = useState(initialSearch);
+  const [search, setSearch] = useState(initialSearch);
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
 

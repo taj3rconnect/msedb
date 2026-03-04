@@ -40,6 +40,7 @@ export interface Pattern {
   createdAt: string;
   updatedAt: string;
   hasRule?: boolean;
+  ruleId?: string | null;
 }
 
 export interface PatternsResponse {
@@ -61,6 +62,7 @@ export async function fetchPatterns(params?: {
   mailboxId?: string;
   status?: string;
   hasRule?: boolean;
+  search?: string;
   page?: number;
   limit?: number;
 }): Promise<PatternsResponse> {
@@ -68,6 +70,7 @@ export async function fetchPatterns(params?: {
   if (params?.mailboxId) searchParams.set('mailboxId', params.mailboxId);
   if (params?.status) searchParams.set('status', params.status);
   if (params?.hasRule !== undefined) searchParams.set('hasRule', String(params.hasRule));
+  if (params?.search) searchParams.set('search', params.search);
   if (params?.page) searchParams.set('page', String(params.page));
   if (params?.limit) searchParams.set('limit', String(params.limit));
   const qs = searchParams.toString();

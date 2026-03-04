@@ -1,3 +1,5 @@
+import { Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -10,21 +12,36 @@ interface PatternFiltersProps {
   status: string;
   patternType: string;
   ruleFilter: string;
+  search: string;
   onStatusChange: (status: string) => void;
   onPatternTypeChange: (type: string) => void;
   onRuleFilterChange: (value: string) => void;
+  onSearchChange: (value: string) => void;
 }
 
 export function PatternFilters({
   status,
   patternType,
   ruleFilter,
+  search,
   onStatusChange,
   onPatternTypeChange,
   onRuleFilterChange,
+  onSearchChange,
 }: PatternFiltersProps) {
   return (
     <div className="flex flex-wrap items-center gap-3">
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+        <Input
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search sender, domain, subject..."
+          className="pl-8 w-[260px] h-9 text-sm"
+        />
+      </div>
+
       <Select value={status} onValueChange={onStatusChange}>
         <SelectTrigger className="w-[160px]">
           <SelectValue placeholder="All Statuses" />

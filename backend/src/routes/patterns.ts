@@ -30,7 +30,7 @@ const VALID_ACTION_TYPES = ['delete', 'move', 'archive', 'markRead', 'flag', 'ca
  */
 patternsRouter.get('/', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const { mailboxId, status, hasRule } = req.query;
+  const { mailboxId, status, hasRule, search } = req.query;
 
   // Pagination
   let page = 1;
@@ -49,35 +49,69 @@ patternsRouter.get('/', async (req: Request, res: Response) => {
     }
   }
 
-  // Build filter
-  const filter: Record<string, unknown> = { userId };
+  // Build filter using $and to safely combine multiple $or clauses
+  const filterClauses: Record<string, unknown>[] = [{ userId }];
   if (mailboxId && typeof mailboxId === 'string') {
-    filter.mailboxId = mailboxId;
+    filterClauses.push({ mailboxId });
   }
   if (status && typeof status === 'string') {
     const statuses = status.split(',').map((s) => s.trim()).filter(Boolean);
     if (statuses.length === 1) {
-      filter.status = statuses[0];
+      filterClauses.push({ status: statuses[0] });
     } else if (statuses.length > 1) {
-      filter.status = { $in: statuses };
+      filterClauses.push({ status: { $in: statuses } });
     }
   }
 
-  // If hasRule filter is specified, pre-lookup pattern IDs from the Rules collection
-  // so pagination reflects the correct filtered total
+  // Search filter: case-insensitive match on sender email, domain, or subject pattern
+  if (search && typeof search === 'string' && search.trim()) {
+    const searchRegex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filterClauses.push({
+      $or: [
+        { 'condition.senderEmail': searchRegex },
+        { 'condition.senderDomain': searchRegex },
+        { 'condition.subjectPattern': searchRegex },
+      ],
+    });
+  }
+
+  // If hasRule filter is specified, pre-lookup rules by sourcePatternId OR sender email/domain
+  // so pagination reflects the correct filtered total. Rules created via quick actions (Ban/Delete,
+  // MarkRead) don't have sourcePatternId but match on conditions.senderEmail/senderDomain.
   if (hasRule === 'true' || hasRule === 'false') {
-    const ruleFilter: Record<string, unknown> = { userId };
-    if (mailboxId && typeof mailboxId === 'string') ruleFilter.mailboxId = mailboxId;
-    const rulesAll = await Rule.find(ruleFilter).select('sourcePatternId').lean();
-    const rulePatternIds = rulesAll
-      .map((r) => r.sourcePatternId?.toString())
+    const ruleQuery: Record<string, unknown> = { userId };
+    if (mailboxId && typeof mailboxId === 'string') ruleQuery.mailboxId = mailboxId;
+    const rulesAll = await Rule.find(ruleQuery)
+      .select('sourcePatternId conditions.senderEmail conditions.senderDomain')
+      .lean();
+
+    const rulePatternIds = rulesAll.map((r) => r.sourcePatternId?.toString()).filter(Boolean) as string[];
+    const ruleSenderEmails = rulesAll
+      .flatMap((r) =>
+        Array.isArray(r.conditions?.senderEmail)
+          ? r.conditions.senderEmail
+          : r.conditions?.senderEmail
+            ? [r.conditions.senderEmail]
+            : [],
+      )
       .filter(Boolean) as string[];
+    const ruleSenderDomains = rulesAll
+      .map((r) => r.conditions?.senderDomain)
+      .filter(Boolean) as string[];
+
+    const matchClauses: Record<string, unknown>[] = [];
+    if (rulePatternIds.length) matchClauses.push({ _id: { $in: rulePatternIds.map((id) => new Types.ObjectId(id)) } });
+    if (ruleSenderEmails.length) matchClauses.push({ 'condition.senderEmail': { $in: ruleSenderEmails } });
+    if (ruleSenderDomains.length) matchClauses.push({ 'condition.senderDomain': { $in: ruleSenderDomains } });
+
     if (hasRule === 'true') {
-      filter._id = { $in: rulePatternIds };
+      filterClauses.push(matchClauses.length ? { $or: matchClauses } : { _id: { $in: [] } });
     } else {
-      filter._id = { $nin: rulePatternIds };
+      if (matchClauses.length) filterClauses.push({ $nor: matchClauses });
     }
   }
+
+  const filter = filterClauses.length === 1 ? filterClauses[0] : { $and: filterClauses };
 
   // Parallel query + count
   const [patterns, total] = await Promise.all([
@@ -89,16 +123,53 @@ patternsRouter.get('/', async (req: Request, res: Response) => {
     Pattern.countDocuments(filter),
   ]);
 
-  // Enrich patterns with hasRule (one extra lookup, keyed on sourcePatternId)
+  // Enrich patterns with hasRule — match by sourcePatternId OR sender email/domain
   const patternIds = patterns.map((p) => p._id);
-  const rulesForPatterns = await Rule.find({ sourcePatternId: { $in: patternIds } })
-    .select('sourcePatternId')
+  const patternSenderEmails = patterns.map((p) => p.condition?.senderEmail).filter(Boolean) as string[];
+  const patternSenderDomains = patterns.map((p) => p.condition?.senderDomain).filter(Boolean) as string[];
+
+  const enrichOrClauses: Record<string, unknown>[] = [{ sourcePatternId: { $in: patternIds } }];
+  if (patternSenderEmails.length) enrichOrClauses.push({ 'conditions.senderEmail': { $in: patternSenderEmails } });
+  if (patternSenderDomains.length) enrichOrClauses.push({ 'conditions.senderDomain': { $in: patternSenderDomains } });
+
+  const rulesForPatterns = await Rule.find({ userId, $or: enrichOrClauses })
+    .select('_id sourcePatternId conditions.senderEmail conditions.senderDomain')
     .lean();
-  const rulePatternIdSet = new Set(rulesForPatterns.map((r) => r.sourcePatternId!.toString()));
-  const enrichedPatterns = patterns.map((p) => ({
-    ...p,
-    hasRule: rulePatternIdSet.has(p._id.toString()),
-  }));
+
+  // Build lookup maps: patternId/email/domain → first matching ruleId
+  const ruleByPatternId = new Map<string, string>();
+  const ruleBySenderEmail = new Map<string, string>();
+  const ruleBySenderDomain = new Map<string, string>();
+
+  for (const r of rulesForPatterns) {
+    const rid = r._id.toString();
+    if (r.sourcePatternId) {
+      const pid = r.sourcePatternId.toString();
+      if (!ruleByPatternId.has(pid)) ruleByPatternId.set(pid, rid);
+    }
+    const emails = Array.isArray(r.conditions?.senderEmail)
+      ? r.conditions.senderEmail
+      : r.conditions?.senderEmail ? [r.conditions.senderEmail] : [];
+    for (const e of emails) {
+      const key = e.toLowerCase();
+      if (!ruleBySenderEmail.has(key)) ruleBySenderEmail.set(key, rid);
+    }
+    if (r.conditions?.senderDomain) {
+      const key = r.conditions.senderDomain.toLowerCase();
+      if (!ruleBySenderDomain.has(key)) ruleBySenderDomain.set(key, rid);
+    }
+  }
+
+  const enrichedPatterns = patterns.map((p) => {
+    const pid = p._id.toString();
+    const emailKey = p.condition?.senderEmail?.toLowerCase();
+    const domainKey = p.condition?.senderDomain?.toLowerCase();
+    const ruleId =
+      ruleByPatternId.get(pid) ??
+      (emailKey ? ruleBySenderEmail.get(emailKey) : undefined) ??
+      (domainKey ? ruleBySenderDomain.get(domainKey) : undefined);
+    return { ...p, hasRule: !!ruleId, ruleId: ruleId ?? null };
+  });
 
   res.json({
     patterns: enrichedPatterns,
@@ -201,6 +272,25 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
     throw new ConflictError(`Pattern is already ${pattern.status}`);
   }
 
+  // Delete any rules associated with this pattern (by sourcePatternId or sender email/domain)
+  const ruleDeleteClauses: Record<string, unknown>[] = [
+    { sourcePatternId: pattern._id },
+  ];
+  if (pattern.condition?.senderEmail) {
+    ruleDeleteClauses.push({ 'conditions.senderEmail': pattern.condition.senderEmail });
+  }
+  if (pattern.condition?.senderDomain) {
+    ruleDeleteClauses.push({ 'conditions.senderDomain': pattern.condition.senderDomain });
+  }
+  const deleteResult = await Rule.deleteMany({ userId, $or: ruleDeleteClauses });
+  if (deleteResult.deletedCount > 0) {
+    logger.info('Deleted rules on pattern rejection', {
+      patternId: pattern._id,
+      deletedCount: deleteResult.deletedCount,
+      userId,
+    });
+  }
+
   // Fetch user's pattern settings for cooldown duration
   const user = await User.findById(userId).select('patternSettings').lean();
   const cooldownDays = user?.patternSettings?.rejectionCooldownDays ?? 30;
@@ -221,6 +311,7 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
       confidence: pattern.confidence,
       condition: pattern.condition,
       suggestedAction: pattern.suggestedAction,
+      rulesDeleted: deleteResult.deletedCount,
     },
   });
 

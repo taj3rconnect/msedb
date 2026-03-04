@@ -142,3 +142,21 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, hsl(var(--primary)) 30%, transparent);
   background-color: color-mix(in srgb, hsl(var(--primary)) 2%, transparent) !important;
 }
+
+/* AG Grid: make selection checkboxes clearly visible */
+.ag-checkbox-input-wrapper {
+  border: 1.5px solid #94a3b8 !important;
+  border-radius: 3px !important;
+  background-color: transparent !important;
+}
+.ag-checkbox-input-wrapper.ag-checked {
+  background-color: hsl(var(--primary)) !important;
+  border-color: hsl(var(--primary)) !important;
+}
+.ag-checkbox-input-wrapper.ag-indeterminate {
+  background-color: hsl(var(--primary)) !important;
+  border-color: hsl(var(--primary)) !important;
+}
+.dark .ag-checkbox-input-wrapper {
+  border-color: #64748b !important;
+}

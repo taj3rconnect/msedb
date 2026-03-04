@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Check, X, Settings2, ChevronDown, ChevronUp } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { Check, X, Settings2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -81,6 +82,7 @@ export function PatternCard({
   condensed = false,
 }: PatternCardProps) {
   const [showEvidence, setShowEvidence] = useState(false);
+  const navigate = useNavigate();
 
   const typeConfig = PATTERN_TYPE_CONFIG[pattern.patternType];
   const statusConfig = STATUS_CONFIG[pattern.status];
@@ -106,9 +108,17 @@ export function PatternCard({
             {statusConfig.label}
           </Badge>
           {pattern.hasRule === true && (
-            <Badge variant="outline" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+            <button
+              type="button"
+              onClick={() => {
+                const email = pattern.condition.senderEmail ?? pattern.condition.senderDomain ?? '';
+                navigate(`/rules${email ? `?search=${encodeURIComponent(email)}` : ''}`);
+              }}
+              className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-800 transition-colors cursor-pointer"
+            >
               Rule Active
-            </Badge>
+              <ExternalLink className="h-3 w-3" />
+            </button>
           )}
           {pattern.status === 'approved' && pattern.hasRule === false && (
             <Badge variant="outline" className="bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
