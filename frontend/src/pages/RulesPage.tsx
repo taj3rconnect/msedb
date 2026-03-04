@@ -27,7 +27,6 @@ import {
   useSimulateRule,
 } from '@/hooks/useRules';
 import { useUiStore } from '@/stores/uiStore';
-import { useAuthStore } from '@/stores/authStore';
 
 /**
  * Rules page with drag-and-drop reordering, per-rule stats,
@@ -37,10 +36,8 @@ import { useAuthStore } from '@/stores/authStore';
  */
 export function RulesPage() {
   const globalMailboxId = useUiStore((s) => s.selectedMailboxId);
-  const mailboxes = useAuthStore((s) => s.mailboxes);
-  // Default to first connected mailbox so rules aren't shown 3x
-  const firstConnected = mailboxes.find((m) => m.isConnected);
-  const selectedMailboxId = globalMailboxId ?? firstConnected?.id ?? null;
+  // Use global mailbox selection — null means all mailboxes (no mailboxId filter)
+  const selectedMailboxId = globalMailboxId ?? null;
   const [page, setPage] = useState(1);
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get('search') ?? '';
