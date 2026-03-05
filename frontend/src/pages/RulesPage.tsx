@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, Search, Shield, X } from 'lucide-react';
 import { useMailboxes } from '@/hooks/useMailboxes';
@@ -28,15 +28,13 @@ import {
   useSimulateRule,
 } from '@/hooks/useRules';
 
-// Domain-based filter tags: label → email domain
-const DOMAIN_TAGS = [
-  { label: 'All', domain: null },
-  { label: 'ApTask', domain: 'aptask.com' },
-  { label: 'JobTalk', domain: 'jobtalk.ai' },
-  { label: 'Yenom', domain: 'yenom.ai' },
+// Email-based filter tags: label → specific mailbox email
+const EMAIL_TAGS = [
+  { label: 'All', email: null },
+  { label: 'ApTask', email: 'taj@aptask.com' },
+  { label: 'JobTalk', email: 'taj@jobtalk.ai' },
+  { label: 'Yenom', email: 'taj@yenom.ai' },
 ] as const;
-
-const PAGE_SIZE = 50;
 
 /**
  * Rules page with drag-and-drop reordering, per-rule stats,
@@ -46,7 +44,10 @@ const PAGE_SIZE = 50;
  */
 export function RulesPage() {
   const { mailboxes } = useMailboxes();
-  const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [activeEmail, setActiveEmail] = useState<string | null>(null);
+  const activeMailboxId = activeEmail
+    ? mailboxes.find((m) => m.email === activeEmail)?.id
+    : undefined;
   const [page, setPage] = useState(1);
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get('search') ?? '';
@@ -71,31 +72,11 @@ export function RulesPage() {
     return () => clearTimeout(debounceRef.current);
   }, [searchInput]);
 
-  // Fetch all rules (no mailboxId filter — domain filtering is done client-side)
-  const { data, isLoading, isError } = useRules({ search, page: 1, limit: 500 });
+  // Fetch rules filtered by selected mailbox (server-side)
+  const { data, isLoading, isError } = useRules({ mailboxId: activeMailboxId, search, page });
 
-  // Build mailboxId → email domain map
-  const mailboxDomainMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const mb of mailboxes) {
-      const domain = mb.email.split('@')[1];
-      if (domain) map[mb.id] = domain;
-    }
-    return map;
-  }, [mailboxes]);
-
-  // Filter rules by active domain tag
-  const allRules = data?.rules ?? [];
-  const filteredRules = useMemo(() => {
-    if (!activeTag) return allRules;
-    const tag = DOMAIN_TAGS.find((t) => t.label === activeTag);
-    if (!tag?.domain) return allRules;
-    return allRules.filter((r) => mailboxDomainMap[r.mailboxId] === tag.domain);
-  }, [allRules, activeTag, mailboxDomainMap]);
-
-  // Client-side pagination
-  const totalPages = Math.ceil(filteredRules.length / PAGE_SIZE);
-  const rules = filteredRules.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const rules = data?.rules ?? [];
+  const totalPages = data?.pagination.totalPages ?? 0;
 
   // Mutation hooks
   const toggleMutation = useToggleRule();
@@ -196,9 +177,9 @@ export function RulesPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Rules</h1>
-          {!isLoading && filteredRules.length > 0 && (
+          {data && rules.length > 0 && (
             <span className="text-sm text-muted-foreground tabular-nums">
-              {filteredRules.length} {filteredRules.length === 1 ? 'rule' : 'rules'}
+              {data.pagination.total} {data.pagination.total === 1 ? 'rule' : 'rules'}
             </span>
           )}
         </div>
@@ -223,15 +204,15 @@ export function RulesPage() {
         )}
       </div>
 
-      {/* Domain filter tags */}
+      {/* Mailbox filter tags */}
       <div className="flex flex-wrap items-center gap-1">
-        {DOMAIN_TAGS.map((tag) => (
+        {EMAIL_TAGS.map((tag) => (
           <Button
             key={tag.label}
-            variant={activeTag === tag.domain ? 'default' : 'outline'}
+            variant={activeEmail === tag.email ? 'default' : 'outline'}
             size="sm"
             className="h-7 text-xs"
-            onClick={() => { setActiveTag(tag.domain); setPage(1); }}
+            onClick={() => { setActiveEmail(tag.email); setPage(1); }}
           >
             {tag.label}
           </Button>
