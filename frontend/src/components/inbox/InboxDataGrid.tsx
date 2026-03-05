@@ -718,7 +718,6 @@ export function InboxDataGrid({
     [activeEventId, focusedEventId],
   );
 
-
   // Row click handler
   const onRowClicked = useCallback(
     (params: { data?: EventItem; event?: Event | null }) => {
