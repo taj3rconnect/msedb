@@ -64,21 +64,43 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
     ];
   }
 
-  // Sort order
-  const sortOrder: Record<string, 1 | -1> =
-    sort === 'email' ? { 'conditions.senderEmail': 1, createdAt: -1 } :
-    sort === 'domain' ? { 'conditions.senderDomain': 1, createdAt: -1 } :
-    { createdAt: -1 };
+  // For email/domain sorts, use aggregation to extract and sort by computed field
+  let rules: unknown[];
+  let total: number;
 
-  // Parallel query + count
-  const [rules, total] = await Promise.all([
-    Rule.find(filter)
-      .sort(sortOrder)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean(),
-    Rule.countDocuments(filter),
-  ]);
+  if (sort === 'email' || sort === 'domain') {
+    const aggFilter = { ...filter, userId: new Types.ObjectId(userId) };
+    // Extract first email if array, fall back to empty string
+    const emailExpr = {
+      $toLower: {
+        $cond: [
+          { $isArray: '$conditions.senderEmail' },
+          { $ifNull: [{ $arrayElemAt: ['$conditions.senderEmail', 0] }, ''] },
+          { $ifNull: ['$conditions.senderEmail', ''] },
+        ],
+      },
+    };
+    const sortKey = sort === 'domain'
+      ? { $toLower: { $ifNull: ['$conditions.senderDomain', { $arrayElemAt: [{ $split: [emailExpr, '@'] }, 1] }] } }
+      : emailExpr;
+
+    [rules, total] = await Promise.all([
+      Rule.aggregate([
+        { $match: aggFilter },
+        { $addFields: { _sortKey: sortKey } },
+        { $sort: { _sortKey: 1, createdAt: -1 } },
+        { $skip: (page - 1) * limit },
+        { $limit: limit },
+        { $project: { _sortKey: 0 } },
+      ]),
+      Rule.countDocuments(filter),
+    ]);
+  } else {
+    [rules, total] = await Promise.all([
+      Rule.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      Rule.countDocuments(filter),
+    ]);
+  }
 
   res.json({
     rules,
