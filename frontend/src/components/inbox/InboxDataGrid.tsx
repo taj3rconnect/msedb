@@ -694,14 +694,20 @@ export function InboxDataGrid({
     if (!api) return;
 
     suppressSelectionSync.current = true;
-    api.forEachNode((node) => {
-      const shouldSelect = selectedIds.has(node.data?._id || '');
-      if (node.isSelected() !== shouldSelect) {
-        node.setSelected(shouldSelect);
-      }
-    });
-    // Defer flag release so any async onSelectionChanged fired by setSelected
-    // is still suppressed and doesn't partially de-sync the parent state.
+
+    if (selectedIds.size === 0) {
+      api.deselectAll();
+    } else if (selectedIds.size === data.length && data.every((e) => selectedIds.has(e._id))) {
+      api.selectAll();
+    } else {
+      api.forEachNode((node) => {
+        const shouldSelect = selectedIds.has(node.data?._id || '');
+        if (node.isSelected() !== shouldSelect) {
+          node.setSelected(shouldSelect);
+        }
+      });
+    }
+
     setTimeout(() => { suppressSelectionSync.current = false; }, 0);
   }, [selectedIds, data]);
 
