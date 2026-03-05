@@ -6,7 +6,6 @@ import {
   themeQuartz,
   type ColDef,
   type GridReadyEvent,
-  type SelectionChangedEvent,
   type ColumnState,
   type StateUpdatedEvent,
   type GridApi,
@@ -115,10 +114,26 @@ interface GridContext {
   onMarkRead: (event: EventItem) => void;
   onQuickMarkRead: (event: EventItem) => void;
   onUndelete?: (event: EventItem) => void;
+  onToggleSelect: (id: string) => void;
+  selectedIds: Set<string>;
   folderFilter: string;
   searchQuery: string;
   largeIcons: boolean;
   trackingMap?: Record<string, TrackingMatch>;
+}
+
+// --- Custom checkbox cell renderer (fully parent-controlled) ---
+function CheckboxCellRenderer(props: CustomCellRendererProps<EventItem, unknown, GridContext>) {
+  const event = props.data!;
+  const ctx = props.context!;
+  return (
+    <div className="h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+      <Checkbox
+        checked={ctx.selectedIds.has(event._id)}
+        onCheckedChange={() => ctx.onToggleSelect(event._id)}
+      />
+    </div>
+  );
 }
 
 // --- Cell Renderers ---
@@ -474,7 +489,6 @@ export function InboxDataGrid({
   const [showFiltersInternal, setShowFiltersInternal] = useState(false);
   const showFilters = showFiltersProp ?? showFiltersInternal;
   const setShowFilters = onToggleFilters ?? setShowFiltersInternal;
-  const suppressSelectionSync = useRef(false);
 
   // Detect dark mode
   const [isDark, setIsDark] = useState(() =>
@@ -500,12 +514,14 @@ export function InboxDataGrid({
       onMarkRead,
       onQuickMarkRead,
       onUndelete,
+      onToggleSelect,
+      selectedIds,
       folderFilter,
       searchQuery,
       largeIcons,
       trackingMap,
     }),
-    [onAction, onClearRules, onQuickDelete, onJustDelete, onMarkRead, onQuickMarkRead, onUndelete, folderFilter, searchQuery, largeIcons, trackingMap],
+    [onAction, onClearRules, onQuickDelete, onJustDelete, onMarkRead, onQuickMarkRead, onUndelete, onToggleSelect, selectedIds, folderFilter, searchQuery, largeIcons, trackingMap],
   );
 
   // Column definitions
@@ -518,6 +534,20 @@ export function InboxDataGrid({
       : (largeIcons ? 230 : 182);    // 6 icons: 6×28+10=178→182 | 6×36+10=226→230
 
     const cols: ColDef<EventItem>[] = [
+      // Custom checkbox column — fully parent-controlled, no AG Grid selection sync needed
+      {
+        colId: 'checkbox',
+        headerName: '',
+        cellRenderer: CheckboxCellRenderer,
+        width: 40,
+        minWidth: 40,
+        maxWidth: 40,
+        sortable: false,
+        resizable: false,
+        suppressMovable: true,
+        pinned: 'left' as const,
+        suppressHeaderMenuButton: true,
+      },
       // Row actions — fixed-width left column, icons appear on row hover
       {
         colId: 'rowActions',
@@ -688,46 +718,6 @@ export function InboxDataGrid({
     [activeEventId, focusedEventId],
   );
 
-  // Sync parent selectedIds → AG Grid selection
-  useEffect(() => {
-    const api = apiRef.current;
-    if (!api) return;
-
-    suppressSelectionSync.current = true;
-
-    if (selectedIds.size === 0) {
-      api.deselectAll();
-    } else if (selectedIds.size === data.length && data.every((e) => selectedIds.has(e._id))) {
-      api.selectAll();
-    } else {
-      api.forEachNode((node) => {
-        const shouldSelect = selectedIds.has(node.data?._id || '');
-        if (node.isSelected() !== shouldSelect) {
-          node.setSelected(shouldSelect);
-        }
-      });
-    }
-
-    setTimeout(() => { suppressSelectionSync.current = false; }, 0);
-  }, [selectedIds, data]);
-
-  // AG Grid selection changed → sync to parent
-  const onSelectionChanged = useCallback(
-    (event: SelectionChangedEvent<EventItem>) => {
-      if (suppressSelectionSync.current) return;
-      const selected = event.api.getSelectedRows();
-      const newIds = new Set(selected.map((e) => e._id));
-
-      // Compute changes
-      for (const id of newIds) {
-        if (!selectedIds.has(id)) onToggleSelect(id);
-      }
-      for (const id of selectedIds) {
-        if (!newIds.has(id)) onToggleSelect(id);
-      }
-    },
-    [selectedIds, onToggleSelect],
-  );
 
   // Row click handler
   const onRowClicked = useCallback(
@@ -855,16 +845,7 @@ export function InboxDataGrid({
           <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
             <Checkbox
               checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-              onCheckedChange={(checked) => {
-                suppressSelectionSync.current = true;
-                if (checked) {
-                  apiRef.current?.selectAll();
-                } else {
-                  apiRef.current?.deselectAll();
-                }
-                setTimeout(() => { suppressSelectionSync.current = false; }, 0);
-                onToggleSelectAll();
-              }}
+              onCheckedChange={onToggleSelectAll}
               aria-label="Select all"
             />
             All
@@ -935,10 +916,9 @@ export function InboxDataGrid({
           defaultColDef={defaultColDef}
           context={gridContext}
           getRowId={getRowId}
-          rowSelection={{ mode: 'multiRow', headerCheckbox: false, checkboxes: true }}
+          rowSelection={{ mode: 'multiRow', headerCheckbox: false, checkboxes: false }}
           rowClassRules={rowClassRules}
           onGridReady={onGridReady}
-          onSelectionChanged={onSelectionChanged}
           onRowClicked={onRowClicked}
           onStateUpdated={onStateUpdated}
           suppressRowClickSelection={true}
