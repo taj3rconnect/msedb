@@ -855,7 +855,16 @@ export function InboxDataGrid({
           <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
             <Checkbox
               checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-              onCheckedChange={onToggleSelectAll}
+              onCheckedChange={(checked) => {
+                suppressSelectionSync.current = true;
+                if (checked) {
+                  apiRef.current?.selectAll();
+                } else {
+                  apiRef.current?.deselectAll();
+                }
+                setTimeout(() => { suppressSelectionSync.current = false; }, 0);
+                onToggleSelectAll();
+              }}
               aria-label="Select all"
             />
             All
