@@ -34,6 +34,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import type { EventItem } from '@/api/events';
 import { TrackingTooltip } from './TrackingTooltip';
 import { useUiStore } from '@/stores/uiStore';
@@ -443,9 +444,9 @@ export function InboxDataGrid({
   data,
   selectedIds,
   onToggleSelect,
-  onToggleSelectAll: _onToggleSelectAll,
-  allSelected: _allSelected,
-  someSelected: _someSelected,
+  onToggleSelectAll,
+  allSelected,
+  someSelected,
   onAction,
   onClearRules,
   onQuickDelete,
@@ -842,6 +843,19 @@ export function InboxDataGrid({
       {/* Toolbar */}
       {!hideToolbar && (
         <div className="flex items-center gap-2">
+          {/* Select all checkbox */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center">
+                <Checkbox
+                  checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                  onCheckedChange={onToggleSelectAll}
+                  aria-label="Select all"
+                />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>{allSelected ? 'Deselect all' : 'Select all'}</TooltipContent>
+          </Tooltip>
           {toolbarSlot}
           <Button
             variant={showFilters ? 'secondary' : 'outline'}
