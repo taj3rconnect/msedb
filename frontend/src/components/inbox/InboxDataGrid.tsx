@@ -922,7 +922,7 @@ export function InboxDataGrid({
           defaultColDef={defaultColDef}
           context={gridContext}
           getRowId={getRowId}
-          rowSelection={{ mode: 'multiRow', headerCheckbox: true, checkboxes: true }}
+          rowSelection={{ mode: 'multiRow', headerCheckbox: false, checkboxes: true }}
           rowClassRules={rowClassRules}
           onGridReady={onGridReady}
           onSelectionChanged={onSelectionChanged}
