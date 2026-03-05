@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, Search, Shield, X } from 'lucide-react';
 import { useMailboxes } from '@/hooks/useMailboxes';
@@ -28,6 +28,16 @@ import {
   useSimulateRule,
 } from '@/hooks/useRules';
 
+// Domain-based filter tags: label → email domain
+const DOMAIN_TAGS = [
+  { label: 'All', domain: null },
+  { label: 'ApTask', domain: 'aptask.com' },
+  { label: 'JobTalk', domain: 'jobtalk.ai' },
+  { label: 'Yenom', domain: 'yenom.ai' },
+] as const;
+
+const PAGE_SIZE = 50;
+
 /**
  * Rules page with drag-and-drop reordering, per-rule stats,
  * enable/disable toggles, and per-mailbox filtering.
@@ -36,10 +46,7 @@ import {
  */
 export function RulesPage() {
   const { mailboxes } = useMailboxes();
-  const [activeMailboxTag, setActiveMailboxTag] = useState<string | null>(null);
-  const tagMailboxId = activeMailboxTag
-    ? mailboxes.find((m) => m.displayName === activeMailboxTag)?.id
-    : undefined;
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get('search') ?? '';
@@ -64,12 +71,31 @@ export function RulesPage() {
     return () => clearTimeout(debounceRef.current);
   }, [searchInput]);
 
-  // Data hook -- filter by tag-selected mailbox and search
-  const { data, isLoading, isError } = useRules({
-    mailboxId: tagMailboxId,
-    search,
-    page,
-  });
+  // Fetch all rules (no mailboxId filter — domain filtering is done client-side)
+  const { data, isLoading, isError } = useRules({ search, page: 1, limit: 500 });
+
+  // Build mailboxId → email domain map
+  const mailboxDomainMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const mb of mailboxes) {
+      const domain = mb.email.split('@')[1];
+      if (domain) map[mb.id] = domain;
+    }
+    return map;
+  }, [mailboxes]);
+
+  // Filter rules by active domain tag
+  const allRules = data?.rules ?? [];
+  const filteredRules = useMemo(() => {
+    if (!activeTag) return allRules;
+    const tag = DOMAIN_TAGS.find((t) => t.label === activeTag);
+    if (!tag?.domain) return allRules;
+    return allRules.filter((r) => mailboxDomainMap[r.mailboxId] === tag.domain);
+  }, [allRules, activeTag, mailboxDomainMap]);
+
+  // Client-side pagination
+  const totalPages = Math.ceil(filteredRules.length / PAGE_SIZE);
+  const rules = filteredRules.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Mutation hooks
   const toggleMutation = useToggleRule();
@@ -77,10 +103,6 @@ export function RulesPage() {
   const renameMutation = useRenameRule();
   const runMutation = useRunRule();
   const reorderMutation = useReorderRules();
-
-  // Pagination
-  const totalPages = data?.pagination.totalPages ?? 0;
-  const rules = data?.rules ?? [];
 
   // Handlers
   const handleToggle = useCallback(
@@ -174,9 +196,9 @@ export function RulesPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">Rules</h1>
-          {data && rules.length > 0 && (
+          {!isLoading && filteredRules.length > 0 && (
             <span className="text-sm text-muted-foreground tabular-nums">
-              {data.pagination.total} {data.pagination.total === 1 ? 'rule' : 'rules'}
+              {filteredRules.length} {filteredRules.length === 1 ? 'rule' : 'rules'}
             </span>
           )}
         </div>
@@ -201,30 +223,20 @@ export function RulesPage() {
         )}
       </div>
 
-      {/* Mailbox filter tags */}
-      {mailboxes.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1">
+      {/* Domain filter tags */}
+      <div className="flex flex-wrap items-center gap-1">
+        {DOMAIN_TAGS.map((tag) => (
           <Button
-            variant={activeMailboxTag === null ? 'default' : 'outline'}
+            key={tag.label}
+            variant={activeTag === tag.domain ? 'default' : 'outline'}
             size="sm"
             className="h-7 text-xs"
-            onClick={() => { setActiveMailboxTag(null); setPage(1); }}
+            onClick={() => { setActiveTag(tag.domain); setPage(1); }}
           >
-            All
+            {tag.label}
           </Button>
-          {mailboxes.map((mailbox) => (
-            <Button
-              key={mailbox.id}
-              variant={activeMailboxTag === mailbox.displayName ? 'default' : 'outline'}
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => { setActiveMailboxTag(mailbox.displayName); setPage(1); }}
-            >
-              {mailbox.displayName}
-            </Button>
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* Content */}
       {isLoading ? (
