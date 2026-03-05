@@ -166,18 +166,68 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     ];
   }
 
-  // Parallel query + count
-  const [events, total] = await Promise.all([
-    EmailEvent.find(filter)
-      .sort({ [sortBy]: sortOrder })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .select(
-        'eventType sender subject timestamp mailboxId messageId fromFolder toFolder importance hasAttachments categories isRead',
-      )
-      .lean(),
-    EmailEvent.countDocuments(filter),
-  ]);
+  // For sender field sorts, use aggregation to handle nulls and case-insensitive ordering
+  const senderSortFields = new Set(['sender.domain', 'sender.email', 'sender.name']);
+  const useAggSort = senderSortFields.has(sortBy);
+
+  // Aggregation-safe filter: ObjectId fields must be cast explicitly
+  const aggFilter: Record<string, unknown> = { ...filter, userId: new Types.ObjectId(userId) };
+  if (mailboxId && typeof mailboxId === 'string') {
+    aggFilter.mailboxId = new Types.ObjectId(mailboxId);
+  }
+
+  const projectFields = {
+    eventType: 1, sender: 1, subject: 1, timestamp: 1,
+    mailboxId: 1, messageId: 1, fromFolder: 1, toFolder: 1,
+    importance: 1, hasAttachments: 1, categories: 1, isRead: 1,
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let events: any[];
+  let total: number;
+
+  if (useAggSort) {
+    let sortKeyExpr: unknown;
+    if (sortBy === 'sender.domain') {
+      sortKeyExpr = {
+        $toLower: {
+          $ifNull: [
+            '$sender.domain',
+            { $ifNull: [{ $arrayElemAt: [{ $split: ['$sender.email', '@'] }, 1] }, ''] },
+          ],
+        },
+      };
+    } else if (sortBy === 'sender.email') {
+      sortKeyExpr = { $toLower: { $ifNull: ['$sender.email', ''] } };
+    } else {
+      // sender.name
+      sortKeyExpr = { $toLower: { $ifNull: ['$sender.name', ''] } };
+    }
+
+    [events, total] = await Promise.all([
+      EmailEvent.aggregate([
+        { $match: aggFilter },
+        { $addFields: { _sortKey: sortKeyExpr } },
+        { $sort: { _sortKey: sortOrder, timestamp: -1 } },
+        { $skip: (page - 1) * limit },
+        { $limit: limit },
+        { $project: projectFields },
+      ]),
+      EmailEvent.countDocuments(filter),
+    ]);
+  } else {
+    [events, total] = await Promise.all([
+      EmailEvent.find(filter)
+        .sort({ [sortBy]: sortOrder })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .select(
+          'eventType sender subject timestamp mailboxId messageId fromFolder toFolder importance hasAttachments categories isRead',
+        )
+        .lean(),
+      EmailEvent.countDocuments(filter),
+    ]);
+  }
 
   // Resolve folder IDs to display names
   let resolvedEvents = events;
