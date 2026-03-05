@@ -700,7 +700,9 @@ export function InboxDataGrid({
         node.setSelected(shouldSelect);
       }
     });
-    suppressSelectionSync.current = false;
+    // Defer flag release so any async onSelectionChanged fired by setSelected
+    // is still suppressed and doesn't partially de-sync the parent state.
+    setTimeout(() => { suppressSelectionSync.current = false; }, 0);
   }, [selectedIds, data]);
 
   // AG Grid selection changed → sync to parent
