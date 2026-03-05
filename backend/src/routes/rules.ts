@@ -69,7 +69,10 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
   let total: number;
 
   if (sort === 'email' || sort === 'domain') {
-    const aggFilter = { ...filter, userId: new Types.ObjectId(userId) };
+    const aggFilter: Record<string, unknown> = { ...filter, userId: new Types.ObjectId(userId) };
+    if (mailboxId && typeof mailboxId === 'string') {
+      aggFilter.mailboxId = new Types.ObjectId(mailboxId);
+    }
     // Extract first email if array, fall back to empty string
     const emailExpr = {
       $toLower: {
