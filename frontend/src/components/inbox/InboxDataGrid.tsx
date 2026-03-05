@@ -844,18 +844,14 @@ export function InboxDataGrid({
       {!hideToolbar && (
         <div className="flex items-center gap-2">
           {/* Select all checkbox */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center">
-                <Checkbox
-                  checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                  onCheckedChange={onToggleSelectAll}
-                  aria-label="Select all"
-                />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>{allSelected ? 'Deselect all' : 'Select all'}</TooltipContent>
-          </Tooltip>
+          <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
+            <Checkbox
+              checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+              onCheckedChange={onToggleSelectAll}
+              aria-label="Select all"
+            />
+            All
+          </label>
           {toolbarSlot}
           <Button
             variant={showFilters ? 'secondary' : 'outline'}
