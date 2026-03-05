@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, Search, Shield, X } from 'lucide-react';
+import { useMailboxes } from '@/hooks/useMailboxes';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -26,7 +27,6 @@ import {
   useReorderRules,
   useSimulateRule,
 } from '@/hooks/useRules';
-import { useUiStore } from '@/stores/uiStore';
 
 /**
  * Rules page with drag-and-drop reordering, per-rule stats,
@@ -35,9 +35,11 @@ import { useUiStore } from '@/stores/uiStore';
  * Replaces the ComingSoonPage placeholder at /rules.
  */
 export function RulesPage() {
-  const globalMailboxId = useUiStore((s) => s.selectedMailboxId);
-  // Use global mailbox selection — null means all mailboxes (no mailboxId filter)
-  const selectedMailboxId = globalMailboxId ?? null;
+  const { mailboxes } = useMailboxes();
+  const [activeMailboxTag, setActiveMailboxTag] = useState<string | null>(null);
+  const tagMailboxId = activeMailboxTag
+    ? mailboxes.find((m) => m.displayName === activeMailboxTag)?.id
+    : undefined;
   const [page, setPage] = useState(1);
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get('search') ?? '';
@@ -62,9 +64,9 @@ export function RulesPage() {
     return () => clearTimeout(debounceRef.current);
   }, [searchInput]);
 
-  // Data hook -- filter by selected mailbox and search
+  // Data hook -- filter by tag-selected mailbox and search
   const { data, isLoading, isError } = useRules({
-    mailboxId: selectedMailboxId ?? undefined,
+    mailboxId: tagMailboxId,
     search,
     page,
   });
@@ -199,11 +201,29 @@ export function RulesPage() {
         )}
       </div>
 
-      {/* Mailbox hint */}
-      {!selectedMailboxId && (
-        <p className="text-sm text-muted-foreground">
-          Select a mailbox from the sidebar to view rules.
-        </p>
+      {/* Mailbox filter tags */}
+      {mailboxes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          <Button
+            variant={activeMailboxTag === null ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => { setActiveMailboxTag(null); setPage(1); }}
+          >
+            All
+          </Button>
+          {mailboxes.map((mailbox) => (
+            <Button
+              key={mailbox.id}
+              variant={activeMailboxTag === mailbox.displayName ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => { setActiveMailboxTag(mailbox.displayName); setPage(1); }}
+            >
+              {mailbox.displayName}
+            </Button>
+          ))}
+        </div>
       )}
 
       {/* Content */}
