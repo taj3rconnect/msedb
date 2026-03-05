@@ -173,15 +173,28 @@ export function RulesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      {/* Header with inline mailbox filter tags */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 shrink-0">
           <h1 className="text-2xl font-bold tracking-tight">Rules</h1>
           {data && rules.length > 0 && (
             <span className="text-sm text-muted-foreground tabular-nums">
               {data.pagination.total} {data.pagination.total === 1 ? 'rule' : 'rules'}
             </span>
           )}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          {EMAIL_TAGS.map((tag) => (
+            <Button
+              key={tag.label}
+              variant={activeEmail === tag.email ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => { setActiveEmail(tag.email); setPage(1); }}
+            >
+              {tag.label}
+            </Button>
+          ))}
         </div>
       </div>
 
@@ -202,21 +215,6 @@ export function RulesPage() {
             <X className="h-4 w-4" />
           </button>
         )}
-      </div>
-
-      {/* Mailbox filter tags */}
-      <div className="flex flex-wrap items-center gap-1">
-        {EMAIL_TAGS.map((tag) => (
-          <Button
-            key={tag.label}
-            variant={activeEmail === tag.email ? 'default' : 'outline'}
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => { setActiveEmail(tag.email); setPage(1); }}
-          >
-            {tag.label}
-          </Button>
-        ))}
       </div>
 
       {/* Content */}
