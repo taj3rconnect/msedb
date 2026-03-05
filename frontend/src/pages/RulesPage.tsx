@@ -1,11 +1,18 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import { AlertCircle, Search, Shield, X } from 'lucide-react';
-import { useMailboxes } from '@/hooks/useMailboxes';
+import { useAuthStore } from '@/stores/authStore';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -43,7 +50,7 @@ const EMAIL_TAGS = [
  * Replaces the ComingSoonPage placeholder at /rules.
  */
 export function RulesPage() {
-  const { mailboxes } = useMailboxes();
+  const mailboxes = useAuthStore((s) => s.mailboxes);
   const [activeEmail, setActiveEmail] = useState<string | null>(null);
   const activeMailboxId = activeEmail
     ? mailboxes.find((m) => m.email === activeEmail)?.id
@@ -53,6 +60,7 @@ export function RulesPage() {
   const initialSearch = searchParams.get('search') ?? '';
   const [searchInput, setSearchInput] = useState(initialSearch);
   const [search, setSearch] = useState(initialSearch);
+  const [sort, setSort] = useState<'date' | 'email' | 'domain'>('date');
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
 
@@ -73,7 +81,7 @@ export function RulesPage() {
   }, [searchInput]);
 
   // Fetch rules filtered by selected mailbox (server-side)
-  const { data, isLoading, isError } = useRules({ mailboxId: activeMailboxId, search, page });
+  const { data, isLoading, isError } = useRules({ mailboxId: activeMailboxId, search, page, sort });
 
   const rules = data?.rules ?? [];
   const totalPages = data?.pagination.totalPages ?? 0;
@@ -173,8 +181,8 @@ export function RulesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header with inline mailbox filter tags */}
-      <div className="flex items-center gap-4">
+      {/* Header with inline mailbox filter tags and sort */}
+      <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-3 shrink-0">
           <h1 className="text-2xl font-bold tracking-tight">Rules</h1>
           {data && rules.length > 0 && (
@@ -196,6 +204,16 @@ export function RulesPage() {
             </Button>
           ))}
         </div>
+        <Select value={sort} onValueChange={(v) => { setSort(v as typeof sort); setPage(1); }}>
+          <SelectTrigger className="h-7 w-36 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="date">Date (newest)</SelectItem>
+            <SelectItem value="email">Email address</SelectItem>
+            <SelectItem value="domain">Domain name</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Search bar */}

@@ -20,15 +20,17 @@ export function useRules(params?: {
   search?: string;
   page?: number;
   limit?: number;
+  sort?: 'date' | 'email' | 'domain';
 }) {
   return useQuery<RulesResponse>({
-    queryKey: ['rules', params?.mailboxId ?? null, params?.search ?? '', params?.page ?? 1, params?.limit ?? 50],
+    queryKey: ['rules', params?.mailboxId ?? null, params?.search ?? '', params?.page ?? 1, params?.limit ?? 50, params?.sort ?? 'date'],
     queryFn: () =>
       fetchRules({
         mailboxId: params?.mailboxId ?? undefined,
         search: params?.search || undefined,
         page: params?.page,
         limit: params?.limit,
+        sort: params?.sort,
       }),
   });
 }

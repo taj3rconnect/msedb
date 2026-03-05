@@ -62,12 +62,14 @@ export async function fetchRules(params?: {
   search?: string;
   page?: number;
   limit?: number;
+  sort?: 'date' | 'email' | 'domain';
 }): Promise<RulesResponse> {
   const searchParams = new URLSearchParams();
   if (params?.mailboxId) searchParams.set('mailboxId', params.mailboxId);
   if (params?.search) searchParams.set('search', params.search);
   if (params?.page) searchParams.set('page', String(params.page));
   if (params?.limit) searchParams.set('limit', String(params.limit));
+  if (params?.sort && params.sort !== 'date') searchParams.set('sort', params.sort);
   const qs = searchParams.toString();
   return apiFetch<RulesResponse>(`/rules${qs ? `?${qs}` : ''}`);
 }

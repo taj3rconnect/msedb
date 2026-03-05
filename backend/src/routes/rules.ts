@@ -48,7 +48,7 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
 
   // Build filter
   const filter: Record<string, unknown> = { userId };
-  const { mailboxId, search } = req.query;
+  const { mailboxId, search, sort } = req.query;
   if (mailboxId && typeof mailboxId === 'string') {
     filter.mailboxId = mailboxId;
   }
@@ -64,10 +64,16 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
     ];
   }
 
+  // Sort order
+  const sortOrder: Record<string, 1 | -1> =
+    sort === 'email' ? { 'conditions.senderEmail': 1, createdAt: -1 } :
+    sort === 'domain' ? { 'conditions.senderDomain': 1, createdAt: -1 } :
+    { createdAt: -1 };
+
   // Parallel query + count
   const [rules, total] = await Promise.all([
     Rule.find(filter)
-      .sort({ createdAt: -1 })
+      .sort(sortOrder)
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
