@@ -594,26 +594,18 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
       : [conditions.senderEmail]
     : [];
 
-  // Build KQL $search for sender email(s)
-  // Graph API wraps $search value in outer quotes: $search="from:email"
-  // Do NOT add inner quotes — they cause nested quote parse errors.
-  let searchStr = '';
-  if (senders.length === 1) {
-    searchStr = `&$search="${encodeURIComponent(`from:${senders[0]}`)}"`;
-  } else if (senders.length > 1) {
-    const kql = senders.map((s) => `from:${s}`).join(' OR ');
-    searchStr = `&$search="${encodeURIComponent(kql)}"`;
-  }
-
-  // Select fields needed for client-side filtering
-  const selectParts = ['id', 'from', 'isRead'];
+  // Use $filter=isRead eq false to fetch only unread messages server-side.
+  // $search and $filter cannot be combined for messages in Graph API, so we
+  // fetch all unread messages and do sender/domain/subject/body matching client-side.
+  const selectParts = ['id', 'from'];
   if (conditions.subjectContains || conditions.bodyContains) selectParts.push('subject', 'bodyPreview');
   const selectFields = [...new Set(selectParts)].join(',');
+  const filterStr = encodeURIComponent('isRead eq false');
 
-  // Fetch all matching messages from the mailbox (paginated via @odata.nextLink)
-  const allMessages: { id: string; isRead?: boolean; from?: { emailAddress: { address?: string } }; subject?: string; bodyPreview?: string }[] = [];
-  const initialUrl = `/users/${email}/messages?$select=${selectFields}&$top=100${searchStr}`;
-  logger.info('RunRule: fetching messages', { initialUrl, senders, email });
+  // Fetch all unread messages from the mailbox (paginated via @odata.nextLink)
+  const allMessages: { id: string; from?: { emailAddress: { address?: string } }; subject?: string; bodyPreview?: string }[] = [];
+  const initialUrl = `/users/${email}/messages?$select=${selectFields}&$filter=${filterStr}&$top=100`;
+  logger.info('RunRule: fetching unread messages', { initialUrl, senders, email });
   let nextUrl: string | null = initialUrl;
 
   while (nextUrl) {
@@ -630,13 +622,10 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
 
   logger.info('RunRule: fetch complete', { totalFetched: allMessages.length, sampleFrom: allMessages.slice(0, 3).map((m) => m.from?.emailAddress?.address) });
 
-  // Client-side filtering — KQL $search is fuzzy, so we do exact matching here
+  // Client-side filtering
   let filteredMessages = allMessages;
 
-  // Only apply to unread messages
-  filteredMessages = filteredMessages.filter((msg) => msg.isRead === false);
-
-  // Exact sender email match (KQL from: can return partial matches)
+  // Exact sender email match
   if (senders.length > 0) {
     const senderSet = new Set(senders.map((s) => s.toLowerCase()));
     filteredMessages = filteredMessages.filter((msg) => {
