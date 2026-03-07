@@ -927,6 +927,36 @@ mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response
     categories?: string[];
   };
 
+  // If the HTML body has cid: image references, fetch inline attachments and
+  // replace them with data: URIs so images render in the browser.
+  if (message.body?.contentType === 'html' && message.body.content.includes('cid:')) {
+    try {
+      const attResponse = await graphFetch(
+        `/users/${mailbox.email}/messages/${req.params.messageId}/attachments?$select=contentId,contentType,contentBytes,isInline`,
+        accessToken,
+      );
+      const attData = (await attResponse.json()) as {
+        value: { contentId?: string; contentType?: string; contentBytes?: string; isInline?: boolean }[];
+      };
+      if (attData.value?.length) {
+        let html = message.body.content;
+        for (const att of attData.value) {
+          if (att.contentId && att.contentBytes && att.contentType && att.contentType.startsWith('image/')) {
+            // contentId may be wrapped in angle brackets: <image001.jpg@...>
+            const cid = att.contentId.replace(/^<|>$/g, '');
+            const dataUri = `data:${att.contentType};base64,${att.contentBytes}`;
+            // Replace all variations: cid:ID and cid:<ID>
+            html = html.split(`cid:${cid}`).join(dataUri);
+            html = html.split(`cid:<${cid}>`).join(dataUri);
+          }
+        }
+        message.body.content = html;
+      }
+    } catch {
+      // Non-fatal — return body as-is if attachment fetch fails
+    }
+  }
+
   res.json({ message });
 });
 
