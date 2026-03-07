@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { aiSearch, type AiSearchResult, type AiSearchResponse } from '@/api/aiSearch';
+import { formatDateTime } from '@/lib/formatters';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -261,15 +262,5 @@ export function AiSearchPanel({ open, onOpenChange, mailboxId, onSelectResult }:
 }
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) {
-    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  }
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return formatDateTime(iso);
 }

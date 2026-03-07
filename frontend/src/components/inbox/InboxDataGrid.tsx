@@ -37,6 +37,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import type { EventItem } from '@/api/events';
 import { TrackingTooltip } from './TrackingTooltip';
 import { useUiStore } from '@/stores/uiStore';
+import { formatDateTime } from '@/lib/formatters';
 
 // Register all community modules once
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -290,18 +291,9 @@ function SubjectCellRenderer(props: CustomCellRendererProps<EventItem, string, G
 }
 
 function TimeCellRenderer(props: CustomCellRendererProps<EventItem, string, GridContext>) {
-  const d = new Date(props.value!);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  let hh = d.getHours();
-  const ampm = hh >= 12 ? 'PM' : 'AM';
-  hh = hh % 12 || 12;
-  const min = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
   return (
     <span className="text-sm text-muted-foreground whitespace-nowrap tabular-nums">
-      {mm}-{dd}-{yy} {hh}:{min}:{ss} {ampm}
+      {formatDateTime(props.value!)}
     </span>
   );
 }

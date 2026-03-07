@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Loader2, MapPin, Monitor, Globe } from 'lucide-react';
 import { fetchTrackedDetail, type TrackingDetail } from '@/api/tracking';
+import { formatDateTime } from '@/lib/formatters';
 
 interface TrackingTooltipProps {
   trackingId: string;
@@ -52,7 +53,7 @@ export function TrackingTooltip({ trackingId }: TrackingTooltipProps) {
         {detail.opens.map((open, i) => (
           <div key={i} className="text-xs border-l-2 border-green-500 pl-2 py-0.5 space-y-0.5">
             <div className="text-muted-foreground">
-              {new Date(open.timestamp).toLocaleString()}
+              {formatDateTime(open.timestamp)}
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {(open.country || open.city) && (

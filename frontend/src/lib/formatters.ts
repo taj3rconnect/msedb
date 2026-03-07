@@ -1,6 +1,22 @@
 import { formatDistanceToNow } from 'date-fns';
 
 /**
+ * Format a date as mm-dd-yy--hh:mm AM/PM
+ * e.g. 03-07-26--2:34 PM
+ */
+export function formatDateTime(date: string | Date): string {
+  const d = new Date(date);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const rawHour = d.getHours();
+  const ampm = rawHour >= 12 ? 'PM' : 'AM';
+  const hh = rawHour % 12 || 12;
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}-${dd}-${yy}--${hh}:${min} ${ampm}`;
+}
+
+/**
  * Format a date as relative time (e.g., "5 minutes ago").
  */
 export function formatRelativeTime(date: string | Date): string {

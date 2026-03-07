@@ -49,6 +49,7 @@ import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
 import { ComposeEmailDialog } from '@/components/inbox/ComposeEmailDialog';
 import { EmailAutocomplete } from '@/components/inbox/EmailAutocomplete';
 import { AiSearchPanel } from '@/components/inbox/AiSearchPanel';
+import { formatDateTime } from '@/lib/formatters';
 import type { AiSearchResult } from '@/api/aiSearch';
 import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -2157,15 +2158,7 @@ function EmailPreviewPane({
   onAction,
   searchQuery = '',
 }: EmailPreviewPaneProps) {
-  const d = new Date(event.timestamp);
-  const timeStr = d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  const timeStr = formatDateTime(event.timestamp);
 
   // Compose mode: reply, replyAll, forward, or null
   const [composeMode, setComposeMode] = useState<'reply' | 'replyAll' | 'forward' | null>(null);

@@ -2,6 +2,7 @@ import { FlaskConical, Loader2, CheckCircle, AlertTriangle, X } from 'lucide-rea
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { SimulationResult } from '@/api/rules';
+import { formatDateTime } from '@/lib/formatters';
 
 interface SimulationResultPanelProps {
   result: SimulationResult | null;
@@ -105,11 +106,7 @@ export function SimulationResultPanel({
         <ScrollArea className="max-h-[200px]">
           <div className="space-y-1">
             {result.emails.map((email) => {
-              const d = new Date(email.timestamp);
-              const dateStr = d.toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-              });
+              const dateStr = formatDateTime(email.timestamp);
               return (
                 <div
                   key={email._id}

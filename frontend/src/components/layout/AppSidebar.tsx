@@ -38,6 +38,7 @@ import { useUiStore } from '@/stores/uiStore';
 import { useHealth } from '@/hooks/useHealth';
 import { useFolders } from '@/hooks/useFolders';
 import { fetchChildFolders, type MailFolder } from '@/api/mailboxes';
+import { formatDateTime } from '@/lib/formatters';
 
 declare const __APP_VERSION__: string;
 declare const __APP_BUILD_DATE__: string;
@@ -222,7 +223,7 @@ export function AppSidebar() {
     if (diffSec < 60) return `${diffSec}s ago`;
     if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
     if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-    return d.toLocaleDateString();
+    return formatDateTime(iso);
   };
 
   const visibleItems = NAV_ITEMS.filter(
