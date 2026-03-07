@@ -43,6 +43,8 @@ import { formatDateTime } from '@/lib/formatters';
 declare const __APP_VERSION__: string;
 declare const __APP_BUILD_DATE__: string;
 
+const APP_BUILD_DATE_FORMATTED = typeof __APP_BUILD_DATE__ !== 'undefined' ? formatDateTime(__APP_BUILD_DATE__) : '';
+
 /** Map well-known folder display names to icons. */
 const FOLDER_ICON_MAP: Record<string, typeof Folder> = {
   'Inbox': Inbox,
@@ -260,24 +262,22 @@ export function AppSidebar() {
             {__APP_VERSION__ && (
               <div className="flex flex-col leading-tight">
                 <span className="text-xs text-muted-foreground whitespace-nowrap">{__APP_VERSION__}</span>
-                <span className="text-[10px] text-muted-foreground/60 whitespace-nowrap">{formatDateTime(__APP_BUILD_DATE__)}</span>
+                <span className="text-[10px] text-muted-foreground/60 whitespace-nowrap">{APP_BUILD_DATE_FORMATTED}</span>
               </div>
             )}
           </div>
-          <div className="ml-auto">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Database
-                  className={`h-4 w-4 shrink-0 ${
-                    isHealthy ? 'text-green-500' : 'text-red-500'
-                  }`}
-                />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>MongoDB: {mongoStatus === 'connected' ? mongoHost : 'disconnected'}</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
+          <Tooltip>
+            <TooltipTrigger asChild className="ml-auto">
+              <Database
+                className={`h-4 w-4 shrink-0 ${
+                  isHealthy ? 'text-green-500' : 'text-red-500'
+                }`}
+              />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>MongoDB: {mongoStatus === 'connected' ? mongoHost : 'disconnected'}</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
         {lastSyncAt && (
           <p className="text-[11px] text-muted-foreground mt-1">
