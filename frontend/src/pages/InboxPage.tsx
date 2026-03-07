@@ -2052,23 +2052,24 @@ function FolderSyncOverlay({
 function HtmlEmailViewer({ html }: { html: string }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeHeight, setIframeHeight] = useState(500);
-  const [showImages, setShowImages] = useState(false);
+  const [showImages, setShowImages] = useState(true);
+
+  // Reset height when email changes
+  useEffect(() => {
+    setIframeHeight(500);
+    setShowImages(true);
+  }, [html]);
 
   const processedHtml = useMemo(() => {
     let content = html;
 
-    // Block or restore images
-    if (!showImages) {
-      // Move src to data-src so images don't load
-      content = content
-        .replace(/<img([^>]*)\s+src=(['"])/gi, '<img$1 data-src=$2')
-        .replace(/<img([^>]*)\s+src=(?!['"])/gi, '<img$1 data-src=');
-    }
-
     // Make all links open in new tab
     content = content.replace(/<a(\s)/gi, '<a target="_blank" rel="noopener noreferrer"$1');
 
-    // Inject responsive styles into head (or prepend if no head)
+    // Use CSS to hide images rather than mangling src attributes (avoids empty broken boxes)
+    const imageBlockCss = showImages ? '' : 'img{display:none!important;}';
+
+    // Inject responsive styles
     const injectStyles = `<style>
 html,body{margin:0!important;padding:12px!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif!important;font-size:14px!important;line-height:1.5!important;color:#111!important;background:#fff!important;word-wrap:break-word!important;overflow-x:hidden!important;}
 img{max-width:100%!important;height:auto!important;}
@@ -2076,6 +2077,7 @@ table{max-width:100%!important;}
 *{box-sizing:border-box!important;}
 a{color:#0078d4;}
 pre,code{white-space:pre-wrap!important;word-break:break-all!important;}
+${imageBlockCss}
 </style>`;
 
     if (content.includes('</head>')) {
