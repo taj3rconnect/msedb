@@ -138,6 +138,7 @@ export function RuleActionsDialog({
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [customName, setCustomName] = useState('');
   const [selectedExistingRuleId, setSelectedExistingRuleId] = useState('');
+  const [prefilledRuleId, setPrefilledRuleId] = useState('');
   const [mailboxSearchOpen, setMailboxSearchOpen] = useState(false);
   const [mailboxSearch, setMailboxSearch] = useState('');
   const [senderEmailCondition, setSenderEmailCondition] = useState('');
@@ -197,6 +198,9 @@ export function RuleActionsDialog({
   // When an existing rule is selected, pre-fill actions AND conditions from it
   useEffect(() => {
     if (!selectedExistingRuleId) return;
+    // Only pre-fill once per rule selection — don't override user edits when
+    // existingRules refreshes in the background.
+    if (prefilledRuleId === selectedExistingRuleId) return;
     const rule = existingRules.find((r) => r._id === selectedExistingRuleId);
     if (!rule) return;
 
@@ -211,8 +215,6 @@ export function RuleActionsDialog({
       setSelectedFolder(null);
     }
 
-    // Pre-fill conditions from the existing rule so the user sees what's set
-    // and can explicitly clear fields they don't want
     setSenderDomain(rule.conditions.senderDomain ?? '');
     setSubjectContains(rule.conditions.subjectContains ?? '');
     setBodyContains(rule.conditions.bodyContains ?? '');
@@ -222,7 +224,9 @@ export function RuleActionsDialog({
         : [rule.conditions.senderEmail];
       setSenderEmailCondition(emails[0] ?? '');
     }
-  }, [selectedExistingRuleId, existingRules]);
+
+    setPrefilledRuleId(selectedExistingRuleId);
+  }, [selectedExistingRuleId, existingRules, prefilledRuleId]);
 
   // Resolve folder name when folders data loads (for existing rule pre-fill)
   useEffect(() => {
@@ -357,6 +361,7 @@ export function RuleActionsDialog({
       setShowNewFolder(false);
       setCustomName('');
       setSelectedExistingRuleId('');
+      setPrefilledRuleId('');
       setMailboxSearch('');
       setMailboxSearchOpen(false);
       setSenderEmailCondition('');
@@ -470,7 +475,7 @@ export function RuleActionsDialog({
               <Label>Copy from existing rule</Label>
               <Select
                 value={selectedExistingRuleId}
-                onValueChange={setSelectedExistingRuleId}
+                onValueChange={(v) => { setSelectedExistingRuleId(v); if (!v) setPrefilledRuleId(''); }}
               >
                 <SelectTrigger className="text-sm">
                   <SelectValue placeholder="Select a rule..." />
