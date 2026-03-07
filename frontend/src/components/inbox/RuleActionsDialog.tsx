@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, ChevronsUpDown, FlaskConical, Folder, FolderPlus, Loader2, Search, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ChevronsUpDown, FlaskConical, Folder, FolderPlus, Loader2, Search, X } from 'lucide-react';
 import { useSimulateRule } from '@/hooks/useRules';
 import type { SimulationResult } from '@/api/rules';
 import { SimulationResultPanel } from '@/components/shared/SimulationResultPanel';
 import { useAuthStore } from '@/stores/authStore';
-import { fetchMailboxFolders, createMailboxFolder } from '@/api/mailboxes';
+import { fetchMailboxFolders, fetchChildFolders, createMailboxFolder } from '@/api/mailboxes';
+import type { MailFolder } from '@/api/mailboxes';
 import { fetchRules } from '@/api/rules';
 import type { RuleAction, RuleConditions, Rule } from '@/api/rules';
 import {
@@ -43,6 +44,73 @@ interface RuleActionsDialogProps {
   onConfirm: (actions: RuleAction[], actionLabel: string, ruleName?: string, existingRuleId?: string, extraConditions?: Partial<RuleConditions>, runNow?: boolean) => void;
 }
 
+interface FolderTreeItemProps {
+  folder: MailFolder;
+  mailboxId: string;
+  selectedFolderId?: string;
+  depth: number;
+  onSelect: (folder: MailFolder) => void;
+}
+
+function FolderTreeItem({ folder, mailboxId, selectedFolderId, depth, onSelect }: FolderTreeItemProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: childData, isLoading: childrenLoading } = useQuery({
+    queryKey: ['mailbox-child-folders', mailboxId, folder.id],
+    queryFn: () => fetchChildFolders(mailboxId, folder.id),
+    enabled: expanded && folder.childFolderCount > 0,
+  });
+
+  const hasChildren = folder.childFolderCount > 0;
+  const children = childData?.folders ?? [];
+
+  return (
+    <div>
+      <div className="flex items-center gap-0.5">
+        <button
+          className={`shrink-0 p-0.5 text-muted-foreground hover:text-foreground ${!hasChildren ? 'invisible' : ''}`}
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          tabIndex={hasChildren ? 0 : -1}
+        >
+          {expanded
+            ? <ChevronDown className="h-3 w-3" />
+            : <ChevronRight className="h-3 w-3" />}
+        </button>
+        <Button
+          variant={selectedFolderId === folder.id ? 'secondary' : 'ghost'}
+          size="sm"
+          className="flex-1 justify-start h-8 min-w-0"
+          style={{ paddingLeft: `${depth * 12}px` }}
+          onClick={() => onSelect(folder)}
+        >
+          <Folder className="mr-2 h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{folder.displayName}</span>
+        </Button>
+      </div>
+      {expanded && (
+        <div>
+          {childrenLoading ? (
+            <div className="flex items-center py-1" style={{ paddingLeft: `${(depth + 1) * 12 + 20}px` }}>
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            children.map((child) => (
+              <FolderTreeItem
+                key={child.id}
+                folder={child}
+                mailboxId={mailboxId}
+                selectedFolderId={selectedFolderId}
+                depth={depth + 1}
+                onSelect={onSelect}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RuleActionsDialog({
   open,
   onOpenChange,
@@ -72,6 +140,7 @@ export function RuleActionsDialog({
   const [selectedExistingRuleId, setSelectedExistingRuleId] = useState('');
   const [mailboxSearchOpen, setMailboxSearchOpen] = useState(false);
   const [mailboxSearch, setMailboxSearch] = useState('');
+  const [senderEmailCondition, setSenderEmailCondition] = useState('');
   const [senderDomain, setSenderDomain] = useState('');
   const [subjectContains, setSubjectContains] = useState('');
   const [bodyContains, setBodyContains] = useState('');
@@ -85,15 +154,18 @@ export function RuleActionsDialog({
   // Clear simulation when conditions change
   useEffect(() => {
     setSimulationResult(null);
-  }, [deleteChecked, moveChecked, markReadChecked, senderDomain, subjectContains, bodyContains, selectedExistingRuleId]);
+  }, [deleteChecked, moveChecked, markReadChecked, senderEmailCondition, senderDomain, subjectContains, bodyContains, selectedExistingRuleId]);
 
   // Auto-fill conditions when dialog opens
   useEffect(() => {
     if (!open) return;
     setFolderMailboxId(mailboxId);
 
-    // Auto-fill sender domain if all senders share the same domain
+    // Auto-fill sender email/domain if all senders share the same email/domain
     const uniqueEmails = [...new Set(senderEmails)];
+    if (uniqueEmails.length === 1) {
+      setSenderEmailCondition(uniqueEmails[0]);
+    }
     const domains = uniqueEmails.map((e) => e.split('@')[1]).filter(Boolean);
     const uniqueDomains = [...new Set(domains)];
     if (uniqueDomains.length === 1) {
@@ -220,6 +292,7 @@ export function RuleActionsDialog({
     const existingId = selectedExistingRuleId || undefined;
 
     const extraConditions: Partial<RuleConditions> = {};
+    if (senderEmailCondition.trim()) extraConditions.senderEmail = senderEmailCondition.trim();
     if (senderDomain.trim()) extraConditions.senderDomain = senderDomain.trim();
     if (subjectContains.trim()) extraConditions.subjectContains = subjectContains.trim();
     if (bodyContains.trim()) extraConditions.bodyContains = bodyContains.trim();
@@ -232,9 +305,13 @@ export function RuleActionsDialog({
     setSimDateRange(range);
 
     const conditions: Record<string, unknown> = {};
-    const uniqueSenders = [...new Set(senderEmails)];
-    if (uniqueSenders.length > 0) {
-      conditions.senderEmail = uniqueSenders.length === 1 ? uniqueSenders[0] : uniqueSenders;
+    if (senderEmailCondition.trim()) {
+      conditions.senderEmail = senderEmailCondition.trim();
+    } else {
+      const uniqueSenders = [...new Set(senderEmails)];
+      if (uniqueSenders.length > 0) {
+        conditions.senderEmail = uniqueSenders.length === 1 ? uniqueSenders[0] : uniqueSenders;
+      }
     }
     if (senderDomain.trim()) conditions.senderDomain = senderDomain.trim();
     if (subjectContains.trim()) conditions.subjectContains = subjectContains.trim();
@@ -262,6 +339,7 @@ export function RuleActionsDialog({
       setSelectedExistingRuleId('');
       setMailboxSearch('');
       setMailboxSearchOpen(false);
+      setSenderEmailCondition('');
       setSenderDomain('');
       setSubjectContains('');
       setBodyContains('');
@@ -597,27 +675,14 @@ export function RuleActionsDialog({
                           </p>
                         ) : (
                           filteredFolders.map((folder) => (
-                            <Button
+                            <FolderTreeItem
                               key={folder.id}
-                              variant={
-                                selectedFolder?.id === folder.id
-                                  ? 'secondary'
-                                  : 'ghost'
-                              }
-                              size="sm"
-                              className="w-full justify-start h-8"
-                              onClick={() =>
-                                setSelectedFolder({
-                                  id: folder.id,
-                                  name: folder.displayName,
-                                })
-                              }
-                            >
-                              <Folder className="mr-2 h-3.5 w-3.5 shrink-0" />
-                              <span className="truncate">
-                                {folder.displayName}
-                              </span>
-                            </Button>
+                              folder={folder}
+                              mailboxId={folderMailboxId}
+                              selectedFolderId={selectedFolder?.id}
+                              depth={0}
+                              onSelect={(f) => setSelectedFolder({ id: f.id, name: f.displayName })}
+                            />
                           ))
                         )}
                       </div>
@@ -669,6 +734,12 @@ export function RuleActionsDialog({
             </div>
             <div className="space-y-1.5">
               <Input
+                placeholder="From email (e.g. newsletter@example.com)"
+                value={senderEmailCondition}
+                onChange={(e) => setSenderEmailCondition(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <Input
                 placeholder="Sender domain (e.g. newsletter.com)"
                 value={senderDomain}
                 onChange={(e) => setSenderDomain(e.target.value)}
@@ -697,10 +768,11 @@ export function RuleActionsDialog({
             isLoading={simulateMutation.isPending}
             currentDateRange={simDateRange}
             onDateRangeChange={(range) => handleSimulate(range)}
+            onDismiss={() => setSimulationResult(null)}
           />
         )}
 
-        <DialogFooter className="flex-col gap-3 sm:flex-col">
+        <DialogFooter className="flex-col gap-3 sm:flex-col sticky bottom-0 bg-background pt-3 border-t">
           <div className="flex items-center space-x-2 self-start">
             <Checkbox
               id="action-run-now"

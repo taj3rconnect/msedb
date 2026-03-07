@@ -1,4 +1,4 @@
-import { FlaskConical, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { FlaskConical, Loader2, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { SimulationResult } from '@/api/rules';
@@ -8,6 +8,7 @@ interface SimulationResultPanelProps {
   isLoading: boolean;
   onDateRangeChange?: (range: '30d' | '60d' | '90d') => void;
   currentDateRange?: string;
+  onDismiss?: () => void;
 }
 
 const DATE_RANGES = ['30d', '60d', '90d'] as const;
@@ -17,6 +18,7 @@ export function SimulationResultPanel({
   isLoading,
   onDateRangeChange,
   currentDateRange = '30d',
+  onDismiss,
 }: SimulationResultPanelProps) {
   if (isLoading) {
     return (
@@ -60,22 +62,31 @@ export function SimulationResultPanel({
           </div>
         </div>
 
-        {/* Date range toggle */}
-        {onDateRangeChange && (
-          <div className="flex items-center gap-1">
-            {DATE_RANGES.map((range) => (
-              <Button
-                key={range}
-                variant={currentDateRange === range ? 'default' : 'outline'}
-                size="sm"
-                className="h-6 text-[10px] px-2"
-                onClick={() => onDateRangeChange(range)}
-              >
-                {range}
-              </Button>
-            ))}
-          </div>
-        )}
+        {/* Date range toggle + dismiss */}
+        <div className="flex items-center gap-1">
+          {onDateRangeChange && DATE_RANGES.map((range) => (
+            <Button
+              key={range}
+              variant={currentDateRange === range ? 'default' : 'outline'}
+              size="sm"
+              className="h-6 text-[10px] px-2"
+              onClick={() => onDateRangeChange(range)}
+            >
+              {range}
+            </Button>
+          ))}
+          {onDismiss && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onDismiss}
+              title="Clear simulation"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Body contains caveat */}
