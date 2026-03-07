@@ -446,9 +446,14 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                 : [existingRule.conditions.senderEmail]
               : [];
             const mergedSenders = [...new Set([...currentSenders, ...uniqueSenders])];
+            const mergedConditions = { ...existingRule.conditions, ...payload.extraConditions, senderEmail: mergedSenders };
+            // Remove keys explicitly set to undefined — user cleared those fields
+            (Object.keys(mergedConditions) as (keyof typeof mergedConditions)[]).forEach((k) => {
+              if (mergedConditions[k] === undefined) delete mergedConditions[k];
+            });
             await updateRule(payload.existingRuleId, {
               name: payload.ruleName || existingRule.name,
-              conditions: { ...existingRule.conditions, ...payload.extraConditions, senderEmail: mergedSenders },
+              conditions: mergedConditions,
               actions: payload.actions,
             });
             ruleUpdated = true;

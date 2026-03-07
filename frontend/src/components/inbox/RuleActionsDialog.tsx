@@ -194,7 +194,7 @@ export function RuleActionsDialog({
 
   const existingRules = rulesData?.rules ?? [];
 
-  // When an existing rule is selected, pre-fill actions from it
+  // When an existing rule is selected, pre-fill actions AND conditions from it
   useEffect(() => {
     if (!selectedExistingRuleId) return;
     const rule = existingRules.find((r) => r._id === selectedExistingRuleId);
@@ -209,6 +209,18 @@ export function RuleActionsDialog({
       setSelectedFolder({ id: moveAction.toFolder, name: moveAction.toFolder });
     } else {
       setSelectedFolder(null);
+    }
+
+    // Pre-fill conditions from the existing rule so the user sees what's set
+    // and can explicitly clear fields they don't want
+    setSenderDomain(rule.conditions.senderDomain ?? '');
+    setSubjectContains(rule.conditions.subjectContains ?? '');
+    setBodyContains(rule.conditions.bodyContains ?? '');
+    if (rule.conditions.senderEmail) {
+      const emails = Array.isArray(rule.conditions.senderEmail)
+        ? rule.conditions.senderEmail
+        : [rule.conditions.senderEmail];
+      setSenderEmailCondition(emails[0] ?? '');
     }
   }, [selectedExistingRuleId, existingRules]);
 
@@ -292,10 +304,18 @@ export function RuleActionsDialog({
     const existingId = selectedExistingRuleId || undefined;
 
     const extraConditions: Partial<RuleConditions> = {};
-    if (senderEmailCondition.trim()) extraConditions.senderEmail = senderEmailCondition.trim();
-    if (senderDomain.trim()) extraConditions.senderDomain = senderDomain.trim();
-    if (subjectContains.trim()) extraConditions.subjectContains = subjectContains.trim();
-    if (bodyContains.trim()) extraConditions.bodyContains = bodyContains.trim();
+    if (existingId) {
+      // When updating, send ALL fields explicitly so cleared fields overwrite the old rule's conditions
+      extraConditions.senderEmail = senderEmailCondition.trim() || undefined;
+      extraConditions.senderDomain = senderDomain.trim() || undefined;
+      extraConditions.subjectContains = subjectContains.trim() || undefined;
+      extraConditions.bodyContains = bodyContains.trim() || undefined;
+    } else {
+      if (senderEmailCondition.trim()) extraConditions.senderEmail = senderEmailCondition.trim();
+      if (senderDomain.trim()) extraConditions.senderDomain = senderDomain.trim();
+      if (subjectContains.trim()) extraConditions.subjectContains = subjectContains.trim();
+      if (bodyContains.trim()) extraConditions.bodyContains = bodyContains.trim();
+    }
 
     onConfirm(actions, actionLabel, name, existingId, Object.keys(extraConditions).length > 0 ? extraConditions : undefined, runNow);
   }
