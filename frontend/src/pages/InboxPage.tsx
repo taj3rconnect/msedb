@@ -32,6 +32,8 @@ import {
   SquarePen,
   Brain,
   Eye,
+  ImageOff,
+  ImageIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
@@ -2045,6 +2047,88 @@ function FolderSyncOverlay({
   );
 }
 
+// --- HTML Email Viewer ---
+
+function HtmlEmailViewer({ html }: { html: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [iframeHeight, setIframeHeight] = useState(500);
+  const [showImages, setShowImages] = useState(false);
+
+  const processedHtml = useMemo(() => {
+    let content = html;
+
+    // Block or restore images
+    if (!showImages) {
+      // Move src to data-src so images don't load
+      content = content
+        .replace(/<img([^>]*)\s+src=(['"])/gi, '<img$1 data-src=$2')
+        .replace(/<img([^>]*)\s+src=(?!['"])/gi, '<img$1 data-src=');
+    }
+
+    // Make all links open in new tab
+    content = content.replace(/<a(\s)/gi, '<a target="_blank" rel="noopener noreferrer"$1');
+
+    // Inject responsive styles into head (or prepend if no head)
+    const injectStyles = `<style>
+html,body{margin:0!important;padding:12px!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif!important;font-size:14px!important;line-height:1.5!important;color:#111!important;background:#fff!important;word-wrap:break-word!important;overflow-x:hidden!important;}
+img{max-width:100%!important;height:auto!important;}
+table{max-width:100%!important;}
+*{box-sizing:border-box!important;}
+a{color:#0078d4;}
+pre,code{white-space:pre-wrap!important;word-break:break-all!important;}
+</style>`;
+
+    if (content.includes('</head>')) {
+      return content.replace('</head>', `${injectStyles}</head>`);
+    }
+    if (content.toLowerCase().includes('<html')) {
+      return content.replace(/<html([^>]*)>/i, `<html$1><head>${injectStyles}</head>`);
+    }
+    return injectStyles + content;
+  }, [html, showImages]);
+
+  const handleLoad = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    try {
+      const doc = iframe.contentDocument;
+      if (doc) {
+        const h = doc.documentElement.scrollHeight || doc.body?.scrollHeight || 0;
+        if (h > 0) setIframeHeight(h + 24);
+      }
+    } catch {
+      // cross-origin fallback — keep default height
+    }
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => setShowImages((v) => !v)}
+        >
+          {showImages ? <ImageOff className="h-3.5 w-3.5" /> : <ImageIcon className="h-3.5 w-3.5" />}
+          {showImages ? 'Hide images' : 'Show images'}
+        </button>
+      </div>
+      <div className="rounded border overflow-hidden bg-white">
+        <iframe
+          ref={iframeRef}
+          srcDoc={processedHtml}
+          className="w-full border-0 block"
+          style={{ height: `${iframeHeight}px` }}
+          sandbox="allow-same-origin allow-popups"
+          referrerPolicy="no-referrer"
+          title="Email content"
+          onLoad={handleLoad}
+        />
+      </div>
+    </div>
+  );
+}
+
 // --- Email Preview Pane ---
 
 interface EmailPreviewPaneProps {
@@ -2555,21 +2639,16 @@ function EmailPreviewPane({
         )}
 
         {/* Email body */}
-        <div className="border-t pt-3 flex-1 min-h-0 flex flex-col">
+        <div className="border-t pt-3">
           {bodyLoading ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : messageBody ? (
             messageBody.contentType === 'html' ? (
-              <iframe
-                srcDoc={messageBody.content}
-                className="w-full border-0 flex-1 min-h-0"
-                sandbox="allow-same-origin"
-                title="Email content"
-              />
+              <HtmlEmailViewer html={messageBody.content} />
             ) : (
-              <pre className="text-sm whitespace-pre-wrap break-words text-foreground flex-1">
+              <pre className="text-sm whitespace-pre-wrap break-words text-foreground">
                 {messageBody.content}
               </pre>
             )
