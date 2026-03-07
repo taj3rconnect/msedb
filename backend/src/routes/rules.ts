@@ -606,12 +606,12 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
   }
 
   // Select fields needed for client-side filtering
-  const selectParts = ['id', 'from'];
+  const selectParts = ['id', 'from', 'isRead'];
   if (conditions.subjectContains || conditions.bodyContains) selectParts.push('subject', 'bodyPreview');
   const selectFields = [...new Set(selectParts)].join(',');
 
   // Fetch all matching messages from the mailbox (paginated via @odata.nextLink)
-  const allMessages: { id: string; from?: { emailAddress: { address?: string } }; subject?: string; bodyPreview?: string }[] = [];
+  const allMessages: { id: string; isRead?: boolean; from?: { emailAddress: { address?: string } }; subject?: string; bodyPreview?: string }[] = [];
   const initialUrl = `/users/${email}/messages?$select=${selectFields}&$top=100${searchStr}`;
   logger.info('RunRule: fetching messages', { initialUrl, senders, email });
   let nextUrl: string | null = initialUrl;
@@ -632,6 +632,9 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
 
   // Client-side filtering — KQL $search is fuzzy, so we do exact matching here
   let filteredMessages = allMessages;
+
+  // Only apply to unread messages
+  filteredMessages = filteredMessages.filter((msg) => msg.isRead === false);
 
   // Exact sender email match (KQL from: can return partial matches)
   if (senders.length > 0) {

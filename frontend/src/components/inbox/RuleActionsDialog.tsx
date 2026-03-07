@@ -398,7 +398,7 @@ export function RuleActionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>
             {isBulk
@@ -407,6 +407,7 @@ export function RuleActionsDialog({
           </DialogTitle>
         </DialogHeader>
 
+        <div className="flex-1 overflow-y-auto min-h-0 px-1">
         {isBulk ? (
           <div className="rounded-md border">
             <ScrollArea className="h-[80px]">
@@ -771,8 +772,9 @@ export function RuleActionsDialog({
             onDismiss={() => setSimulationResult(null)}
           />
         )}
+        </div>{/* end scroll area */}
 
-        <DialogFooter className="flex-col gap-3 sm:flex-col sticky bottom-0 bg-background pt-3 border-t">
+        <DialogFooter className="flex-col gap-3 sm:flex-col border-t pt-3 mt-0">
           <div className="flex items-center space-x-2 self-start">
             <Checkbox
               id="action-run-now"
@@ -780,7 +782,7 @@ export function RuleActionsDialog({
               onCheckedChange={(v) => setRunNow(v === true)}
             />
             <Label htmlFor="action-run-now" className="text-sm">
-              Run now on selected emails
+              {selectedExistingRuleId ? 'Apply now to unread emails' : 'Run now on selected emails'}
             </Label>
           </div>
           <div className="flex justify-between gap-2 w-full">
