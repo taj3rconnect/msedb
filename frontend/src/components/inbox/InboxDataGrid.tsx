@@ -621,7 +621,7 @@ export function InboxDataGrid({
         width: 170,
         sortable: true,
         resizable: true,
-        comparator: (a: string, b: string) => new Date(a).getTime() - new Date(b).getTime(),
+        comparator: (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0),
       },
       // Folder
       {

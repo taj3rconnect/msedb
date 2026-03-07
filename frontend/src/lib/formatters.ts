@@ -6,6 +6,7 @@ import { formatDistanceToNow } from 'date-fns';
  */
 export function formatDateTime(date: string | Date): string {
   const d = new Date(date);
+  if (isNaN(d.getTime())) return '—';
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yy = String(d.getFullYear()).slice(-2);

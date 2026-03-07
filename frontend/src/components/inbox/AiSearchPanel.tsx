@@ -200,7 +200,7 @@ export function AiSearchPanel({ open, onOpenChange, mailboxId, onSelectResult }:
                         {/* Badges */}
                         <div className="flex items-center gap-1.5 pt-0.5">
                           <span className="text-[10px] text-muted-foreground/60">
-                            {formatDate(result.receivedAt)}
+                            {formatDateTime(result.receivedAt)}
                           </span>
                           {result.importance === 'high' && (
                             <Star className="h-3 w-3 text-amber-500" />
@@ -259,8 +259,4 @@ export function AiSearchPanel({ open, onOpenChange, mailboxId, onSelectResult }:
       </DialogContent>
     </Dialog>
   );
-}
-
-function formatDate(iso: string): string {
-  return formatDateTime(iso);
 }

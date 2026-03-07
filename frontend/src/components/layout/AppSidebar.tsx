@@ -253,26 +253,31 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="border-b px-4 py-3">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-          <Mail className="h-6 w-6 text-primary" />
-          <span className="text-lg font-bold">MSEDB</span>
-          {__APP_VERSION__ && (
-            <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {__APP_VERSION__} {__APP_BUILD_DATE__}
-            </span>
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Database
-                className={`h-4 w-4 shrink-0 ${
-                  isHealthy ? 'text-green-500' : 'text-red-500'
-                }`}
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>MongoDB: {mongoStatus === 'connected' ? mongoHost : 'disconnected'}</p>
-            </TooltipContent>
-          </Tooltip>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
+            <Mail className="h-6 w-6 text-primary" />
+            <span className="text-lg font-bold">MSEDB</span>
+            {__APP_VERSION__ && (
+              <div className="flex flex-col leading-tight">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{__APP_VERSION__}</span>
+                <span className="text-[10px] text-muted-foreground/60 whitespace-nowrap">{formatDateTime(__APP_BUILD_DATE__)}</span>
+              </div>
+            )}
+          </div>
+          <div className="ml-auto">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Database
+                  className={`h-4 w-4 shrink-0 ${
+                    isHealthy ? 'text-green-500' : 'text-red-500'
+                  }`}
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>MongoDB: {mongoStatus === 'connected' ? mongoHost : 'disconnected'}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
         {lastSyncAt && (
           <p className="text-[11px] text-muted-foreground mt-1">
