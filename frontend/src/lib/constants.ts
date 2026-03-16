@@ -11,6 +11,7 @@ import {
   FileText,
   Settings,
   ShieldCheck,
+  BarChart3,
 } from 'lucide-react';
 
 /**
@@ -39,6 +40,7 @@ export const ROUTE_PATHS = {
   audit: '/audit',
   settings: '/settings',
   pending: '/pending',
+  reports: '/reports',
   admin: '/admin',
   login: '/login',
 } as const;
@@ -63,6 +65,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Rules', path: ROUTE_PATHS.rules, icon: Shield },
   { label: 'Staging', path: ROUTE_PATHS.staging, icon: Clock },
   { label: 'Audit Log', path: ROUTE_PATHS.audit, icon: FileText },
+  { label: 'Reports', path: ROUTE_PATHS.reports, icon: BarChart3 },
   { label: 'Settings', path: ROUTE_PATHS.settings, icon: Settings },
   { label: 'Admin Panel', path: ROUTE_PATHS.admin, icon: ShieldCheck, adminOnly: true },
 ];
