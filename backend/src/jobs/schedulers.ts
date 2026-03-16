@@ -7,7 +7,7 @@ const schedulerJobOpts = {
 };
 
 /**
- * Initialize all 6 job schedulers using BullMQ's upsertJobScheduler API.
+ * Initialize all 8 job schedulers using BullMQ's upsertJobScheduler API.
  * This replaces the deprecated `repeat` option and is idempotent (safe to call on every startup).
  */
 export async function initializeSchedulers(): Promise<void> {
@@ -95,5 +95,17 @@ export async function initializeSchedulers(): Promise<void> {
   );
   logger.info('Scheduler registered: contacts-sync (daily at 1 AM EST)');
 
-  logger.info('All 7 job schedulers initialized');
+  // 8. Daily activity report -- daily at 9 AM EST (14:00 UTC)
+  await queues['daily-report'].upsertJobScheduler(
+    'daily-report-schedule',
+    { pattern: '0 14 * * *' },
+    {
+      name: 'send-daily-report',
+      data: {},
+      opts: schedulerJobOpts,
+    }
+  );
+  logger.info('Scheduler registered: daily-report (daily at 9 AM EST)');
+
+  logger.info('All 8 job schedulers initialized');
 }
