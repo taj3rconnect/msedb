@@ -40,6 +40,7 @@ services:
     container_name: msedb-frontend
     ports:
       - "3010:8080"
+      - "127.0.0.1:3011:8081"
     volumes:
       - ./certs:/etc/nginx/certs:ro
       - ./addin/dist:/usr/share/nginx/addin:ro
@@ -105,23 +106,7 @@ services:
       timeout: 5s
       retries: 5
 
-  msedb-tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: msedb-tunnel
-    command: ["tunnel", "--no-autoupdate", "run", "acdd721a-a650-44c3-824f-6ff106899581"]
-    volumes:
-      - ./.cloudflared:/home/nonroot/.cloudflared:ro
-    depends_on:
-      msedb-frontend:
-        condition: service_healthy
-    networks:
-      - msedb-network
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
+  # msedb-tunnel removed — routes merged into host tunnel (/etc/cloudflared/config.yml)
 
 networks:
   msedb-network:
