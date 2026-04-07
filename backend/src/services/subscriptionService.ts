@@ -138,6 +138,61 @@ export async function deleteSubscription(subscriptionId: string) {
 }
 
 /**
+ * Create a Graph API webhook subscription for calendar events in a mailbox.
+ */
+export async function createCalendarSubscription(mailboxId: string) {
+  const accessToken = await getAccessTokenForMailbox(mailboxId);
+  const mailbox = await Mailbox.findById(mailboxId);
+  if (!mailbox) throw new Error(`Mailbox not found: ${mailboxId}`);
+
+  const clientState = uuidv4();
+
+  const subscriptionBody = {
+    changeType: 'created,updated,deleted',
+    notificationUrl: `${config.graphWebhookUrl}/webhooks/graph`,
+    lifecycleNotificationUrl: `${config.graphWebhookUrl}/webhooks/graph`,
+    resource: `users/${mailbox.email}/events`,
+    expirationDateTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    clientState,
+  };
+
+  const response = await graphFetch('/subscriptions', accessToken, {
+    method: 'POST',
+    body: JSON.stringify(subscriptionBody),
+  });
+
+  const data = await response.json() as {
+    id: string;
+    resource: string;
+    changeType: string;
+    expirationDateTime: string;
+    notificationUrl: string;
+    lifecycleNotificationUrl?: string;
+  };
+
+  const webhookSub = await WebhookSubscription.create({
+    userId: mailbox.userId,
+    mailboxId: mailbox._id,
+    subscriptionId: data.id,
+    resource: data.resource,
+    changeType: data.changeType,
+    expiresAt: new Date(data.expirationDateTime),
+    notificationUrl: data.notificationUrl,
+    lifecycleNotificationUrl: data.lifecycleNotificationUrl,
+    clientState,
+    status: 'active',
+  });
+
+  logger.info('Calendar webhook subscription created', {
+    subscriptionId: data.id,
+    mailboxId,
+    email: mailbox.email,
+  });
+
+  return webhookSub;
+}
+
+/**
  * Sync all mailbox webhook subscriptions on server startup.
  *
  * For each connected mailbox:
@@ -156,14 +211,16 @@ export async function syncSubscriptionsOnStartup() {
 
   for (const mailbox of mailboxes) {
     const mailboxId = mailbox._id.toString();
+
+    // --- Email subscription ---
     try {
       const existingSub = await WebhookSubscription.findOne({
         mailboxId: mailbox._id,
+        resource: `users/${mailbox.email}/messages`,
         status: 'active',
       });
 
       if (!existingSub || existingSub.expiresAt < new Date()) {
-        // No subscription or expired -- delete stale record and create new
         if (existingSub) {
           existingSub.status = 'expired';
           await existingSub.save();
@@ -171,12 +228,10 @@ export async function syncSubscriptionsOnStartup() {
         await createSubscription(mailboxId);
         created++;
       } else {
-        // Subscription exists and is not expired -- try to renew
         try {
           await renewSubscription(existingSub.subscriptionId);
           renewed++;
         } catch (renewErr) {
-          // Renewal failed (e.g., subscription removed by Graph) -- recreate
           if (renewErr instanceof GraphApiError && renewErr.status === 404) {
             logger.warn('Subscription removed by Graph, recreating', {
               subscriptionId: existingSub.subscriptionId,
@@ -193,7 +248,45 @@ export async function syncSubscriptionsOnStartup() {
       }
     } catch (err) {
       failed++;
-      logger.error('Failed to sync subscription for mailbox', {
+      logger.error('Failed to sync email subscription for mailbox', {
+        mailboxId,
+        email: mailbox.email,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // --- Calendar subscription ---
+    try {
+      const existingCalSub = await WebhookSubscription.findOne({
+        mailboxId: mailbox._id,
+        resource: `users/${mailbox.email}/events`,
+        status: 'active',
+      });
+
+      if (!existingCalSub || existingCalSub.expiresAt < new Date()) {
+        if (existingCalSub) {
+          existingCalSub.status = 'expired';
+          await existingCalSub.save();
+        }
+        await createCalendarSubscription(mailboxId);
+        created++;
+      } else {
+        try {
+          await renewSubscription(existingCalSub.subscriptionId);
+          renewed++;
+        } catch (renewErr) {
+          if (renewErr instanceof GraphApiError && renewErr.status === 404) {
+            existingCalSub.status = 'expired';
+            await existingCalSub.save();
+            await createCalendarSubscription(mailboxId);
+            created++;
+          } else {
+            throw renewErr;
+          }
+        }
+      }
+    } catch (err) {
+      logger.error('Failed to sync calendar subscription for mailbox', {
         mailboxId,
         email: mailbox.email,
         error: err instanceof Error ? err.message : String(err),

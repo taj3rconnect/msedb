@@ -41,3 +41,6 @@ export type { IScheduledEmail } from './ScheduledEmail.js';
 
 export { TrackedEmail } from './TrackedEmail.js';
 export type { ITrackedEmail, ITrackedEmailOpen } from './TrackedEmail.js';
+
+export { CalendarSyncMap } from './CalendarSyncMap.js';
+export type { ICalendarSyncMap, ICalendarMirror } from './CalendarSyncMap.js';

@@ -112,11 +112,11 @@ authRouter.get('/auth/callback', async (req: Request, res: Response) => {
       user.lastLoginAt = new Date();
       await user.save();
 
-      // Find or create initial Mailbox for this user+email
-      let mailbox = await Mailbox.findOne({
-        userId: user._id,
-        email: account.username.toLowerCase(),
-      });
+      // Find or create initial Mailbox — look up by homeAccountId first (authoritative),
+      // then fall back to userId+email in case homeAccountId was not set previously.
+      let mailbox = await Mailbox.findOne({ homeAccountId: account.homeAccountId })
+        ?? await Mailbox.findOne({ userId: user._id, email: account.username.toLowerCase() });
+
       if (!mailbox) {
         mailbox = await Mailbox.create({
           userId: user._id,
@@ -131,9 +131,10 @@ authRouter.get('/auth/callback', async (req: Request, res: Response) => {
           userId: user._id,
         });
       } else {
-        // Update homeAccountId and tenantId in case they changed
+        // Update fields in case they changed
         mailbox.homeAccountId = account.homeAccountId;
         mailbox.tenantId = account.tenantId;
+        mailbox.email = account.username.toLowerCase();
         mailbox.isConnected = true;
         await mailbox.save();
       }

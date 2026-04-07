@@ -30,6 +30,7 @@ import { scheduledEmailsRouter } from './routes/scheduledEmails.js';
 import trackingRouter from './routes/tracking.js';
 import { trackingApiRouter } from './routes/trackingApi.js';
 import { reportsRouter } from './routes/reports.js';
+import { calendarRouter } from './routes/calendar.js';
 import { createSocketServer } from './config/socket.js';
 import { warmContactsCache } from './services/contactsCacheWarmer.js';
 import { ensureQdrantCollection } from './services/qdrantClient.js';
@@ -101,6 +102,9 @@ app.use('/api/tracking', trackingApiRouter);
 
 // Mount reports routes (requireAuth applied internally)
 app.use('/api/reports', reportsRouter);
+
+// Mount calendar routes (requireAuth applied internally)
+app.use('/api/calendar', calendarRouter);
 
 // Global error handler (must be last middleware)
 app.use(globalErrorHandler);

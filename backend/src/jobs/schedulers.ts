@@ -107,5 +107,17 @@ export async function initializeSchedulers(): Promise<void> {
   );
   logger.info('Scheduler registered: daily-report (daily at 9 AM EST)');
 
-  logger.info('All 8 job schedulers initialized');
+  // 9. Calendar delta sync -- every 15 minutes (fallback for missed webhooks)
+  await queues['calendar-sync'].upsertJobScheduler(
+    'calendar-delta-sync-schedule',
+    { every: 15 * 60 * 1000 },
+    {
+      name: 'calendar-delta-sync',
+      data: {},
+      opts: schedulerJobOpts,
+    }
+  );
+  logger.info('Scheduler registered: calendar-delta-sync (every 15 minutes)');
+
+  logger.info('All 9 job schedulers initialized');
 }

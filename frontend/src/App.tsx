@@ -20,6 +20,7 @@ import { InboxPage } from '@/pages/InboxPage';
 import { ContactsPage } from '@/pages/ContactsPage';
 import { PendingMessagesPage } from '@/pages/PendingMessagesPage';
 import { ReportsPage } from '@/pages/ReportsPage';
+import { CalendarPage } from '@/pages/CalendarPage';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -122,6 +123,10 @@ const router = createBrowserRouter([
           {
             path: '/reports',
             element: <ReportsPage />,
+          },
+          {
+            path: '/calendar',
+            element: <CalendarPage />,
           },
           {
             path: '/settings',

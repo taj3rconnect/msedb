@@ -11,6 +11,7 @@ import { processEmailEmbedding } from './processors/emailEmbedding.js';
 import { processScheduledEmail } from './processors/scheduledEmail.js';
 import { processContactsSync } from './processors/contactsSync.js';
 import { processDailyReport } from './processors/dailyReport.js';
+import { processCalendarSync } from './processors/calendarSync.js';
 
 // Connection configs (plain objects avoid ioredis version conflicts with BullMQ)
 const queueConnectionConfig = getQueueConnectionConfig();
@@ -34,6 +35,7 @@ const QUEUE_NAMES = [
   'scheduled-email',
   'contacts-sync',
   'daily-report',
+  'calendar-sync',
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
@@ -80,6 +82,10 @@ export const queues: Record<QueueName, Queue> = {
     connection: queueConnectionConfig,
     defaultJobOptions,
   }),
+  'calendar-sync': new Queue('calendar-sync', {
+    connection: queueConnectionConfig,
+    defaultJobOptions,
+  }),
 };
 
 // Map queue names to their processor functions
@@ -94,6 +100,7 @@ const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
   'scheduled-email': processScheduledEmail,
   'contacts-sync': processContactsSync,
   'daily-report': processDailyReport,
+  'calendar-sync': processCalendarSync,
 };
 
 // Create all 10 workers (each with its own Redis connection via config object)
