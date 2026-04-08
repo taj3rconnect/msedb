@@ -7,6 +7,9 @@ import { MailboxSection } from '@/components/settings/MailboxSection';
 import { WhitelistSection } from '@/components/settings/WhitelistSection';
 import { DataManagement } from '@/components/settings/DataManagement';
 import { ContactsSection } from '@/components/settings/ContactsSection';
+import { SignaturesSection } from '@/components/settings/SignaturesSection';
+import { CategoriesSection } from '@/components/settings/CategoriesSection';
+import { OutOfOfficeSection } from '@/components/settings/OutOfOfficeSection';
 import { useSettings } from '@/hooks/useSettings';
 
 /**
@@ -41,6 +44,9 @@ export function SettingsPage() {
         <TabsList>
           <TabsTrigger value="patterns">Patterns</TabsTrigger>
           <TabsTrigger value="mailboxes">Mailboxes</TabsTrigger>
+          <TabsTrigger value="signatures">Signatures</TabsTrigger>
+          <TabsTrigger value="categories">Categories</TabsTrigger>
+          <TabsTrigger value="oof">Out of Office</TabsTrigger>
           <TabsTrigger value="whitelists">Whitelists</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="data">Data</TabsTrigger>
@@ -52,6 +58,18 @@ export function SettingsPage() {
 
         <TabsContent value="mailboxes">
           <MailboxSection settings={settings} />
+        </TabsContent>
+
+        <TabsContent value="signatures">
+          <SignaturesSection settings={settings} />
+        </TabsContent>
+
+        <TabsContent value="categories">
+          <CategoriesSection settings={settings} />
+        </TabsContent>
+
+        <TabsContent value="oof">
+          <OutOfOfficeSection settings={settings} />
         </TabsContent>
 
         <TabsContent value="whitelists">

@@ -27,6 +27,7 @@ interface AppConfig {
   readonly ollamaUrl: string;
   readonly ollamaEmbedModel: string;
   readonly ollamaInstructModel: string;
+  readonly ollamaWriteModel: string;
 }
 
 export const config: AppConfig = {
@@ -72,6 +73,7 @@ export const config: AppConfig = {
   ollamaUrl: process.env.OLLAMA_URL || 'http://host.docker.internal:11434',
   ollamaEmbedModel: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
   ollamaInstructModel: process.env.OLLAMA_INSTRUCT_MODEL || 'qwen3:1.7b',
+  ollamaWriteModel: process.env.OLLAMA_WRITE_MODEL || 'qwen3.5:35b-a3b',
 };
 
 // Validate critical secrets at startup

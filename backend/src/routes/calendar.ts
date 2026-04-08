@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { requireAuth } from '../auth/middleware.js';
 import { CalendarSyncMap } from '../models/CalendarSyncMap.js';
 import { Mailbox } from '../models/Mailbox.js';
+import { syncEventDelete } from '../services/calendarSyncService.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -9,15 +10,23 @@ router.use(requireAuth);
 /**
  * GET /api/calendar/events
  * Returns synced calendar events for the authenticated user.
- * Optional query params: limit (default 50), upcoming (bool, default true)
+ * Optional query params: limit (default 200), upcoming (bool, default true), startFrom (ISO date), startTo (ISO date)
  */
 router.get('/events', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-  const upcomingOnly = req.query.upcoming !== 'false';
+  const limit = Math.min(parseInt(req.query.limit as string) || 200, 500);
+  const startFrom = req.query.startFrom as string | undefined;
+  const startTo = req.query.startTo as string | undefined;
 
   const filter: Record<string, unknown> = { userId, isDeleted: false };
-  if (upcomingOnly) {
+
+  if (startFrom || startTo) {
+    const range: Record<string, Date> = {};
+    if (startFrom) range['$gte'] = new Date(startFrom);
+    if (startTo) range['$lte'] = new Date(startTo);
+    filter['startDateTime'] = range;
+  } else {
+    // Default: upcoming only
     filter['startDateTime'] = { $gte: new Date() };
   }
 
@@ -98,6 +107,25 @@ router.get('/sync-status', async (req: Request, res: Response) => {
   );
 
   res.json({ mailboxes: status });
+});
+
+/**
+ * DELETE /api/calendar/events/:id
+ * Cancel a synced event: deletes from Graph API (source + all mirrors) and soft-deletes the sync map entry.
+ */
+router.delete('/events/:id', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+  const { id } = req.params;
+
+  const syncMap = await CalendarSyncMap.findOne({ _id: id, userId, isDeleted: false });
+  if (!syncMap) {
+    res.status(404).json({ error: 'Event not found' });
+    return;
+  }
+
+  await syncEventDelete(syncMap.sourceMailboxId.toString(), syncMap.sourceEventId);
+
+  res.json({ ok: true });
 });
 
 export const calendarRouter = router;
