@@ -24,6 +24,25 @@ const EVENT_SELECT =
   'id,subject,start,end,location,body,isAllDay,showAs,sensitivity,isCancelled,isOrganizer,recurrence,onlineMeetingUrl';
 
 /**
+ * Debounce window in ms.  When we push a mirror update via Graph API the
+ * webhook fires back almost instantly.  If the sync map was already written
+ * within this window we can safely skip — the update was triggered by our
+ * own write, not a real user edit.
+ */
+const UPDATE_DEBOUNCE_MS = 30_000;
+
+/**
+ * Returns true if the event ends before the start of today (UTC).
+ * Past events are not synced — only today and future.
+ */
+function isPastEvent(event: GraphCalendarEvent): boolean {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endTime = new Date(event.end.dateTime);
+  return endTime < startOfToday;
+}
+
+/**
  * Fetch a single calendar event from Graph API.
  */
 async function fetchCalendarEvent(
@@ -189,8 +208,12 @@ export async function syncEventCreate(
     return;
   }
 
-  // Cancelled events don't need to be synced
+  // Skip cancelled and past events
   if (event.isCancelled) return;
+  if (isPastEvent(event)) {
+    logger.debug('Calendar sync: skipping past event', { sourceMailboxId, eventId, subject: event.subject });
+    return;
+  }
 
   const sourceMailbox = await Mailbox.findById(sourceMailboxId).select('userId');
   if (!sourceMailbox) return;
@@ -257,11 +280,15 @@ export async function syncEventUpdate(
   });
 
   if (mirrorMap) {
-    // This update came from a mirror — propagate the update back to the SOURCE
-    // and to other mirrors, but only if the update originated from the mirror mailbox
-    // (i.e., the user edited the mirror). We'll update the source and all other mirrors.
+    // Debounce: if we just synced this event, this notification is our own echo
+    if (mirrorMap.lastSyncedAt && (Date.now() - mirrorMap.lastSyncedAt.getTime()) < UPDATE_DEBOUNCE_MS) {
+      logger.debug('Calendar sync: skipping mirror update (debounce)', { sourceMailboxId, eventId });
+      return;
+    }
+
     const event = await fetchCalendarEvent(sourceMailboxId, eventId);
     if (!event || event.isCancelled) return;
+    if (isPastEvent(event)) return;
 
     // Update the source event
     try {
@@ -308,6 +335,12 @@ export async function syncEventUpdate(
   if (!syncMap) {
     // Unknown event — treat as new
     await syncEventCreate(sourceMailboxId, eventId);
+    return;
+  }
+
+  // Debounce: if we just synced this event, this notification is our own echo
+  if (syncMap.lastSyncedAt && (Date.now() - syncMap.lastSyncedAt.getTime()) < UPDATE_DEBOUNCE_MS) {
+    logger.debug('Calendar sync: skipping source update (debounce)', { sourceMailboxId, eventId });
     return;
   }
 
@@ -455,8 +488,8 @@ export async function runCalendarDeltaSyncForMailbox(mailboxId: string): Promise
     try {
       if (ev.removed) {
         await syncEventDelete(mailboxId, ev.id);
-      } else if (deltaLink) {
-        // We have a prior delta link, so these are changes (create or update)
+      } else {
+        // Process creates and updates (both initial and subsequent delta syncs)
         const isMirror = await isMirrorEvent(mailboxId, ev.id);
         if (!isMirror) {
           const existing = await CalendarSyncMap.findOne({
@@ -467,11 +500,11 @@ export async function runCalendarDeltaSyncForMailbox(mailboxId: string): Promise
           if (existing) {
             await syncEventUpdate(mailboxId, ev.id);
           } else {
+            // syncEventCreate already skips past events via isPastEvent()
             await syncEventCreate(mailboxId, ev.id);
           }
         }
       }
-      // On first run (no deltaLink), we don't back-fill all existing events
     } catch (err) {
       logger.error('Calendar delta sync: event processing failed', {
         mailboxId,

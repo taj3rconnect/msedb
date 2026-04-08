@@ -23,6 +23,19 @@ function mailboxLabel(mb: { email: string; displayName?: string } | null): strin
   return mb.displayName ? `${mb.displayName} (${mb.email})` : mb.email;
 }
 
+/** Color-coded dot for origin account. */
+const ORIGIN_COLORS: Record<string, string> = {
+  'aptask.com': 'bg-blue-500',
+  'jobtalk.ai': 'bg-emerald-500',
+  'yenom.ai': 'bg-amber-500',
+};
+
+function OriginDot({ email }: { email: string }) {
+  const domain = email.split('@')[1] ?? '';
+  const color = ORIGIN_COLORS[domain] ?? 'bg-gray-400';
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${color}`} title={email} />;
+}
+
 function SyncStatusSection() {
   const { data, isLoading } = useCalendarSyncStatus();
 
@@ -65,8 +78,11 @@ function EventRow({ event }: { event: CalendarEventItem }) {
     <TableRow>
       <TableCell className="font-medium max-w-[240px] truncate">{event.subject || '(No subject)'}</TableCell>
       <TableCell className="whitespace-nowrap">{formatDt(event.startDateTime, event.isAllDay)}</TableCell>
-      <TableCell className="text-sm text-muted-foreground truncate max-w-[160px]">
-        {mailboxLabel(event.sourceMailbox)}
+      <TableCell className="text-sm text-muted-foreground max-w-[160px]">
+        <span className="flex items-center gap-1.5">
+          {event.sourceMailbox && <OriginDot email={event.sourceMailbox.email} />}
+          <span className="truncate">{mailboxLabel(event.sourceMailbox)}</span>
+        </span>
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap gap-1">

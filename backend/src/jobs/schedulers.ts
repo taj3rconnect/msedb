@@ -108,13 +108,14 @@ export async function initializeSchedulers(): Promise<void> {
   logger.info('Scheduler registered: daily-report (daily at 9 AM EST)');
 
   // 9. Calendar delta sync -- every 15 minutes (fallback for missed webhooks)
+  // Priority 1 (high) so it doesn't get starved behind webhook-triggered calendar-change jobs
   await queues['calendar-sync'].upsertJobScheduler(
     'calendar-delta-sync-schedule',
     { every: 15 * 60 * 1000 },
     {
       name: 'calendar-delta-sync',
       data: {},
-      opts: schedulerJobOpts,
+      opts: { ...schedulerJobOpts, priority: 1 },
     }
   );
   logger.info('Scheduler registered: calendar-delta-sync (every 15 minutes)');
