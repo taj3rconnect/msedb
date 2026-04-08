@@ -49,6 +49,7 @@ import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
 import { ComposeEmailDialog } from '@/components/inbox/ComposeEmailDialog';
 import { EmailAutocomplete } from '@/components/inbox/EmailAutocomplete';
 import { AiSearchPanel } from '@/components/inbox/AiSearchPanel';
+import { AiWriteToolbar } from '@/components/shared/AiWriteToolbar';
 import { formatDateTime } from '@/lib/formatters';
 import type { AiSearchResult } from '@/api/aiSearch';
 import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
@@ -2567,6 +2568,12 @@ function EmailPreviewPane({
               onChange={(e) => setComposeBody(e.target.value)}
               rows={4}
               className="text-sm resize-none"
+            />
+            <AiWriteToolbar
+              mailboxId={mailboxId}
+              body={composeBody}
+              subject={event.subject || ''}
+              onApply={setComposeBody}
             />
 
             {(composeMode === 'reply' || composeMode === 'replyAll') && (

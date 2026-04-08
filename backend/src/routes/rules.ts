@@ -154,6 +154,7 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
 
   // Deduplicate: if a rule with the same senderEmail AND same action types
   // already exists, return it. Different action types get separate rules.
+  // Uses findOneAndUpdate to prevent race conditions from concurrent requests.
   const senderEmail = conditions.senderEmail;
   if (senderEmail && typeof senderEmail === 'string') {
     const requestedTypes = actions.map((a) => a.actionType).sort().join(',');
@@ -167,11 +168,17 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
       return existingTypes === requestedTypes;
     });
     if (existing) {
-      // Same sender + same actions — return existing, re-enable if disabled
-      existing.name = name.trim();
-      if (skipStaging) existing.skipStaging = true;
-      existing.isEnabled = true;
-      await existing.save();
+      const updated = await Rule.findOneAndUpdate(
+        { _id: existing._id },
+        {
+          $set: {
+            name: name.trim(),
+            isEnabled: true,
+            ...(skipStaging ? { skipStaging: true } : {}),
+          },
+        },
+        { new: true },
+      );
 
       // Ensure Graph inbox rule exists / is re-enabled
       try {
@@ -184,7 +191,7 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
         });
       }
 
-      res.status(200).json({ rule: existing });
+      res.status(200).json({ rule: updated });
       return;
     }
   }

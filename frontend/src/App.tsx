@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate, Outlet, RouterProvider } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
@@ -8,21 +9,22 @@ import { RulePopupModal } from '@/components/shared/RulePopupModal';
 import { AppShell } from '@/components/layout/AppShell';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
-import { DashboardPage } from '@/pages/DashboardPage';
-import { EmailActivityPage } from '@/pages/EmailActivityPage';
-import { PatternsPage } from '@/pages/PatternsPage';
-import { RulesPage } from '@/pages/RulesPage';
-import { StagingPage } from '@/pages/StagingPage';
-import { AuditLogPage } from '@/pages/AuditLogPage';
-import { SettingsPage } from '@/pages/SettingsPage';
-import { AdminPage } from '@/pages/AdminPage';
-import { InboxPage } from '@/pages/InboxPage';
-import { ContactsPage } from '@/pages/ContactsPage';
-import { PendingMessagesPage } from '@/pages/PendingMessagesPage';
-import { ReportsPage } from '@/pages/ReportsPage';
-import { CalendarPage } from '@/pages/CalendarPage';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+
+const DashboardPage = lazy(() => import('@/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const EmailActivityPage = lazy(() => import('@/pages/EmailActivityPage').then((m) => ({ default: m.EmailActivityPage })));
+const PatternsPage = lazy(() => import('@/pages/PatternsPage').then((m) => ({ default: m.PatternsPage })));
+const RulesPage = lazy(() => import('@/pages/RulesPage').then((m) => ({ default: m.RulesPage })));
+const StagingPage = lazy(() => import('@/pages/StagingPage').then((m) => ({ default: m.StagingPage })));
+const AuditLogPage = lazy(() => import('@/pages/AuditLogPage').then((m) => ({ default: m.AuditLogPage })));
+const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const AdminPage = lazy(() => import('@/pages/AdminPage').then((m) => ({ default: m.AdminPage })));
+const InboxPage = lazy(() => import('@/pages/InboxPage').then((m) => ({ default: m.InboxPage })));
+const ContactsPage = lazy(() => import('@/pages/ContactsPage').then((m) => ({ default: m.ContactsPage })));
+const PendingMessagesPage = lazy(() => import('@/pages/PendingMessagesPage').then((m) => ({ default: m.PendingMessagesPage })));
+const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const CalendarPage = lazy(() => import('@/pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 
 // --- Protected Layout ---
 
@@ -40,8 +42,11 @@ function ProtectedLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  // Wrap child routes in AppShell (sidebar + topbar)
-  return <AppShell />;
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <AppShell />
+    </Suspense>
+  );
 }
 
 // --- App Root ---

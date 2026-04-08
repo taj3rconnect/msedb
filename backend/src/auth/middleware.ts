@@ -54,7 +54,7 @@ async function validateAzureToken(token: string): Promise<JwtPayload | null> {
       token,
       getAzureSigningKey,
       {
-        audience: `api://172.16.219.222:3010/${config.azureAdClientId}`,
+        audience: `api://${config.appUrl.replace(/^https?:\/\//, '')}/${config.azureAdClientId}`,
         issuer: `https://login.microsoftonline.com/${config.azureAdTenantId}/v2.0`,
         algorithms: ['RS256'],
       },
@@ -106,16 +106,21 @@ async function validateAzureToken(token: string): Promise<JwtPayload | null> {
  * Sets req.user with the decoded payload on success.
  * Throws UnauthorizedError if no valid token found.
  */
-export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
+export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   // Try session cookie first
   const cookieToken = req.cookies?.msedb_session;
   if (cookieToken) {
     try {
       const decoded = jwt.verify(cookieToken, config.jwtSecret) as JwtPayload;
+      const activeUser = await User.findById(decoded.userId).select('isActive').lean();
+      if (activeUser?.isActive === false) {
+        throw new UnauthorizedError('Account deactivated');
+      }
       req.user = decoded;
       next();
       return;
-    } catch {
+    } catch (err) {
+      if (err instanceof UnauthorizedError) throw err;
       // Cookie invalid — fall through to check Bearer token
     }
   }

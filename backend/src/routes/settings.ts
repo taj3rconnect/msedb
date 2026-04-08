@@ -30,7 +30,7 @@ settingsRouter.get('/', async (req: Request, res: Response) => {
       .lean(),
     Mailbox.find({ userId })
       .select('email displayName isConnected encryptedTokens.expiresAt lastSyncAt settings createdAt')
-      .lean(),
+      .lean<import('../models/Mailbox.js').IMailbox[]>(),
   ]);
 
   const now = new Date();
@@ -47,6 +47,7 @@ settingsRouter.get('/', async (req: Request, res: Response) => {
     lastSyncAt: m.lastSyncAt,
     whitelistedSenders: m.settings?.whitelistedSenders ?? [],
     whitelistedDomains: m.settings?.whitelistedDomains ?? [],
+    signatures: m.settings?.signatures ?? [],
     createdAt: m.createdAt,
   }));
 

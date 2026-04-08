@@ -1802,4 +1802,345 @@ mailboxRouter.patch('/:id/contacts/:contactId', async (req: Request, res: Respon
   res.json({ contact: updated });
 });
 
+// ---- AI Write ----
+
+const AI_WRITE_PROMPTS: Record<string, (body: string, subject: string) => string> = {
+  'check-grammar': (body) =>
+    `Fix any typos, spelling mistakes, and grammar errors in the following email text. Keep the meaning, tone, and structure exactly the same. Only correct errors — do not rephrase or change the writing style. Return ONLY the corrected text, nothing else, no explanations.\n\nEmail text:\n${body}`,
+  'write': (body, subject) =>
+    `You are an email writing assistant. Write a professional, concise email based on the brief below. Output exactly two parts separated by a blank line:\nLine 1: SUBJECT: <your suggested subject line>\nRest: the email body starting with a greeting.\n\nDo not include any other labels, headers, or commentary. Example format:\nSUBJECT: Meeting Follow-up\n\nHi John,\n\nJust following up on our meeting...\n\nBrief: ${body || 'write a polite professional email'}${subject ? `\nContext subject hint: ${subject}` : ''}`,
+  'rewrite': (body) =>
+    `Rewrite the following email to be clearer, more professional, and better structured. Keep the same meaning and intent. Return ONLY the rewritten email body text, nothing else.\n\nOriginal:\n${body}`,
+};
+
+/**
+ * POST /api/mailboxes/:id/ai-write
+ * Streams LLM-generated text using Qwen for grammar check, write, or rewrite.
+ * Body: { action: 'check-grammar' | 'write' | 'rewrite', body: string, subject?: string }
+ */
+mailboxRouter.post('/:id/ai-write', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const { action, body = '', subject = '' } = req.body as { action: string; body: string; subject: string };
+  const promptFn = AI_WRITE_PROMPTS[action];
+  if (!promptFn) throw new ValidationError('action must be check-grammar, write, or rewrite');
+
+  const prompt = promptFn(body, subject);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  try {
+    const ollamaRes = await fetch(`${config.ollamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.ollamaWriteModel,
+        prompt,
+        stream: true,
+        think: false,
+        options: { temperature: 0.3, num_predict: 1500 },
+      }),
+    });
+
+    if (!ollamaRes.ok || !ollamaRes.body) {
+      res.write(`data: ${JSON.stringify({ error: 'LLM unavailable' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    const reader = ollamaRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const obj = JSON.parse(line) as { response?: string; done?: boolean };
+          if (obj.response) res.write(`data: ${JSON.stringify({ token: obj.response })}\n\n`);
+          if (obj.done) res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        } catch { /* skip malformed */ }
+      }
+    }
+  } catch (err) {
+    logger.error('AI write stream error', { error: err });
+    res.write(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
+  }
+
+  res.end();
+});
+
+// ---- Auto Respond ----
+
+/**
+ * POST /api/mailboxes/:id/messages/:messageId/auto-respond
+ * Fetches thread + sent tone samples, streams a short crisp reply via Qwen.
+ */
+mailboxRouter.post('/:id/messages/:messageId/auto-respond', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+
+  // 1. Fetch current message (need conversationId + body)
+  const msgRes = await graphFetch(
+    `/users/${mailbox.email}/messages/${req.params.messageId}?$select=id,subject,bodyPreview,body,from,toRecipients,conversationId,receivedDateTime`,
+    accessToken,
+  );
+  const msg = (await msgRes.json()) as { subject?: string; bodyPreview?: string; body?: { content: string; contentType: string }; from?: { emailAddress: { address?: string; name?: string } }; conversationId?: string };
+
+  // 2. Fetch last 6 messages in the conversation thread
+  let threadContext = '';
+  if (msg.conversationId) {
+    try {
+      const threadRes = await graphFetch(
+        `/users/${mailbox.email}/messages?$filter=conversationId eq '${msg.conversationId}'&$top=6&$orderby=receivedDateTime asc&$select=from,bodyPreview,receivedDateTime`,
+        accessToken,
+      );
+      const threadData = (await threadRes.json()) as { value?: { from?: { emailAddress?: { address?: string; name?: string } }; bodyPreview?: string; receivedDateTime?: string }[] };
+      if (threadData.value?.length) {
+        threadContext = threadData.value.map((m) =>
+          `[${m.from?.emailAddress?.name || m.from?.emailAddress?.address || 'Unknown'}]: ${m.bodyPreview?.slice(0, 300) || ''}`
+        ).join('\n---\n');
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  // 3. Fetch last 4 sent emails for tone sampling
+  let toneSamples = '';
+  try {
+    const sentRes = await graphFetch(
+      `/users/${mailbox.email}/mailFolders/SentItems/messages?$top=4&$select=bodyPreview`,
+      accessToken,
+    );
+    const sentData = (await sentRes.json()) as { value?: { bodyPreview?: string }[] };
+    if (sentData.value?.length) {
+      toneSamples = sentData.value.map((m) => m.bodyPreview?.slice(0, 200) || '').filter(Boolean).join('\n---\n');
+    }
+  } catch { /* non-fatal */ }
+
+  // Strip plain text from HTML body if needed
+  const emailBody = msg.body?.contentType === 'html'
+    ? msg.body.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 800)
+    : (msg.body?.content || msg.bodyPreview || '').slice(0, 800);
+
+  const prompt = `You are composing an email reply on behalf of the user. The user's communication style is: very short, crisp, straight to the point, concise — no fluff, no filler words, no unnecessary pleasantries.
+
+${toneSamples ? `Examples of the user's writing style (sent emails):\n${toneSamples}\n\n` : ''}Email thread context:\n${threadContext || '(no thread)'}\n\nLatest email to respond to:\nFrom: ${msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || 'Unknown'}\nSubject: ${msg.subject || ''}\n${emailBody}\n\nWrite a reply in the user's style: short, crisp, straight to the point. Start directly — no "I hope this email finds you well" or similar fluff. Return ONLY the reply body text.`;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  try {
+    const ollamaRes = await fetch(`${config.ollamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: config.ollamaWriteModel, prompt, stream: true, think: false, options: { temperature: 0.3, num_predict: 600 } }),
+    });
+    if (!ollamaRes.ok || !ollamaRes.body) { res.write(`data: ${JSON.stringify({ error: 'LLM unavailable' })}\n\n`); res.end(); return; }
+    const reader = ollamaRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n'); buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const obj = JSON.parse(line) as { response?: string; done?: boolean };
+          if (obj.response) res.write(`data: ${JSON.stringify({ token: obj.response })}\n\n`);
+          if (obj.done) res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        } catch { /* skip */ }
+      }
+    }
+  } catch (err) {
+    logger.error('Auto-respond stream error', { error: err });
+    res.write(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
+  }
+  res.end();
+});
+
+// ---- Signatures ----
+
+/**
+ * GET /api/mailboxes/:id/signatures
+ * Returns the signature list for a mailbox.
+ */
+mailboxRouter.get('/:id/signatures', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+  res.json({ signatures: mailbox.settings.signatures ?? [] });
+});
+
+/**
+ * PUT /api/mailboxes/:id/signatures
+ * Replaces the full signature list for a mailbox.
+ * Body: { signatures: [{ id, name, content, isDefault }] }
+ */
+mailboxRouter.put('/:id/signatures', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const { signatures } = req.body as { signatures: { id: string; name: string; content: string; isDefault: boolean }[] };
+  if (!Array.isArray(signatures)) throw new ValidationError('signatures must be an array');
+
+  // Enforce at most one default
+  let defaultCount = 0;
+  const cleaned = signatures.map((s) => {
+    if (s.isDefault) defaultCount++;
+    return { id: s.id, name: String(s.name).slice(0, 100), content: String(s.content).slice(0, 20000), isDefault: !!s.isDefault };
+  });
+  if (defaultCount > 1) throw new ValidationError('Only one signature can be set as default');
+
+  mailbox.settings.signatures = cleaned as typeof mailbox.settings.signatures;
+  await mailbox.save();
+  res.json({ signatures: mailbox.settings.signatures });
+});
+
+// ---- Out-of-Office ----
+
+/**
+ * GET /api/mailboxes/:id/oof
+ * Fetches automaticRepliesSetting from Graph.
+ */
+mailboxRouter.get('/:id/oof', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const response = await graphFetch(
+    `/users/${mailbox.email}/mailboxSettings?$select=automaticRepliesSetting`,
+    accessToken,
+  );
+  const data = (await response.json()) as { automaticRepliesSetting?: unknown };
+  res.json({ oof: data.automaticRepliesSetting ?? null });
+});
+
+/**
+ * PUT /api/mailboxes/:id/oof
+ * Updates automaticRepliesSetting via Graph.
+ * Body: { status, internalReplyMessage, externalReplyMessage, externalAudience?, scheduledStartDateTime?, scheduledEndDateTime? }
+ */
+mailboxRouter.put('/:id/oof', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const { status, internalReplyMessage, externalReplyMessage, externalAudience, scheduledStartDateTime, scheduledEndDateTime } = req.body;
+  if (!['Disabled', 'AlwaysEnabled', 'Scheduled'].includes(status)) {
+    throw new ValidationError('status must be Disabled, AlwaysEnabled, or Scheduled');
+  }
+
+  const setting: Record<string, unknown> = {
+    status,
+    internalReplyMessage: internalReplyMessage ?? '',
+    externalReplyMessage: externalReplyMessage ?? '',
+    externalAudience: externalAudience ?? 'all',
+  };
+  if (status === 'Scheduled' && scheduledStartDateTime && scheduledEndDateTime) {
+    setting.scheduledStartDateTime = scheduledStartDateTime;
+    setting.scheduledEndDateTime = scheduledEndDateTime;
+  }
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  await graphFetch(`/users/${mailbox.email}/mailboxSettings`, accessToken, {
+    method: 'PATCH',
+    body: JSON.stringify({ automaticRepliesSetting: setting }),
+  });
+
+  res.json({ oof: setting });
+});
+
+// ---- Categories ----
+
+/**
+ * GET /api/mailboxes/:id/categories
+ * Fetches Outlook master categories from Graph.
+ */
+mailboxRouter.get('/:id/categories', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const response = await graphFetch(`/users/${mailbox.email}/outlook/masterCategories`, accessToken);
+  const data = (await response.json()) as { value?: unknown[] };
+  res.json({ categories: data.value ?? [] });
+});
+
+/**
+ * POST /api/mailboxes/:id/categories
+ * Creates an Outlook master category.
+ * Body: { displayName, color }
+ */
+mailboxRouter.post('/:id/categories', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const { displayName, color } = req.body as { displayName: string; color: string };
+  if (!displayName) throw new ValidationError('displayName is required');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const response = await graphFetch(`/users/${mailbox.email}/outlook/masterCategories`, accessToken, {
+    method: 'POST',
+    body: JSON.stringify({ displayName, color: color ?? 'preset0' }),
+  });
+  const created = await response.json();
+  res.status(201).json({ category: created });
+});
+
+/**
+ * DELETE /api/mailboxes/:id/categories/:categoryId
+ * Deletes an Outlook master category.
+ */
+mailboxRouter.delete('/:id/categories/:categoryId', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  await graphFetch(`/users/${mailbox.email}/outlook/masterCategories/${req.params.categoryId}`, accessToken, {
+    method: 'DELETE',
+  });
+  res.json({ success: true });
+});
+
+/**
+ * PATCH /api/mailboxes/:id/messages/:messageId/categories
+ * Updates categories assigned to a specific message.
+ * Body: { categories: string[] }
+ */
+mailboxRouter.patch('/:id/messages/:messageId/categories', async (req: Request, res: Response) => {
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  if (!mailbox) throw new NotFoundError('Mailbox not found');
+
+  const { categories } = req.body as { categories: string[] };
+  if (!Array.isArray(categories)) throw new ValidationError('categories must be an array');
+
+  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  await graphFetch(`/users/${mailbox.email}/messages/${req.params.messageId}`, accessToken, {
+    method: 'PATCH',
+    body: JSON.stringify({ categories }),
+  });
+
+  // Update local EmailEvent record too
+  const { EmailEvent } = await import('../models/EmailEvent.js');
+  await EmailEvent.updateMany(
+    { mailboxId: req.params.id, messageId: req.params.messageId },
+    { $set: { categories } },
+  );
+
+  res.json({ categories });
+});
+
 export default mailboxRouter;

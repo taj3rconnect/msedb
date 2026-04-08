@@ -34,10 +34,23 @@ export interface CalendarSyncStatusResponse {
   mailboxes: MailboxSyncStatus[];
 }
 
-export async function fetchCalendarEvents(upcoming = true): Promise<CalendarEventsResponse> {
-  return apiFetch<CalendarEventsResponse>(`/calendar/events?upcoming=${upcoming}`);
+export interface CalendarEventsParams {
+  startFrom?: string;
+  startTo?: string;
+}
+
+export async function fetchCalendarEvents(params?: CalendarEventsParams): Promise<CalendarEventsResponse> {
+  const qs = new URLSearchParams();
+  if (params?.startFrom) qs.set('startFrom', params.startFrom);
+  if (params?.startTo) qs.set('startTo', params.startTo);
+  const query = qs.toString() ? `?${qs.toString()}` : '';
+  return apiFetch<CalendarEventsResponse>(`/calendar/events${query}`);
 }
 
 export async function fetchCalendarSyncStatus(): Promise<CalendarSyncStatusResponse> {
   return apiFetch<CalendarSyncStatusResponse>('/calendar/sync-status');
+}
+
+export async function cancelCalendarEvent(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/calendar/events/${id}`, { method: 'DELETE' });
 }

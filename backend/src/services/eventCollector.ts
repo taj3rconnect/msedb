@@ -193,6 +193,12 @@ async function handleDeleted(
   }
 
   await saveEmailEvent(eventData);
+
+  // Mark all prior arrived events for this message as deleted (avoids unbounded $nin queries)
+  await EmailEvent.updateMany(
+    { userId, mailboxId, messageId, eventType: 'arrived' },
+    { $set: { isDeleted: true } },
+  );
 }
 
 /**

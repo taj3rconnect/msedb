@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import { SquarePen, ExternalLink, CalendarClock, Eye } from 'lucide-react';
 import {
@@ -26,6 +26,8 @@ import { sendNewEmail } from '@/api/mailboxes';
 import { scheduleEmail } from '@/api/scheduledEmails';
 import { useQueryClient } from '@tanstack/react-query';
 import { EmailAutocomplete } from './EmailAutocomplete';
+import { useSettings } from '@/hooks/useSettings';
+import { AiWriteToolbar } from '@/components/shared/AiWriteToolbar';
 
 interface ComposeEmailDialogProps {
   open: boolean;
@@ -35,6 +37,7 @@ interface ComposeEmailDialogProps {
 export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogProps) {
   const mailboxes = useAuthStore((s) => s.mailboxes);
   const connected = mailboxes.filter((m) => m.isConnected);
+  const { data: settings } = useSettings();
 
   const [fromMailboxId, setFromMailboxId] = useState(connected[0]?.id ?? '');
   const [to, setTo] = useState<string[]>([]);
@@ -48,6 +51,22 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
   const [scheduleDateTime, setScheduleDateTime] = useState('');
   const [trackEmail, setTrackEmail] = useState(true);
   const queryClient = useQueryClient();
+
+  // Inject default signature when dialog opens or "from" account changes
+  useEffect(() => {
+    if (!open) return;
+    const mailboxInfo = settings?.mailboxes?.find((m) => m.id === (fromMailboxId || connected[0]?.id));
+    const defaultSig = mailboxInfo?.signatures?.find((s) => s.isDefault);
+    if (defaultSig?.content) {
+      setBody((prev) => {
+        // Only inject if body is empty or already just a signature (starts with \n\n--)
+        if (prev === '' || /^\n\n--\s*\n/.test(prev)) {
+          return `\n\n-- \n${defaultSig.content}`;
+        }
+        return prev;
+      });
+    }
+  }, [open, fromMailboxId, settings?.mailboxes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetForm = useCallback(() => {
     setTo([]);
@@ -251,6 +270,13 @@ export function ComposeEmailDialog({ open, onOpenChange }: ComposeEmailDialogPro
               className="resize-y min-h-[400px]"
             />
             <DetectedLinks text={body} />
+            <AiWriteToolbar
+              mailboxId={effectiveFrom}
+              body={body}
+              subject={subject}
+              onApply={setBody}
+              onApplySubject={setSubject}
+            />
           </div>
         </div>
 

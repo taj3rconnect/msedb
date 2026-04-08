@@ -25,6 +25,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { Pagination } from '@/components/shared/Pagination';
 import {
   useStaging,
   useStagingCount,
@@ -87,10 +88,6 @@ interface StagedEmailRowProps {
 function StagedEmailRow({ email, selected, onSelect, onRescue, onExecute }: StagedEmailRowProps) {
   const { text: countdown, colorClass } = useCountdown(email.expiresAt);
 
-  const truncatedId = email.messageId.length > 24
-    ? `${email.messageId.slice(0, 24)}...`
-    : email.messageId;
-
   return (
     <TableRow>
       <TableCell>
@@ -99,8 +96,9 @@ function StagedEmailRow({ email, selected, onSelect, onRescue, onExecute }: Stag
           onCheckedChange={(checked) => onSelect(email.id, checked === true)}
         />
       </TableCell>
-      <TableCell className="font-mono text-xs" title={email.messageId}>
-        {truncatedId}
+      <TableCell className="text-sm" title={email.messageId}>
+        <div className="font-medium">{email.senderName || email.senderEmail || 'Unknown'}</div>
+        {email.subject && <div className="text-xs text-muted-foreground truncate max-w-[200px]">{email.subject}</div>}
       </TableCell>
       <TableCell>{email.originalFolder}</TableCell>
       <TableCell>
@@ -369,11 +367,11 @@ export function StagingPage() {
                       }
                     />
                   </TableHead>
-                  <TableHead>Message ID</TableHead>
+                  <TableHead>Sender / Subject</TableHead>
                   <TableHead>Original Folder</TableHead>
                   <TableHead>Actions</TableHead>
                   <TableHead>Time Remaining</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>Controls</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -394,29 +392,7 @@ export function StagingPage() {
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-          >
-            Next
-          </Button>
-        </div>
-      )}
+      <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
     </div>
   );
 }

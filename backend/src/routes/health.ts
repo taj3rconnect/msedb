@@ -95,6 +95,16 @@ router.get('/api/health', async (req: Request, res: Response) => {
     // ignore
   }
 
+  // Unauthenticated requests get minimal info only
+  const hasAuth = !!req.cookies?.msedb_session || !!req.headers.authorization;
+  if (!hasAuth) {
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? 'healthy' : 'degraded',
+      version: versionInfo.version,
+    });
+    return;
+  }
+
   res.status(healthy ? 200 : 503).json({
     status: healthy ? 'healthy' : 'degraded',
     uptime: process.uptime(),

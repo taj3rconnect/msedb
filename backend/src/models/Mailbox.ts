@@ -1,10 +1,18 @@
 import { Schema, model, type Document, type Types } from 'mongoose';
 import type { IEncryptedToken } from './User.js';
 
+export interface ISignature {
+  id: string;
+  name: string;
+  content: string;
+  isDefault: boolean;
+}
+
 export interface IMailboxSettings {
   automationPaused: boolean;
   whitelistedSenders: string[];
   whitelistedDomains: string[];
+  signatures: ISignature[];
 }
 
 export interface IMailbox extends Document {
@@ -56,6 +64,18 @@ const mailboxSchema = new Schema<IMailbox>(
       automationPaused: { type: Boolean, default: false },
       whitelistedSenders: { type: [String], default: [] },
       whitelistedDomains: { type: [String], default: [] },
+      signatures: {
+        type: [
+          {
+            id: { type: String, required: true },
+            name: { type: String, required: true },
+            content: { type: String, default: '' },
+            isDefault: { type: Boolean, default: false },
+          },
+        ],
+        default: [],
+        _id: false,
+      },
     },
   },
   { timestamps: true }

@@ -11,6 +11,7 @@ export function getQueueConnectionConfig() {
   return {
     host: config.redisHost,
     port: config.redisPort,
+    password: config.redisPassword || undefined,
     enableOfflineQueue: false,
   };
 }
@@ -23,6 +24,7 @@ export function getWorkerConnectionConfig() {
   return {
     host: config.redisHost,
     port: config.redisPort,
+    password: config.redisPassword || undefined,
     maxRetriesPerRequest: null as null,
   };
 }
@@ -38,6 +40,7 @@ export function getRedisClient(): Redis {
     generalClient = new Redis({
       host: config.redisHost,
       port: config.redisPort,
+      password: config.redisPassword || undefined,
     });
 
     generalClient.on('connect', () => {

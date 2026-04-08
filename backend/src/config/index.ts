@@ -6,6 +6,7 @@ interface AppConfig {
   readonly mongodbUri: string;
   readonly redisHost: string;
   readonly redisPort: number;
+  readonly redisPassword: string;
   readonly logLevel: string;
   readonly encryptionKey: string;
   readonly jwtSecret: string;
@@ -26,6 +27,7 @@ interface AppConfig {
   readonly ollamaUrl: string;
   readonly ollamaEmbedModel: string;
   readonly ollamaInstructModel: string;
+  readonly ollamaWriteModel: string;
 }
 
 export const config: AppConfig = {
@@ -33,11 +35,12 @@ export const config: AppConfig = {
   nodeEnv: process.env.NODE_ENV || 'development',
 
   // MongoDB
-  mongodbUri: process.env.MONGODB_URI || 'mongodb://msedb-mongo:27017/msedb',
+  mongodbUri: process.env.MONGODB_URI || `mongodb://msedb:${encodeURIComponent(process.env.MONGO_PASSWORD || '')}@msedb-mongo:27017/msedb?authSource=admin`,
 
   // Redis
   redisHost: process.env.REDIS_HOST || 'msedb-redis',
   redisPort: parseInt(process.env.REDIS_PORT || '6379', 10),
+  redisPassword: process.env.REDIS_PASSWORD || '',
 
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info',
@@ -70,6 +73,18 @@ export const config: AppConfig = {
   ollamaUrl: process.env.OLLAMA_URL || 'http://host.docker.internal:11434',
   ollamaEmbedModel: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
   ollamaInstructModel: process.env.OLLAMA_INSTRUCT_MODEL || 'qwen3:1.7b',
+  ollamaWriteModel: process.env.OLLAMA_WRITE_MODEL || 'qwen3.5:35b-a3b',
 };
+
+// Validate critical secrets at startup
+if (config.nodeEnv === 'production') {
+  const secretFields = ['encryptionKey', 'jwtSecret', 'sessionSecret'] as const;
+  for (const field of secretFields) {
+    const value = config[field];
+    if (!value || value.length < 32) {
+      throw new Error(`${field} must be at least 32 characters (got ${value.length})`);
+    }
+  }
+}
 
 export type Config = AppConfig;

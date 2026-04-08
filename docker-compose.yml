@@ -19,7 +19,6 @@ services:
       - msedb-network
     volumes:
       - msedb-logs:/app/logs
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
     deploy:
       resources:
@@ -99,9 +98,9 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "noeviction"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

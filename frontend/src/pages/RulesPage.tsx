@@ -35,13 +35,7 @@ import {
   useSimulateRule,
 } from '@/hooks/useRules';
 
-// Email-based filter tags: label → specific mailbox email
-const EMAIL_TAGS = [
-  { label: 'All', email: null },
-  { label: 'ApTask', email: 'taj@aptask.com' },
-  { label: 'JobTalk', email: 'taj@jobtalk.ai' },
-  { label: 'Yenom', email: 'taj@yenom.ai' },
-] as const;
+// Email-based filter tags are built dynamically from connected mailboxes
 
 /**
  * Rules page with drag-and-drop reordering, per-rule stats,
@@ -192,7 +186,13 @@ export function RulesPage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-1">
-          {EMAIL_TAGS.map((tag) => (
+          {[
+            { label: 'All', email: null as string | null },
+            ...mailboxes.map((m) => ({
+              label: m.email.split('@')[0],
+              email: m.email,
+            })),
+          ].map((tag) => (
             <Button
               key={tag.label}
               variant={activeEmail === tag.email ? 'default' : 'outline'}

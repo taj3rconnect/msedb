@@ -10,6 +10,9 @@ export interface IStagedEmail extends Document {
   mailboxId: Types.ObjectId;
   ruleId: Types.ObjectId;
   messageId: string;
+  senderEmail?: string;
+  senderName?: string;
+  subject?: string;
   originalFolder: string;
   stagedAt: Date;
   expiresAt: Date;
@@ -28,6 +31,9 @@ const stagedEmailSchema = new Schema<IStagedEmail>(
     mailboxId: { type: Schema.Types.ObjectId, ref: 'Mailbox', required: true },
     ruleId: { type: Schema.Types.ObjectId, ref: 'Rule', required: true },
     messageId: { type: String, required: true },
+    senderEmail: { type: String },
+    senderName: { type: String },
+    subject: { type: String },
     originalFolder: { type: String, required: true },
     stagedAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true },

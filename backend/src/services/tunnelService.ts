@@ -314,16 +314,9 @@ export async function initializeTunnelConfig(): Promise<void> {
     return;
   }
 
-  // Try to detect from running container
-  const containerUrl = await getTunnelUrlFromContainer();
-  if (containerUrl) {
-    tunnelConfig.webhookUrl = containerUrl;
-    await tunnelConfig.save();
-    config.graphWebhookUrl = containerUrl;
-    logger.info('Tunnel URL detected from container', { url: containerUrl });
-  } else {
-    logger.warn(
-      'No tunnel URL configured — set via dashboard or GRAPH_WEBHOOK_URL env var',
-    );
-  }
+  // Docker socket no longer mounted — skip container detection.
+  // Set tunnel URL via dashboard or GRAPH_WEBHOOK_URL env var.
+  logger.warn(
+    'No tunnel URL configured — set via dashboard or GRAPH_WEBHOOK_URL env var',
+  );
 }
