@@ -1,34 +1,33 @@
-# CLAUDE.md
+# MSEDB
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Microsoft Email Dashboard — monitors M365 mailboxes, detects repetitive actions, creates rules on approval.
 
-## Project Summary
+## Infrastructure — DO NOT CHANGE
 
-MSEDB (Microsoft Email Dashboard) monitors Microsoft 365 mailboxes via the Microsoft Graph API, detects repetitive user actions (e.g., always deleting emails from a sender), and upon user approval creates mailbox rules to automate those actions.
+| Key | Value |
+|-----|-------|
+| **Server** | **DGX** |
+| **Tunnel** | msedb (acdd721a) → **msedb.aptask.com** |
+| **Docker subnet** | default bridge |
+| **Registry** | See `~/claude/PORT_REGISTRY.json` for master port list |
 
-## Tech Stack
+## Ports — DO NOT CHANGE
 
-- **Framework:** Next.js (React) + TypeScript
-- **Backend API:** Express.js on Node.js
-- **API Integration:** Microsoft Graph API (Mail, MailFolder, MessageRule resources)
-- **Auth:** Microsoft Identity Platform via MSAL (OAuth 2.0)
+| Service  | Host Port | Internal | Container | Notes |
+|----------|-----------|----------|-----------|-------|
+| Frontend | **3010**  | 8080     | msedb-frontend | React/Nginx |
+| Backend  | **8010**  | 8010     | msedb-backend | Express |
+| MongoDB  | **27020** | 27017    | msedb-mongo | mongo:7, db: msedb |
+| Redis    | **6382**  | 6379     | msedb-redis | Redis 7 |
+| Tunnel   | —         | —        | msedb-tunnel | cloudflare/cloudflared |
+
+Shared: Uses AX1 Qdrant at port 6333.
 
 ## Architecture
 
-- The backend connects to Microsoft Graph API to read mail folders and user activity
-- A pattern detection engine analyzes user behavior to find repetitive actions
-- Detected patterns are surfaced to users via the React dashboard for review
-- Approved patterns are converted into Microsoft Graph MailboxSettings message rules
-- No rule is ever created without explicit user approval
-
-## Microsoft Graph API
-
-- Mail access requires `Mail.Read` and `Mail.ReadWrite` permissions
-- Rule management requires `MailboxSettings.ReadWrite` permission
-- Authentication flows use MSAL with OAuth 2.0 authorization code grant
-- All Graph calls target `https://graph.microsoft.com/v1.0/`
-
-## Key Conventions
-
-- Environment variables for Azure AD credentials are stored in `.env` (never committed)
-- TypeScript strict mode is used across both frontend and backend
+- Next.js (React + TS) frontend, Express.js backend
+- Microsoft Graph API: `Mail.Read`, `Mail.ReadWrite`, `MailboxSettings.ReadWrite`
+- Auth: MSAL OAuth 2.0 authorization code grant
+- All Graph calls: `https://graph.microsoft.com/v1.0/`
+- No mailbox rule created without explicit user approval
+- TypeScript strict mode across both frontend and backend

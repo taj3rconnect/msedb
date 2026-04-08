@@ -64,24 +64,50 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
 
         // Route lifecycle vs change notifications to separate queues
         if (notification.lifecycleEvent) {
-          await queues['webhook-renewal'].add('lifecycle-event', {
-            notification,
-            subscriptionId: notification.subscriptionId,
-          }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+          // Lifecycle events: route to calendar queue if calendar subscription
+          const isCalendar = sub.resource?.includes('/events') && !sub.resource?.includes('/messages');
+          if (isCalendar) {
+            await queues['calendar-sync'].add('lifecycle-calendar-delta', {
+              mailboxId: sub.mailboxId.toString(),
+            }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+          } else {
+            await queues['webhook-renewal'].add('lifecycle-event', {
+              notification,
+              subscriptionId: notification.subscriptionId,
+            }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+          }
           logger.info('Lifecycle notification enqueued', {
             subscriptionId: notification.subscriptionId,
             lifecycleEvent: notification.lifecycleEvent,
+            isCalendar: sub.resource?.includes('/events'),
           });
         } else {
-          await queues['webhook-events'].add('change-notification', {
-            notification,
-            subscriptionId: notification.subscriptionId,
-          }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
-          logger.debug('Change notification enqueued', {
-            subscriptionId: notification.subscriptionId,
-            resource: notification.resource,
-            changeType: notification.changeType,
-          });
+          // Change notification: route to calendar-sync or webhook-events based on resource
+          const isCalendar = sub.resource?.includes('/events') && !sub.resource?.includes('/messages');
+          if (isCalendar) {
+            const eventId = notification.resourceData?.id ?? notification.resource?.split('/').pop();
+            await queues['calendar-sync'].add('calendar-change', {
+              sourceMailboxId: sub.mailboxId.toString(),
+              eventId,
+              changeType: notification.changeType,
+            }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+            logger.debug('Calendar change notification enqueued', {
+              subscriptionId: notification.subscriptionId,
+              mailboxId: sub.mailboxId.toString(),
+              changeType: notification.changeType,
+              eventId,
+            });
+          } else {
+            await queues['webhook-events'].add('change-notification', {
+              notification,
+              subscriptionId: notification.subscriptionId,
+            }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+            logger.debug('Change notification enqueued', {
+              subscriptionId: notification.subscriptionId,
+              resource: notification.resource,
+              changeType: notification.changeType,
+            });
+          }
         }
       } catch (err) {
         logger.error('Failed to enqueue notification', {
