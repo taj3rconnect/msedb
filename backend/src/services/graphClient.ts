@@ -45,10 +45,14 @@ export async function graphFetch(
     ...(options?.headers as Record<string, string> | undefined),
   };
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
   const response = await fetch(url, {
     ...options,
     headers: mergedHeaders,
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
 
   if (!response.ok) {
     const body = await response.text();

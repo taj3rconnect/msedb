@@ -83,6 +83,7 @@ const ruleSchema = new Schema<IRule>(
 
 // Indexes
 ruleSchema.index({ userId: 1, mailboxId: 1, isEnabled: 1, priority: 1 });
+ruleSchema.index({ userId: 1, 'conditions.senderEmail': 1 });
 ruleSchema.index({ graphRuleId: 1 }, { sparse: true });
 
 export const Rule = model<IRule>('Rule', ruleSchema);

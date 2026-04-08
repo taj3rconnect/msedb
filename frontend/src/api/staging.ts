@@ -5,6 +5,9 @@ import { apiFetch } from './client';
 export interface StagedEmail {
   id: string;
   messageId: string;
+  senderEmail?: string;
+  senderName?: string;
+  subject?: string;
   originalFolder: string;
   stagedAt: string;
   expiresAt: string;

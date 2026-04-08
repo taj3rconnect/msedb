@@ -166,6 +166,11 @@ export async function runDeltaSync(
 
         const saved = await saveEmailEvent(eventData);
         if (saved) {
+          // Mark prior arrived events as deleted
+          await EmailEvent.updateMany(
+            { userId: new Types.ObjectId(userId), mailboxId: new Types.ObjectId(mailboxId), messageId: msg.id, eventType: 'arrived' },
+            { $set: { isDeleted: true } },
+          );
           counters.deleted++;
         } else {
           counters.skipped++;

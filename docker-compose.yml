@@ -19,7 +19,6 @@ services:
       - msedb-network
     volumes:
       - msedb-logs:/app/logs
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
     deploy:
       resources:
@@ -68,6 +67,9 @@ services:
       - "27020:27017"
     volumes:
       - msedb-mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: msedb
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
     networks:
       - msedb-network
     restart: unless-stopped
@@ -78,7 +80,7 @@ services:
           memory: 2G
     command: ["mongod", "--bind_ip_all"]
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "-u", "msedb", "-p", "${MONGO_PASSWORD}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -99,9 +101,9 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "noeviction"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

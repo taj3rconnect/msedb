@@ -59,6 +59,6 @@ export const useUiStore = create<UiState>((set) => ({
   toggleIconSize: () => {
     const next = !useUiStore.getState().largeIcons;
     localStorage.setItem('msedb-large-icons', JSON.stringify(next));
-    window.location.reload();
+    set({ largeIcons: next });
   },
 }));

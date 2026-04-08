@@ -85,16 +85,9 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     filter.isRead = false;
   }
 
-  // Exclude messages that have been deleted (have a corresponding 'deleted' event)
+  // Exclude messages that have been deleted
   if (excludeDeleted === 'true') {
-    const deletedMessageIds = await EmailEvent.distinct('messageId', {
-      userId,
-      ...(mailboxId && typeof mailboxId === 'string' ? { mailboxId } : {}),
-      eventType: 'deleted',
-    });
-    if (deletedMessageIds.length > 0) {
-      filter.messageId = { $nin: deletedMessageIds };
-    }
+    filter.isDeleted = { $ne: true };
   }
 
   // Filter by folder: supports 'inbox', 'deleted', well-known names, or subfolder paths
@@ -130,32 +123,45 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
       { toFolder: wellKnownAlias },
       { toFolder: folderParam }, // exact match for subfolder paths like "Inbox/Abacus"
     ];
-    for (const mb of mailboxesToResolve) {
-      if (mb.email) {
-        // Check well-known folder cache
-        const cachedFolderId = await redis.get(`folder:${mb.email}:wk:${wellKnownAlias}`);
-        if (cachedFolderId) {
-          folderOrConditions.push({ toFolder: cachedFolderId });
-        }
-        // Also resolve folder ID from the full folder cache (subfolders included)
-        const allFolderIds = await redis.get(`folder:${mb.email}:all`);
-        if (allFolderIds) {
-          const ids: string[] = JSON.parse(allFolderIds);
-          for (const fid of ids) {
-            const fname = await redis.get(`folder:${mb.email}:${fid}`);
-            // Match exact name, or subfolder path ending with the folder name
-            // e.g. folderParam="Abacus" matches fname="Inbox/Abacus"
-            if (
-              fname === folderParam ||
-              fname === displayName ||
-              fname?.endsWith(`/${folderParam}`) ||
-              fname?.endsWith(`/${displayName}`)
-            ) {
-              folderOrConditions.push({ toFolder: fid });
-              // Also match by the full path stored in toFolder
-              if (fname) folderOrConditions.push({ toFolder: fname });
-            }
-          }
+    // Batch fetch well-known folder IDs and full folder lists
+    const wkKeys = mailboxesToResolve.filter((mb) => mb.email).map((mb) => `folder:${mb.email}:wk:${wellKnownAlias}`);
+    const allKeys = mailboxesToResolve.filter((mb) => mb.email).map((mb) => `folder:${mb.email}:all`);
+    const [wkValues, allValues] = await Promise.all([
+      wkKeys.length > 0 ? redis.mget(...wkKeys) : Promise.resolve([]),
+      allKeys.length > 0 ? redis.mget(...allKeys) : Promise.resolve([]),
+    ]);
+
+    for (const cachedFolderId of wkValues) {
+      if (cachedFolderId) folderOrConditions.push({ toFolder: cachedFolderId });
+    }
+
+    // Collect all subfolder keys, then batch fetch
+    const subfolderKeys: string[] = [];
+    const subfolderMeta: Array<{ email: string; fid: string }> = [];
+    for (let i = 0; i < allValues.length; i++) {
+      const raw = allValues[i];
+      if (!raw) continue;
+      const mb = mailboxesToResolve.filter((m) => m.email)[i];
+      const ids: string[] = JSON.parse(raw);
+      for (const fid of ids) {
+        subfolderKeys.push(`folder:${mb.email}:${fid}`);
+        subfolderMeta.push({ email: mb.email, fid });
+      }
+    }
+
+    if (subfolderKeys.length > 0) {
+      const subfolderNames = await redis.mget(...subfolderKeys);
+      for (let j = 0; j < subfolderNames.length; j++) {
+        const fname = subfolderNames[j];
+        const { fid } = subfolderMeta[j];
+        if (
+          fname === folderParam ||
+          fname === displayName ||
+          fname?.endsWith(`/${folderParam}`) ||
+          fname?.endsWith(`/${displayName}`)
+        ) {
+          folderOrConditions.push({ toFolder: fid });
+          if (fname) folderOrConditions.push({ toFolder: fname });
         }
       }
     }
@@ -425,14 +431,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
   filter.toFolder = { $in: inboxFolderValues };
 
   // Exclude deleted emails
-  const deletedMessageIds = await EmailEvent.distinct('messageId', {
-    userId,
-    ...(mailboxId && typeof mailboxId === 'string' ? { mailboxId } : {}),
-    eventType: 'deleted',
-  });
-  if (deletedMessageIds.length > 0) {
-    filter.messageId = { $nin: deletedMessageIds };
-  }
+  filter.isDeleted = { $ne: true };
 
   // Build aggregation-safe filter with proper ObjectId casting
   const aggFilterBase: Record<string, unknown> = {
@@ -445,9 +444,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
     aggFilterBase.mailboxId = new Types.ObjectId(mailboxId);
   }
 
-  const aggFilterExclDeleted = deletedMessageIds.length > 0
-    ? { ...aggFilterBase, messageId: { $nin: deletedMessageIds } }
-    : aggFilterBase;
+  const aggFilterExclDeleted = { ...aggFilterBase, isDeleted: { $ne: true } };
 
   // Count today's inbox arrivals (including deleted) and read/unread for non-deleted
   const [events, readUnreadCounts, todayTotalCount] = await Promise.all([
@@ -580,14 +577,7 @@ eventsRouter.get('/summarize-today/csv', async (req: Request, res: Response) => 
   filter.toFolder = { $in: csvInboxFolders };
 
   // Exclude deleted emails
-  const deletedMessageIds = await EmailEvent.distinct('messageId', {
-    userId,
-    ...(mailboxId && typeof mailboxId === 'string' ? { mailboxId } : {}),
-    eventType: 'deleted',
-  });
-  if (deletedMessageIds.length > 0) {
-    filter.messageId = { $nin: deletedMessageIds };
-  }
+  filter.isDeleted = { $ne: true };
 
   const events = await EmailEvent.find(filter)
     .sort({ receivedAt: -1 })

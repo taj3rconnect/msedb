@@ -524,13 +524,48 @@ export async function analyzeMailboxPatterns(
     settings.minSenderEvents,
   );
 
+  // Batch recency stats for all senders in a single aggregation (avoids N+1)
+  const windowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const batchRecency = await EmailEvent.aggregate<{
+    _id: { senderEmail: string; eventType: string };
+    totalEvents: number;
+    actionCount: number;
+  }>([
+    {
+      $match: {
+        userId,
+        mailboxId,
+        'sender.email': { $in: senderResults.map((r) => r._id.senderEmail) },
+        timestamp: { $gte: windowStart },
+        'metadata.automatedByRule': { $exists: false },
+      },
+    },
+    {
+      $group: {
+        _id: { senderEmail: '$sender.email', eventType: '$eventType' },
+        totalEvents: { $sum: 1 },
+        actionCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // Index by "sender|eventType" for O(1) lookup
+  const recencyTotals = new Map<string, number>();
+  const recencyActions = new Map<string, number>();
+  for (const row of batchRecency) {
+    const key = `${row._id.senderEmail}|${row._id.eventType}`;
+    recencyActions.set(key, row.actionCount);
+    // Accumulate total events per sender
+    const totalKey = `${row._id.senderEmail}|__total__`;
+    recencyTotals.set(totalKey, (recencyTotals.get(totalKey) || 0) + row.totalEvents);
+  }
+
   for (const result of senderResults) {
     const { senderEmail, senderDomain } = result._id;
     const arrivedCount = result.arrivedCount || 0;
 
-    if (arrivedCount === 0) continue; // No arrived events -- can't compute meaningful ratio
+    if (arrivedCount === 0) continue;
 
-    // Evaluate each action type against arrived count
     const actionTypes: Array<{
       type: string;
       count: number;
@@ -543,16 +578,12 @@ export async function analyzeMailboxPatterns(
     for (const action of actionTypes) {
       if (action.count === 0) continue;
 
-      // Map event type to action type for thresholds
       const actionType = mapEventTypeToActionType(action.type);
 
-      // Get recency stats for this sender + action
-      const recency = await getRecencyStats(
-        userId,
-        mailboxId,
-        senderEmail,
-        action.type,
-      );
+      const recency = {
+        recentActionCount: recencyActions.get(`${senderEmail}|${action.type}`) || 0,
+        recentTotalEvents: recencyTotals.get(`${senderEmail}|__total__`) || 0,
+      };
 
       const confidence = calculateConfidence({
         actionCount: action.count,

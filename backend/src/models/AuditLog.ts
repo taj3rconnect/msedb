@@ -71,6 +71,8 @@ const auditLogSchema = new Schema<IAuditLog>(
 // Indexes
 auditLogSchema.index({ userId: 1, action: 1, createdAt: -1 });
 auditLogSchema.index({ userId: 1, mailboxId: 1, createdAt: -1 });
+auditLogSchema.index({ action: 1, mailboxId: 1, createdAt: -1 });
 auditLogSchema.index({ targetType: 1, targetId: 1 });
+auditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 180 * 24 * 60 * 60 }); // 180-day TTL
 
 export const AuditLog = model<IAuditLog>('AuditLog', auditLogSchema);

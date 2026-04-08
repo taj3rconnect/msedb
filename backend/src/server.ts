@@ -55,60 +55,6 @@ app.use(webhooksRouter);
 // Mount tracking pixel endpoint (public, no auth — loaded by email clients)
 app.use('/track', trackingRouter);
 
-// Mount auth routes (login, callback, logout, me)
-app.use(authRouter);
-
-// Mount admin routes (requireAuth + requireAdmin applied internally)
-app.use('/api/admin', adminRouter);
-
-// Mount mailbox routes (requireAuth applied internally)
-app.use('/api/mailboxes', mailboxRouter);
-
-// Mount dashboard routes (requireAuth applied internally)
-app.use('/api/dashboard', dashboardRouter);
-
-// Mount user routes -- dedicated router for kill switch (requireAuth applied internally)
-app.use('/api/user', userRouter);
-
-// Mount events routes (requireAuth applied internally)
-app.use('/api/events', eventsRouter);
-
-// Mount patterns routes (requireAuth applied internally)
-app.use('/api/patterns', patternsRouter);
-
-// Mount rules routes (requireAuth applied internally)
-app.use('/api/rules', rulesRouter);
-
-// Mount staging routes (requireAuth applied internally)
-app.use('/api/staging', stagingRouter);
-
-// Mount audit routes (requireAuth applied internally)
-app.use('/api/audit', auditRouter);
-
-// Mount notification routes (requireAuth applied internally)
-app.use('/api/notifications', notificationsRouter);
-
-// Mount settings routes (requireAuth applied internally)
-app.use('/api/settings', settingsRouter);
-
-// Mount AI search routes (requireAuth applied internally)
-app.use('/api/ai-search', aiSearchRouter);
-
-// Mount scheduled emails routes (requireAuth applied internally)
-app.use('/api/scheduled-emails', scheduledEmailsRouter);
-
-// Mount tracking API routes (requireAuth applied internally)
-app.use('/api/tracking', trackingApiRouter);
-
-// Mount reports routes (requireAuth applied internally)
-app.use('/api/reports', reportsRouter);
-
-// Mount calendar routes (requireAuth applied internally)
-app.use('/api/calendar', calendarRouter);
-
-// Global error handler (must be last middleware)
-app.use(globalErrorHandler);
-
 // Startup sequence: connect database, verify Redis, apply rate limiters, initialize schedulers, then listen
 async function startServer(): Promise<void> {
   try {
@@ -126,6 +72,26 @@ async function startServer(): Promise<void> {
     // 3. Apply rate limiters (Redis must be ready before creating limiters)
     app.use('/auth', createAuthLimiter());
     app.use('/api', createApiLimiter());
+
+    // 3b. Mount routes (after rate limiters so /auth and /api limiters apply)
+    app.use(authRouter);
+    app.use('/api/admin', adminRouter);
+    app.use('/api/mailboxes', mailboxRouter);
+    app.use('/api/dashboard', dashboardRouter);
+    app.use('/api/user', userRouter);
+    app.use('/api/events', eventsRouter);
+    app.use('/api/patterns', patternsRouter);
+    app.use('/api/rules', rulesRouter);
+    app.use('/api/staging', stagingRouter);
+    app.use('/api/audit', auditRouter);
+    app.use('/api/notifications', notificationsRouter);
+    app.use('/api/settings', settingsRouter);
+    app.use('/api/ai-search', aiSearchRouter);
+    app.use('/api/scheduled-emails', scheduledEmailsRouter);
+    app.use('/api/tracking', trackingApiRouter);
+    app.use('/api/reports', reportsRouter);
+    app.use('/api/calendar', calendarRouter);
+    app.use(globalErrorHandler);
 
     // 4. Initialize BullMQ job schedulers
     await initializeSchedulers();

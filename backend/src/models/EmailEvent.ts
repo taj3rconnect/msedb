@@ -32,6 +32,7 @@ export interface IEmailEvent extends Document {
   conversationId?: string;
   categories: string[];
   isRead: boolean;
+  isDeleted: boolean;
   metadata: IEmailEventMetadata;
   createdAt: Date;
   updatedAt: Date;
@@ -65,6 +66,7 @@ const emailEventSchema = new Schema<IEmailEvent>(
     conversationId: { type: String },
     categories: { type: [String], default: [] },
     isRead: { type: Boolean, default: false },
+    isDeleted: { type: Boolean, default: false },
     metadata: {
       hasListUnsubscribe: { type: Boolean },
       isNewsletter: { type: Boolean },
@@ -82,6 +84,7 @@ emailEventSchema.index(
   { userId: 1, mailboxId: 1, messageId: 1, eventType: 1 },
   { unique: true }
 ); // Dedup
+emailEventSchema.index({ messageId: 1, timestamp: -1 });
 emailEventSchema.index({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }); // 90-day TTL
 
 export const EmailEvent = model<IEmailEvent>('EmailEvent', emailEventSchema);
