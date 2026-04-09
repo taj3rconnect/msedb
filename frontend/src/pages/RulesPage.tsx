@@ -268,6 +268,7 @@ export function RulesPage() {
             simulatingRuleId={simulateMutation.isPending ? simulatingRule?._id ?? null : null}
             runningRuleId={runningRuleId}
             onReorder={handleReorder}
+            mailboxEmailMap={new Map(mailboxes.map((m) => [m.id, m.email]))}
           />
 
           {/* Pagination */}

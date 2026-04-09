@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { FlaskConical, GripVertical, Loader2, Pencil, Play, Settings, Trash2, Clock, Zap, Mail } from 'lucide-react';
+import { FlaskConical, GripVertical, Inbox, Loader2, Pencil, Play, Settings, Trash2, Clock, Zap, Mail } from 'lucide-react';
 import { formatRelativeTime, formatNumber } from '@/lib/formatters';
 import type { Rule } from '@/api/rules';
 
@@ -35,6 +35,7 @@ interface RuleCardProps {
   onSimulate?: (rule: Rule) => void;
   isRunning?: boolean;
   isSimulating?: boolean;
+  mailboxEmail?: string;
 }
 
 const ACTION_COLORS: Record<string, string> = {
@@ -65,7 +66,7 @@ function formatActionLabel(action: Rule['actions'][number]): string {
   }
 }
 
-export function RuleCard({ rule, onToggle, onDelete, onRename, onRun, onEdit, onSimulate, isRunning, isSimulating }: RuleCardProps) {
+export function RuleCard({ rule, onToggle, onDelete, onRename, onRun, onEdit, onSimulate, isRunning, isSimulating, mailboxEmail }: RuleCardProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(rule.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -355,6 +356,13 @@ export function RuleCard({ rule, onToggle, onDelete, onRename, onRun, onEdit, on
         <span className="inline-flex items-center gap-1">
           <Clock className="h-3 w-3" />
           {stats.lastExecutedAt ? formatRelativeTime(stats.lastExecutedAt) : 'Never run'}
+          {mailboxEmail && (
+            <>
+              <span className="text-muted-foreground/30">·</span>
+              <Inbox className="h-3 w-3" />
+              {mailboxEmail}
+            </>
+          )}
         </span>
       </div>
     </div>
