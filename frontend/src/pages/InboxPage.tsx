@@ -253,6 +253,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   // Keyboard navigation
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const visibleEventsRef = useRef<EventItem[]>([]);
 
   // Reset focused index when data changes
   useEffect(() => {
@@ -282,6 +283,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
 
   const handleRowClick = useCallback((event: EventItem) => {
     setPreviewEvent((prev) => prev?._id === event._id ? null : event);
+    setFocusedIndex(visibleEventsRef.current.findIndex((e) => e._id === event._id));
   }, []);
 
   // Auto-mark email as read after 3 seconds of previewing
@@ -412,6 +414,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
 
   // Filter out deleted rows for display
   const visibleEvents = events.filter((e) => !deletedEventIds.has(e._id));
+  visibleEventsRef.current = visibleEvents;
 
   // Tracking data for sent folder
   const [trackingMap, setTrackingMap] = useState<Record<string, TrackingMatch>>({});
@@ -709,6 +712,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
 
   // Quick "Always Delete" — create rule in ALL mailboxes + run to delete ALL emails
   const connectedMailboxes = mailboxes.filter((m) => m.isConnected);
+  const quickDeletePending = useRef(new Set<string>());
 
   const quickDeleteMutation = useMutation({
     mutationFn: async (event: EventItem) => {
@@ -775,7 +779,12 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
 
   const handleQuickDelete = useCallback((event: EventItem) => {
     if (!event.sender.email) return;
-    quickDeleteMutation.mutate(event);
+    const key = event.sender.email.toLowerCase();
+    if (quickDeletePending.current.has(key)) return;
+    quickDeletePending.current.add(key);
+    quickDeleteMutation.mutate(event, {
+      onSettled: () => quickDeletePending.current.delete(key),
+    });
   }, [quickDeleteMutation]);
 
   // Just delete this email (no rule creation)
@@ -1102,6 +1111,23 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
           if (target?.sender.email) {
             handleQuickMarkRead(target);
           }
+        },
+      },
+      // d — delete focused or previewed email, advance to next
+      {
+        key: 'd',
+        action: () => {
+          // Prioritise previewEvent (what's on screen) over keyboard focus index.
+          // If the user navigated j/k after opening a preview, focusedIndex can
+          // point to a different row than the one displayed — use preview first.
+          const current = previewEvent ?? (focusedIndex >= 0 && focusedIndex < visibleEvents.length ? visibleEvents[focusedIndex] : null);
+          if (!current) return;
+          const idx = visibleEvents.findIndex((e) => e._id === current._id);
+          const nextEvent = visibleEvents[idx + 1] ?? visibleEvents[idx - 1] ?? null;
+          // Advance preview before deleting so onMutate's null-check sees nextEvent, not current
+          setPreviewEvent(nextEvent);
+          setFocusedIndex(idx < visibleEvents.length - 1 ? idx : Math.max(0, idx - 1));
+          handleJustDelete(current);
         },
       },
       // # — delete focused/selected email(s)

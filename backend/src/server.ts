@@ -30,7 +30,6 @@ import { scheduledEmailsRouter } from './routes/scheduledEmails.js';
 import trackingRouter from './routes/tracking.js';
 import { trackingApiRouter } from './routes/trackingApi.js';
 import { reportsRouter } from './routes/reports.js';
-import { calendarRouter } from './routes/calendar.js';
 import { createSocketServer } from './config/socket.js';
 import { warmContactsCache } from './services/contactsCacheWarmer.js';
 import { ensureQdrantCollection } from './services/qdrantClient.js';
@@ -90,7 +89,6 @@ async function startServer(): Promise<void> {
     app.use('/api/scheduled-emails', scheduledEmailsRouter);
     app.use('/api/tracking', trackingApiRouter);
     app.use('/api/reports', reportsRouter);
-    app.use('/api/calendar', calendarRouter);
     app.use(globalErrorHandler);
 
     // 4. Initialize BullMQ job schedulers

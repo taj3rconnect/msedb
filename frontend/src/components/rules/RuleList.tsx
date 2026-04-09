@@ -27,6 +27,7 @@ interface RuleListProps {
   simulatingRuleId?: string | null;
   runningRuleId?: string | null;
   onReorder: (mailboxId: string, ruleIds: string[]) => void;
+  mailboxEmailMap?: Map<string, string>;
 }
 
 /**
@@ -35,7 +36,7 @@ interface RuleListProps {
  * Maintains local state for optimistic reorder updates and
  * calls onReorder with the new order of rule IDs on drag end.
  */
-export function RuleList({ rules, onToggle, onDelete, onRename, onRun, onEdit, onSimulate, simulatingRuleId, runningRuleId, onReorder }: RuleListProps) {
+export function RuleList({ rules, onToggle, onDelete, onRename, onRun, onEdit, onSimulate, simulatingRuleId, runningRuleId, onReorder, mailboxEmailMap }: RuleListProps) {
   // Local state for optimistic reorder
   const [localRules, setLocalRules] = useState(rules);
 
@@ -100,6 +101,7 @@ export function RuleList({ rules, onToggle, onDelete, onRename, onRun, onEdit, o
               onSimulate={onSimulate}
               isRunning={runningRuleId === rule._id}
               isSimulating={simulatingRuleId === rule._id}
+              mailboxEmail={mailboxEmailMap?.get(rule.mailboxId)}
             />
           ))}
         </div>

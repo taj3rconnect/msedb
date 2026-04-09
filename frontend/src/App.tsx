@@ -24,7 +24,6 @@ const InboxPage = lazy(() => import('@/pages/InboxPage').then((m) => ({ default:
 const ContactsPage = lazy(() => import('@/pages/ContactsPage').then((m) => ({ default: m.ContactsPage })));
 const PendingMessagesPage = lazy(() => import('@/pages/PendingMessagesPage').then((m) => ({ default: m.PendingMessagesPage })));
 const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
-const CalendarPage = lazy(() => import('@/pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 
 // --- Protected Layout ---
 
@@ -128,10 +127,6 @@ const router = createBrowserRouter([
           {
             path: '/reports',
             element: <ReportsPage />,
-          },
-          {
-            path: '/calendar',
-            element: <CalendarPage />,
           },
           {
             path: '/settings',
