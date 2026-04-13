@@ -12,7 +12,7 @@ export function createAuthLimiter() {
 
   return rateLimit({
     windowMs: 60 * 1000, // 1 minute
-    limit: 5,
+    limit: 20,
     standardHeaders: true,
     legacyHeaders: false,
     store: new RedisStore({
