@@ -39,6 +39,9 @@ import './models/index.js';
 
 const app = express();
 
+// Trust proxy (nginx/cloudflare) so express-rate-limit reads X-Forwarded-For correctly
+app.set('trust proxy', 1);
+
 // Security middleware (helmet, cors, compression, body parsing)
 configureSecurityMiddleware(app);
 

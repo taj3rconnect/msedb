@@ -108,6 +108,38 @@ export async function customizePattern(
   });
 }
 
+// --- Preview message types ---
+
+export interface PreviewMessage {
+  id: string;
+  subject: string;
+  from: { emailAddress: { name: string; address: string } };
+  receivedDateTime: string;
+  bodyPreview: string;
+  _fromDeletedItems?: boolean;
+}
+
+export interface PreviewMessageFull extends PreviewMessage {
+  body: { contentType: string; content: string };
+  toRecipients?: { emailAddress: { name: string; address: string } }[];
+}
+
+/**
+ * Fetch recent messages matching a pattern's sender.
+ */
+export async function fetchPatternMessages(patternId: string): Promise<PreviewMessage[]> {
+  const data = await apiFetch<{ messages: PreviewMessage[] }>(`/patterns/${patternId}/messages`);
+  return data.messages;
+}
+
+/**
+ * Fetch a single message with full body for preview.
+ */
+export async function fetchPatternMessage(patternId: string, messageId: string): Promise<PreviewMessageFull> {
+  const data = await apiFetch<{ message: PreviewMessageFull }>(`/patterns/${patternId}/messages/${messageId}`);
+  return data.message;
+}
+
 /**
  * Trigger on-demand pattern analysis.
  */

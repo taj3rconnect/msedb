@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { PatternCard } from '@/components/patterns/PatternCard';
 import { PatternFilters } from '@/components/patterns/PatternFilters';
 import { PatternCustomizeDialog } from '@/components/patterns/PatternCustomizeDialog';
+import { PatternPreviewDialog } from '@/components/patterns/PatternPreviewDialog';
 import {
   usePatterns,
   useApprovePattern,
@@ -42,6 +43,9 @@ export function PatternsPage() {
 
   // Customize dialog state
   const [customizeTarget, setCustomizeTarget] = useState<Pattern | null>(null);
+
+  // Preview dialog state
+  const [previewTarget, setPreviewTarget] = useState<Pattern | null>(null);
 
   // Build query params — status, hasRule, search are server-side; patternType is client-side
   const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
@@ -117,6 +121,14 @@ export function PatternsPage() {
     [customizeMutation],
   );
 
+  const handlePreview = useCallback(
+    (id: string) => {
+      const pattern = filteredPatterns.find((p) => p._id === id);
+      if (pattern) setPreviewTarget(pattern);
+    },
+    [filteredPatterns],
+  );
+
   const handleAnalyze = useCallback(() => {
     triggerMutation.mutate(selectedMailboxId ?? undefined);
   }, [triggerMutation, selectedMailboxId]);
@@ -189,6 +201,7 @@ export function PatternsPage() {
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onCustomize={handleOpenCustomize}
+                onPreview={handlePreview}
                 isApproving={approveMutation.isPending}
                 isRejecting={rejectMutation.isPending}
               />
@@ -229,6 +242,14 @@ export function PatternsPage() {
         onOpenChange={(open) => { if (!open) setCustomizeTarget(null); }}
         onConfirm={handleCustomizeConfirm}
         isSubmitting={customizeMutation.isPending}
+      />
+
+      {/* Preview dialog */}
+      <PatternPreviewDialog
+        patternId={previewTarget?._id ?? null}
+        senderLabel={previewTarget?.condition.senderEmail ?? previewTarget?.condition.senderDomain ?? 'sender'}
+        open={previewTarget !== null}
+        onOpenChange={(open) => { if (!open) setPreviewTarget(null); }}
       />
     </div>
   );
