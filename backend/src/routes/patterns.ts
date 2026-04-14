@@ -2,11 +2,14 @@ import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
 import { requireAuth } from '../auth/middleware.js';
 import { Pattern } from '../models/Pattern.js';
+import { Mailbox } from '../models/Mailbox.js';
 import { Rule } from '../models/Rule.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { User } from '../models/User.js';
 import { queues } from '../jobs/queues.js';
 import { convertPatternToRule } from '../services/ruleConverter.js';
+import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
+import { graphFetch } from '../services/graphClient.js';
 import logger from '../config/logger.js';
 import {
   NotFoundError,
@@ -204,6 +207,110 @@ patternsRouter.post('/analyze', async (req: Request, res: Response) => {
     message: 'Pattern analysis queued',
     jobId: job.id,
   });
+});
+
+/**
+ * GET /api/patterns/:id/messages
+ *
+ * Fetch the 5 most recent messages matching this pattern's sender from Graph API.
+ * Returns message list (id, subject, from, receivedDateTime, bodyPreview).
+ */
+patternsRouter.get('/:id/messages', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+
+  const pattern = await Pattern.findOne({ _id: req.params.id, userId });
+  if (!pattern) {
+    throw new NotFoundError('Pattern not found');
+  }
+
+  const mailbox = await Mailbox.findById(pattern.mailboxId).select('email');
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const senderEmail = pattern.condition.senderEmail;
+  if (!senderEmail) {
+    res.json({ messages: [] });
+    return;
+  }
+
+  const accessToken = await getAccessTokenForMailbox(pattern.mailboxId.toString());
+
+  const filter = `from/emailAddress/address eq '${senderEmail.replace(/'/g, "''")}'`;
+  const select = 'id,subject,from,receivedDateTime,bodyPreview';
+  const userPath = `/users/${encodeURIComponent(mailbox.email)}`;
+
+  // Fetch from all messages first (inbox, sent, etc.)
+  const graphPath = `${userPath}/messages?$filter=${encodeURIComponent(filter)}&$top=5&$select=${select}`;
+  const response = await graphFetch(graphPath, accessToken);
+  const data = await response.json() as { value: Array<{ receivedDateTime?: string; [k: string]: unknown }> };
+  let messages = data.value ?? [];
+
+  // If fewer than 5 results, also search Deleted Items for the rest
+  if (messages.length < 5) {
+    try {
+      const remaining = 5 - messages.length;
+      const deletedPath = `${userPath}/mailFolders/DeletedItems/messages?$filter=${encodeURIComponent(filter)}&$top=${remaining}&$select=${select}`;
+      const deletedResponse = await graphFetch(deletedPath, accessToken);
+      const deletedData = await deletedResponse.json() as { value: Array<{ receivedDateTime?: string; [k: string]: unknown }> };
+      if (deletedData.value?.length) {
+        // Mark deleted messages so frontend can indicate source
+        messages = messages.concat(
+          deletedData.value.map((m) => ({ ...m, _fromDeletedItems: true })),
+        );
+      }
+    } catch (err) {
+      logger.warn('Failed to fetch from Deleted Items', {
+        patternId: req.params.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  messages.sort((a, b) =>
+    new Date(b.receivedDateTime ?? 0).getTime() - new Date(a.receivedDateTime ?? 0).getTime(),
+  );
+
+  res.json({ messages });
+});
+
+/**
+ * GET /api/patterns/:id/messages/:messageId
+ *
+ * Fetch a single message with full body for preview.
+ */
+patternsRouter.get('/:id/messages/:messageId', async (req: Request, res: Response) => {
+  const userId = req.user!.userId;
+
+  const pattern = await Pattern.findOne({ _id: req.params.id, userId });
+  if (!pattern) {
+    throw new NotFoundError('Pattern not found');
+  }
+
+  const mailbox = await Mailbox.findById(pattern.mailboxId).select('email');
+  if (!mailbox) {
+    throw new NotFoundError('Mailbox not found');
+  }
+
+  const accessToken = await getAccessTokenForMailbox(pattern.mailboxId.toString());
+
+  const select = 'id,subject,from,toRecipients,receivedDateTime,body,bodyPreview';
+  const messageId = req.params.messageId as string;
+  const userPath = `/users/${encodeURIComponent(mailbox.email)}`;
+  const msgPath = `${userPath}/messages/${encodeURIComponent(messageId)}?$select=${select}`;
+
+  let message: unknown;
+  try {
+    const response = await graphFetch(msgPath, accessToken);
+    message = await response.json();
+  } catch {
+    // Message may be in Deleted Items — try there
+    const deletedMsgPath = `${userPath}/mailFolders/DeletedItems/messages/${encodeURIComponent(messageId)}?$select=${select}`;
+    const response = await graphFetch(deletedMsgPath, accessToken);
+    message = await response.json();
+  }
+
+  res.json({ message });
 });
 
 /**

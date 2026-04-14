@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Check, X, Settings2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { Check, X, Settings2, ChevronDown, ChevronUp, ExternalLink, Eye } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ interface PatternCardProps {
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onCustomize: (id: string) => void;
+  onPreview?: (id: string) => void;
   isApproving?: boolean;
   isRejecting?: boolean;
   /** When true, hides evidence and shows a more compact layout */
@@ -77,6 +78,7 @@ export function PatternCard({
   onApprove,
   onReject,
   onCustomize,
+  onPreview,
   isApproving = false,
   isRejecting = false,
   condensed = false,
@@ -222,6 +224,17 @@ export function PatternCard({
             <Settings2 className="h-4 w-4 mr-1" />
             Customize
           </Button>
+          {onPreview && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onPreview(pattern._id)}
+              title="Preview recent emails"
+              className="ml-auto"
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+          )}
         </CardFooter>
       )}
     </Card>
