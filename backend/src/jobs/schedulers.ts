@@ -107,5 +107,17 @@ export async function initializeSchedulers(): Promise<void> {
   );
   logger.info('Scheduler registered: daily-report (daily at 9 AM EST)');
 
-  logger.info('All 8 job schedulers initialized');
+  // 9. Scheduled email cleanup -- daily at 3 AM UTC
+  await queues['scheduled-email-cleanup'].upsertJobScheduler(
+    'scheduled-email-cleanup-schedule',
+    { pattern: '0 3 * * *' },
+    {
+      name: 'cleanup-scheduled-emails',
+      data: {},
+      opts: schedulerJobOpts,
+    }
+  );
+  logger.info('Scheduler registered: scheduled-email-cleanup (daily at 3 AM UTC)');
+
+  logger.info('All 9 job schedulers initialized');
 }

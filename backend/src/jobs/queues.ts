@@ -11,6 +11,7 @@ import { processEmailEmbedding } from './processors/emailEmbedding.js';
 import { processScheduledEmail } from './processors/scheduledEmail.js';
 import { processContactsSync } from './processors/contactsSync.js';
 import { processDailyReport } from './processors/dailyReport.js';
+import { processScheduledEmailCleanup } from './processors/scheduledEmailCleanup.js';
 
 // Connection configs (plain objects avoid ioredis version conflicts with BullMQ)
 const queueConnectionConfig = getQueueConnectionConfig();
@@ -34,11 +35,12 @@ const QUEUE_NAMES = [
   'scheduled-email',
   'contacts-sync',
   'daily-report',
+  'scheduled-email-cleanup',
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
 
-// Create all 9 queues
+// Create all 11 queues
 export const queues: Record<QueueName, Queue> = {
   'webhook-events': new Queue('webhook-events', {
     connection: queueConnectionConfig,
@@ -80,6 +82,10 @@ export const queues: Record<QueueName, Queue> = {
     connection: queueConnectionConfig,
     defaultJobOptions,
   }),
+  'scheduled-email-cleanup': new Queue('scheduled-email-cleanup', {
+    connection: queueConnectionConfig,
+    defaultJobOptions,
+  }),
 };
 
 // Map queue names to their processor functions
@@ -94,9 +100,10 @@ const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
   'scheduled-email': processScheduledEmail,
   'contacts-sync': processContactsSync,
   'daily-report': processDailyReport,
+  'scheduled-email-cleanup': processScheduledEmailCleanup,
 };
 
-// Create all 9 workers (each with its own Redis connection via config object)
+// Create all 11 workers (each with its own Redis connection via config object)
 const workers: Worker[] = QUEUE_NAMES.map((name) => {
   const worker = new Worker(name, processorMap[name], {
     connection: workerConnectionConfig,

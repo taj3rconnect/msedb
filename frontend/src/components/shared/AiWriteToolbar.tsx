@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { Sparkles, Check, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getCsrfToken } from '@/api/client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,10 +42,11 @@ export function AiWriteToolbar({ mailboxId, body, subject = '', onApply, onApply
     abortRef.current = () => { aborted = true; };
 
     try {
+      const csrfToken = await getCsrfToken();
       const res = await fetch(`/api/mailboxes/${mailboxId}/ai-write`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
         body: JSON.stringify({ action, body, subject }),
       });
 
