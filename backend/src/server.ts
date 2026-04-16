@@ -11,6 +11,7 @@ import { initializeTunnelConfig } from './services/tunnelService.js';
 import { configureSecurityMiddleware } from './middleware/security.js';
 import { createAuthLimiter, createApiLimiter } from './middleware/rateLimiter.js';
 import { globalErrorHandler } from './middleware/errorHandler.js';
+import { issueCsrfToken, validateCsrf } from './middleware/csrf.js';
 import healthRouter from './routes/health.js';
 import webhooksRouter from './routes/webhooks.js';
 import authRouter from './auth/routes.js';
@@ -75,7 +76,11 @@ async function startServer(): Promise<void> {
     app.use('/auth', createAuthLimiter());
     app.use('/api', createApiLimiter());
 
-    // 3b. Mount routes (after rate limiters so /auth and /api limiters apply)
+    // 3b. CSRF token endpoint (issues token) and validation middleware
+    app.get('/auth/csrf-token', issueCsrfToken);
+    app.use(validateCsrf);
+
+    // 3c. Mount routes (after rate limiters so /auth and /api limiters apply)
     app.use(authRouter);
     app.use('/api/admin', adminRouter);
     app.use('/api/mailboxes', mailboxRouter);
