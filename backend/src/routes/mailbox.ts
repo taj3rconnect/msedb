@@ -14,6 +14,7 @@ import {
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { refreshFolderCache } from '../services/folderCache.js';
 import { getRedisClient } from '../config/redis.js';
+import { bodyCacheKey, BODY_CACHE_TTL } from '../jobs/processors/bodyPrefetch.js';
 import { runDeltaSync, type DeltaSyncResult } from '../services/deltaService.js';
 import { graphFetch } from '../services/graphClient.js';
 import { buildSelectParam } from '../utils/graph.js';
@@ -906,9 +907,21 @@ mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response
     throw new NotFoundError('Mailbox not found');
   }
 
-  const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
+  const mailboxId = mailbox._id.toString();
+  const messageId = String(req.params.messageId);
+  const redis = getRedisClient();
+  const cacheKey = bodyCacheKey(mailboxId, messageId);
+
+  // Serve from Redis cache when available — avoids a live Graph call entirely.
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    res.json({ message: JSON.parse(cached) });
+    return;
+  }
+
+  const accessToken = await getAccessTokenForMailbox(mailboxId);
   const response = await graphFetch(
-    `/users/${mailbox.email}/messages/${req.params.messageId}?$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,isRead,importance,hasAttachments,categories,flag`,
+    `/users/${mailbox.email}/messages/${messageId}?$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,isRead,importance,hasAttachments,categories,flag`,
     accessToken,
   );
 
@@ -932,7 +945,7 @@ mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response
   if (message.body?.contentType === 'html' && message.body.content.includes('cid:')) {
     try {
       const attResponse = await graphFetch(
-        `/users/${mailbox.email}/messages/${req.params.messageId}/attachments?$select=contentId,contentType,contentBytes,isInline`,
+        `/users/${mailbox.email}/messages/${messageId}/attachments?$select=contentId,contentType,contentBytes,isInline`,
         accessToken,
       );
       const attData = (await attResponse.json()) as {
@@ -942,10 +955,8 @@ mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response
         let html = message.body.content;
         for (const att of attData.value) {
           if (att.contentId && att.contentBytes && att.contentType && att.contentType.startsWith('image/')) {
-            // contentId may be wrapped in angle brackets: <image001.jpg@...>
             const cid = att.contentId.replace(/^<|>$/g, '');
             const dataUri = `data:${att.contentType};base64,${att.contentBytes}`;
-            // Replace all variations: cid:ID and cid:<ID>
             html = html.split(`cid:${cid}`).join(dataUri);
             html = html.split(`cid:<${cid}>`).join(dataUri);
           }
@@ -955,6 +966,12 @@ mailboxRouter.get('/:id/messages/:messageId', async (req: Request, res: Response
     } catch {
       // Non-fatal — return body as-is if attachment fetch fails
     }
+  }
+
+  // Write to cache for future previews (fire-and-forget, non-blocking)
+  const serialized = JSON.stringify(message);
+  if (serialized.length <= 250_000) {
+    redis.set(cacheKey, serialized, 'EX', BODY_CACHE_TTL).catch(() => { /* non-fatal */ });
   }
 
   res.json({ message });
