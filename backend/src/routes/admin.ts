@@ -385,4 +385,63 @@ adminRouter.post('/sync-now', async (req: Request, res: Response) => {
   res.json({ queued: true, jobId: job.id });
 });
 
+/**
+ * POST /api/admin/prefetch-unread-bodies
+ *
+ * One-shot bulk prefetch: queues a body-prefetch job for every unread arrived
+ * email that is not already cached in Redis. Skips messages already in cache.
+ * Jobs are staggered (1 s apart) so they don't flood Graph simultaneously.
+ */
+adminRouter.post('/prefetch-unread-bodies', async (req: Request, res: Response) => {
+  const { getRedisClient } = await import('../config/redis.js');
+  const { bodyCacheKey } = await import('../jobs/processors/bodyPrefetch.js');
+
+  const redis = getRedisClient();
+
+  // Get all mailboxes so we can resolve email addresses
+  const mailboxes = await Mailbox.find({}, { _id: 1, email: 1 }).lean();
+  const mailboxEmailMap = new Map(mailboxes.map((m) => [String(m._id), m.email]));
+
+  // Find all unread arrived events (not deleted)
+  const events = await EmailEvent.find(
+    { eventType: 'arrived', isRead: false, isDeleted: false },
+    { mailboxId: 1, messageId: 1 },
+  ).lean();
+
+  let queued = 0;
+  let skipped = 0;
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    const mailboxId = String(ev.mailboxId);
+    const messageId = ev.messageId;
+    const mailboxEmail = mailboxEmailMap.get(mailboxId);
+    if (!mailboxEmail) { skipped++; continue; }
+
+    const cacheKey = bodyCacheKey(mailboxId, messageId);
+    if (await redis.exists(cacheKey)) { skipped++; continue; }
+
+    await queues['body-prefetch'].add('prefetch-body', {
+      mailboxId,
+      mailboxEmail,
+      messageId,
+    }, {
+      jobId: `body:${mailboxId}:${messageId}`,
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 15000 },
+      delay: i * 1000, // stagger 1 s apart so Graph isn't hit all at once
+    });
+    queued++;
+  }
+
+  logger.info('Bulk body prefetch queued', {
+    requestedBy: req.user!.userId,
+    total: events.length,
+    queued,
+    skipped,
+  });
+
+  res.json({ queued, skipped, total: events.length });
+});
+
 export default adminRouter;

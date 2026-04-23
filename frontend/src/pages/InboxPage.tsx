@@ -43,6 +43,7 @@ import type { EventItem } from '@/api/events';
 import { createRule, updateRule, fetchRules, runRule, deleteRulesBySender } from '@/api/rules';
 import type { RuleAction, RuleConditions } from '@/api/rules';
 import { applyActionsToMessages, fetchDeletedCount, fetchDeletedCountAll, emptyDeletedItems, triggerSync, syncFolderStream, type SyncProgress, fetchMessageBody, replyToMessage, replyAllToMessage, forwardMessage, searchContacts, type Contact } from '@/api/mailboxes';
+import { ApiError } from '@/api/client';
 import { batchLookupTracking, type TrackingMatch } from '@/api/tracking';
 import { useSettings } from '@/hooks/useSettings';
 import { RuleActionsDialog } from '@/components/inbox/RuleActionsDialog';
@@ -2261,10 +2262,11 @@ function EmailPreviewPane({
   });
 
   // Fetch the full email body from Graph API
-  const { data: bodyData, isLoading: bodyLoading } = useQuery({
+  const { data: bodyData, isLoading: bodyLoading, isError: bodyError, error: bodyFetchError } = useQuery({
     queryKey: ['message-body', mailboxId, event.messageId],
     queryFn: () => fetchMessageBody(mailboxId, event.messageId),
     staleTime: 5 * 60 * 1000, // cache for 5 minutes
+    retry: false,
   });
 
   const messageBody = bodyData?.message?.body;
@@ -2680,6 +2682,12 @@ function EmailPreviewPane({
                 {messageBody.content}
               </pre>
             )
+          ) : bodyError ? (
+            <p className="text-sm text-muted-foreground italic">
+              {bodyFetchError instanceof ApiError && bodyFetchError.status === 429
+                ? 'Microsoft is rate limiting requests — wait a moment and click another email to retry.'
+                : 'Email body unavailable — this message may have been moved or deleted.'}
+            </p>
           ) : (
             <p className="text-sm text-muted-foreground italic">
               Could not load email body

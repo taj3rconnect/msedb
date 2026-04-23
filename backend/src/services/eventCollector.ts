@@ -263,7 +263,7 @@ async function handleCreated(
 
   const saved = await saveEmailEvent(eventData);
 
-  // Fire-and-forget: enqueue embedding job for new emails
+  // Fire-and-forget: enqueue embedding + body prefetch jobs for new emails
   if (saved) {
     try {
       await queues['email-embedding'].add('embed-email', {
@@ -284,6 +284,18 @@ async function handleCreated(
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         delay: 2000,
+      });
+    } catch { /* non-blocking */ }
+    try {
+      await queues['body-prefetch'].add('prefetch-body', {
+        mailboxId: String(mailboxId),
+        mailboxEmail,
+        messageId,
+      }, {
+        jobId: `body:${String(mailboxId)}:${messageId}`,
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 15000 },
+        delay: 3000,
       });
     } catch { /* non-blocking */ }
   }

@@ -60,12 +60,29 @@ export function globalErrorHandler(
   let statusCode = 500;
   if (err instanceof AppError) {
     statusCode = err.statusCode;
+  } else if (err instanceof GraphApiError) {
+    // Map Graph API errors to appropriate HTTP responses.
+    if (err.status === 404 || err.status === 410) {
+      statusCode = 404;
+    } else if (err.status === 403) {
+      statusCode = 403;
+    } else if (err.status === 429) {
+      statusCode = 429;
+    }
   }
 
-  // Sanitize error message — never leak Graph API response bodies (may contain credentials/keys)
+  // Sanitize error message — never leak Graph API response bodies or paths (may contain email addresses / keys)
   let safeMessage = err.message;
   if (err instanceof GraphApiError) {
-    safeMessage = `Graph API error ${err.status} on ${err.path}`;
+    if (err.status === 404 || err.status === 410) {
+      safeMessage = 'Message not found';
+    } else if (err.status === 403) {
+      safeMessage = 'Access denied by Microsoft Graph';
+    } else if (err.status === 429) {
+      safeMessage = 'Microsoft Graph rate limit reached — try again in a moment';
+    } else {
+      safeMessage = `Graph API error (${err.status})`;
+    }
   }
 
   // Log the error with context (full details in logs only)

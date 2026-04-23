@@ -20,12 +20,48 @@ export class GraphApiError extends Error {
 }
 
 /**
+ * Semaphore limiting the number of concurrent outbound Graph API calls.
+ *
+ * Graph enforces a MailboxConcurrency limit (~4 parallel connections per
+ * mailbox per app). We cap at 3 so background workers don't starve
+ * user-triggered interactive requests.
+ */
+class Semaphore {
+  private slots: number;
+  private queue: Array<() => void> = [];
+
+  constructor(max: number) {
+    this.slots = max;
+  }
+
+  acquire(): Promise<void> {
+    if (this.slots > 0) {
+      this.slots--;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.queue.push(resolve));
+  }
+
+  release(): void {
+    const next = this.queue.shift();
+    if (next) {
+      next();
+    } else {
+      this.slots++;
+    }
+  }
+}
+
+const graphConcurrency = new Semaphore(2);
+
+/**
  * Thin wrapper around native fetch() for Microsoft Graph API v1.0 calls.
  *
  * - Injects Bearer token via Authorization header
  * - Supports absolute URLs (e.g., nextLink/deltaLink) and relative paths (prepends GRAPH_BASE)
+ * - Enforces a process-wide concurrency limit of 3 to avoid MailboxConcurrency 429s
+ * - On 429 (rate limit): reads Retry-After header, waits, then retries once
  * - Throws GraphApiError on non-ok responses
- * - No retry logic here -- BullMQ handles retries at the job level
  *
  * @param path - Relative path (e.g., "/subscriptions") or absolute URL
  * @param accessToken - OAuth2 Bearer token
@@ -45,14 +81,40 @@ export async function graphFetch(
     ...(options?.headers as Record<string, string> | undefined),
   };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const doFetch = async (): Promise<Response> => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    return fetch(url, {
+      ...options,
+      headers: mergedHeaders,
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
+  };
 
-  const response = await fetch(url, {
-    ...options,
-    headers: mergedHeaders,
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
+  // First attempt
+  await graphConcurrency.acquire();
+  let response: Response;
+  try {
+    response = await doFetch();
+  } finally {
+    graphConcurrency.release();
+  }
+
+  // 429: release the slot, wait, then retry once with a fresh slot.
+  // Releasing before waiting lets other callers (including user-triggered requests)
+  // proceed while this background call is backing off.
+  if (response.status === 429) {
+    const retryAfter = parseInt(response.headers.get('Retry-After') ?? '10', 10);
+    const waitMs = Math.min(isNaN(retryAfter) ? 10 : retryAfter, 30) * 1000;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+    await graphConcurrency.acquire();
+    try {
+      response = await doFetch();
+    } finally {
+      graphConcurrency.release();
+    }
+  }
 
   if (!response.ok) {
     const body = await response.text();

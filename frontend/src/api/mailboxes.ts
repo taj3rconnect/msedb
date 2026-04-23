@@ -232,7 +232,7 @@ export async function fetchMessageBody(
   messageId: string,
 ): Promise<{ message: MessageBody }> {
   return apiFetch<{ message: MessageBody }>(
-    `/mailboxes/${mailboxId}/messages/${messageId}`,
+    `/mailboxes/${mailboxId}/messages/${encodeURIComponent(messageId)}`,
   );
 }
 

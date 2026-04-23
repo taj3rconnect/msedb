@@ -189,7 +189,7 @@ export async function runDeltaSync(
 
         if (saved) {
           counters.created++;
-          // Fire-and-forget: enqueue embedding job for new emails
+          // Fire-and-forget: enqueue embedding + body prefetch jobs for new emails
           try {
             await queues['email-embedding'].add('embed-email', {
               userId,
@@ -209,6 +209,18 @@ export async function runDeltaSync(
               attempts: 2,
               backoff: { type: 'exponential', delay: 10000 },
               delay: 2000,
+            });
+          } catch { /* non-blocking */ }
+          try {
+            await queues['body-prefetch'].add('prefetch-body', {
+              mailboxId,
+              mailboxEmail,
+              messageId: msg.id,
+            }, {
+              jobId: `body:${mailboxId}:${msg.id}`,
+              attempts: 2,
+              backoff: { type: 'exponential', delay: 15000 },
+              delay: 3000,
             });
           } catch { /* non-blocking */ }
         } else {
