@@ -1,5 +1,5 @@
 import { Navigate, useSearchParams } from 'react-router';
-import { Mail } from 'lucide-react';
+import { Logo } from '@/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -32,9 +32,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-            <Mail className="h-6 w-6 text-primary" />
-          </div>
+          <Logo className="mx-auto mb-4 h-14 w-14" />
           <CardTitle className="text-2xl font-bold">MSEDB</CardTitle>
           <CardDescription>
             Microsoft Email Dashboard
