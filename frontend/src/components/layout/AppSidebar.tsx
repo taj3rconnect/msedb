@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Mail, Database, FolderOpen, Inbox, Send, Trash2, Archive,
+  Database, FolderOpen, Inbox, Send, Trash2, Archive,
   FileWarning, Pencil, Folder, ChevronDown, ChevronRight, Loader2,
 } from 'lucide-react';
+import { Logo } from '@/components/brand/Logo';
 import {
   Sidebar,
   SidebarContent,
@@ -257,7 +258,7 @@ export function AppSidebar() {
       <SidebarHeader className="border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-            <Mail className="h-6 w-6 text-primary" />
+            <Logo className="h-7 w-7" />
             <span className="text-lg font-bold">MSEDB</span>
             {__APP_VERSION__ && (
               <div className="flex flex-col leading-tight">
