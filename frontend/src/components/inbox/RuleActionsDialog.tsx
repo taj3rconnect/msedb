@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronDown, ChevronRight, ChevronsUpDown, FlaskConical, Folder, FolderPlus, Loader2, Search, X } from 'lucide-react';
 import { useSimulateRule } from '@/hooks/useRules';
@@ -112,6 +112,42 @@ function FolderTreeItem({ folder, mailboxId, selectedFolderId, depth, onSelect }
   );
 }
 
+interface ClearableFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}
+
+/** A labeled condition input the user can freely edit, with an X to clear it. */
+function ClearableField({ id, label, value, onChange, placeholder }: ClearableFieldProps) {
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
+      <div className="relative">
+        <Input
+          id={id}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 pr-8 text-sm"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            aria-label={`Clear ${label}`}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function RuleActionsDialog({
   open,
   onOpenChange,
@@ -160,9 +196,18 @@ export function RuleActionsDialog({
     setSimulationResult(null);
   }, [deleteChecked, moveChecked, markReadChecked, forwardChecked, forwardTo, senderEmailCondition, senderDomain, subjectContains, bodyContains, selectedExistingRuleId]);
 
-  // Auto-fill conditions when dialog opens
+  // Auto-fill conditions ONCE when the dialog opens. The ref guard prevents the
+  // effect from re-running on later re-renders (senderEmails/subjects are fresh
+  // array refs each parent render) — otherwise a field the user cleared would be
+  // re-populated. Reset on close so the next open re-fills.
+  const autoFilledRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      autoFilledRef.current = false;
+      return;
+    }
+    if (autoFilledRef.current) return;
+    autoFilledRef.current = true;
     setFolderMailboxId(mailboxId);
 
     // Auto-fill sender email/domain if all senders share the same email/domain
@@ -817,46 +862,34 @@ export function RuleActionsDialog({
               <div className="flex-1 border-t" />
             </div>
             <div className="space-y-3">
-              <div className="space-y-1">
-                <Label htmlFor="cond-email-from" className="text-xs text-muted-foreground">Email From</Label>
-                <Input
-                  id="cond-email-from"
-                  placeholder="From email (e.g. newsletter@example.com)"
-                  value={senderEmailCondition}
-                  onChange={(e) => setSenderEmailCondition(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cond-domain-from" className="text-xs text-muted-foreground">Domain From</Label>
-                <Input
-                  id="cond-domain-from"
-                  placeholder="Sender domain (e.g. newsletter.com)"
-                  value={senderDomain}
-                  onChange={(e) => setSenderDomain(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cond-subject" className="text-xs text-muted-foreground">Subject Line</Label>
-                <Input
-                  id="cond-subject"
-                  placeholder="Subject contains..."
-                  value={subjectContains}
-                  onChange={(e) => setSubjectContains(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="cond-body" className="text-xs text-muted-foreground">MSG Body Text</Label>
-                <Input
-                  id="cond-body"
-                  placeholder="Body contains..."
-                  value={bodyContains}
-                  onChange={(e) => setBodyContains(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </div>
+              <ClearableField
+                id="cond-email-from"
+                label="Email From"
+                placeholder="From email (e.g. newsletter@example.com)"
+                value={senderEmailCondition}
+                onChange={setSenderEmailCondition}
+              />
+              <ClearableField
+                id="cond-domain-from"
+                label="Domain From"
+                placeholder="Sender domain (e.g. newsletter.com)"
+                value={senderDomain}
+                onChange={setSenderDomain}
+              />
+              <ClearableField
+                id="cond-subject"
+                label="Subject Line"
+                placeholder="Subject contains..."
+                value={subjectContains}
+                onChange={setSubjectContains}
+              />
+              <ClearableField
+                id="cond-body"
+                label="MSG Body Text"
+                placeholder="Body contains..."
+                value={bodyContains}
+                onChange={setBodyContains}
+              />
             </div>
           </div>{/* end Conditions column */}
 
