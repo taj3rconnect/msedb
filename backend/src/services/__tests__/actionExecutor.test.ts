@@ -119,6 +119,39 @@ describe('executeActions', () => {
     expect(JSON.parse(calls[1][2].body)).toHaveProperty('isRead');
   });
 
+  it('forwards a message to the configured recipients via /forward', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'forward', forwardTo: ['boss@example.com', 'team@example.com'] }],
+    });
+
+    expect(mockGraphFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/messages/msg-1/forward'),
+      'token-123',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const forwardCall = mockGraphFetch.mock.calls.find((c) =>
+      String(c[0]).includes('/forward'),
+    );
+    const body = JSON.parse(forwardCall![2].body);
+    expect(body.toRecipients).toEqual([
+      { emailAddress: { address: 'boss@example.com' } },
+      { emailAddress: { address: 'team@example.com' } },
+    ]);
+  });
+
+  it('skips a forward action with no recipients', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'forward', forwardTo: [] }],
+    });
+
+    const forwardCall = mockGraphFetch.mock.calls.find((c) =>
+      String(c[0]).includes('/forward'),
+    );
+    expect(forwardCall).toBeUndefined();
+  });
+
   it('creates audit log after execution', async () => {
     await executeActions({
       ...baseParams,

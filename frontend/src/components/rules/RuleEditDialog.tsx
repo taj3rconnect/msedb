@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
@@ -31,11 +31,12 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { EmailAutocomplete } from '@/components/inbox/EmailAutocomplete';
+import { ClearableField } from '@/components/shared/ClearableField';
 
 interface RuleEditDialogProps {
   open: boolean;
@@ -59,6 +60,8 @@ export function RuleEditDialog({
   const [markReadChecked, setMarkReadChecked] = useState(false);
   const [popupChecked, setPopupChecked] = useState(false);
   const [popupMessage, setPopupMessage] = useState('');
+  const [forwardChecked, setForwardChecked] = useState(false);
+  const [forwardTo, setForwardTo] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<{
     id: string;
     name: string;
@@ -77,9 +80,8 @@ export function RuleEditDialog({
   const [subjectContains, setSubjectContains] = useState('');
   const [bodyContains, setBodyContains] = useState('');
 
-  // Sender emails state (editable)
+  // Sender emails state (editable, multi-value)
   const [senderEmails, setSenderEmails] = useState<string[]>([]);
-  const [newSenderEmail, setNewSenderEmail] = useState('');
 
   // Simulation state
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
@@ -89,11 +91,19 @@ export function RuleEditDialog({
   // Clear simulation when conditions change
   useEffect(() => {
     setSimulationResult(null);
-  }, [senderEmails, senderDomain, subjectContains, bodyContains]);
+  }, [senderEmails, senderDomain, subjectContains, bodyContains, forwardChecked, forwardTo]);
 
-  // Pre-fill from rule when dialog opens
+  // Pre-fill from rule ONCE per open. The ref guard prevents re-running on later
+  // re-renders (rule is a prop object) — otherwise a field the user cleared would
+  // be re-populated. Reset on close so the next open re-fills.
+  const prefilledRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      prefilledRef.current = false;
+      return;
+    }
+    if (prefilledRef.current) return;
+    prefilledRef.current = true;
     setName(rule.name);
     setDeleteChecked(rule.actions.some((a) => a.actionType === 'delete'));
     setMoveChecked(rule.actions.some((a) => a.actionType === 'move'));
@@ -101,6 +111,10 @@ export function RuleEditDialog({
     const popupAction = rule.actions.find((a) => a.actionType === 'popup');
     setPopupChecked(!!popupAction);
     setPopupMessage(popupAction?.popupMessage ?? '');
+
+    const forwardAction = rule.actions.find((a) => a.actionType === 'forward');
+    setForwardChecked(!!forwardAction);
+    setForwardTo(forwardAction?.forwardTo ?? []);
 
     const moveAction = rule.actions.find((a) => a.actionType === 'move');
     if (moveAction?.toFolder) {
@@ -173,6 +187,9 @@ export function RuleEditDialog({
       if (popupChecked) {
         actions.push({ actionType: 'popup', popupMessage: popupMessage.trim() || 'Rule triggered' });
       }
+      if (forwardChecked && forwardTo.length > 0) {
+        actions.push({ actionType: 'forward', forwardTo });
+      }
 
       const conditions = { ...rule.conditions };
       if (senderEmails.length === 0) {
@@ -224,7 +241,11 @@ export function RuleEditDialog({
   }, [allMailboxes, mailboxSearch]);
 
   const hasActions =
-    deleteChecked || markReadChecked || (moveChecked && selectedFolder) || popupChecked;
+    deleteChecked ||
+    markReadChecked ||
+    (moveChecked && selectedFolder) ||
+    popupChecked ||
+    (forwardChecked && forwardTo.length > 0);
 
   function handleFolderMailboxChange(id: string) {
     setFolderMailboxId(id);
@@ -240,19 +261,6 @@ export function RuleEditDialog({
     const folderName = newFolderName.trim();
     if (!folderName) return;
     createFolderMutation.mutate(folderName);
-  }
-
-  function handleAddSender() {
-    const email = newSenderEmail.trim().toLowerCase();
-    if (!email) return;
-    if (!senderEmails.includes(email)) {
-      setSenderEmails((prev) => [...prev, email]);
-    }
-    setNewSenderEmail('');
-  }
-
-  function handleRemoveSender(email: string) {
-    setSenderEmails((prev) => prev.filter((e) => e !== email));
   }
 
   function handleSimulate(dateRange?: '30d' | '60d' | '90d') {
@@ -283,11 +291,12 @@ export function RuleEditDialog({
       setShowNewFolder(false);
       setMailboxSearch('');
       setMailboxSearchOpen(false);
-      setNewSenderEmail('');
       setSimulationResult(null);
       setSimDateRange('30d');
       setPopupChecked(false);
       setPopupMessage('');
+      setForwardChecked(false);
+      setForwardTo([]);
     }
     onOpenChange(nextOpen);
   }
@@ -296,7 +305,7 @@ export function RuleEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Rule</DialogTitle>
         </DialogHeader>
@@ -313,10 +322,13 @@ export function RuleEditDialog({
             />
           </div>
 
-          {/* Actions section */}
-          <div className="space-y-3">
+          {/* Two-column layout: Actions (left) | Conditions (right) */}
+          <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2 md:gap-6">
+
+          {/* ===== Actions column ===== */}
+          <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</span>
               <div className="flex-1 border-t" />
             </div>
 
@@ -591,85 +603,84 @@ export function RuleEditDialog({
                 </div>
               )}
             </div>
-          </div>
+            {/* Forward */}
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="edit-action-forward"
+                  checked={forwardChecked}
+                  onCheckedChange={(v) => {
+                    setForwardChecked(v === true);
+                    if (!v) setForwardTo([]);
+                  }}
+                />
+                <Label htmlFor="edit-action-forward">
+                  Forward
+                  {forwardChecked && forwardTo.length > 0 && (
+                    <span className="ml-1 text-muted-foreground">
+                      &rarr; {forwardTo.length} recipient{forwardTo.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </Label>
+              </div>
+              {forwardChecked && (
+                <div className="ml-6 space-y-1">
+                  <EmailAutocomplete
+                    value={forwardTo}
+                    onChange={setForwardTo}
+                    placeholder="Search contacts or type an email…"
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Matching emails are forwarded to {forwardTo.length > 0 ? 'these recipients' : 'the recipients you add'}.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>{/* end Actions column */}
 
-          {/* Conditions section */}
-          <div className="space-y-3">
+          {/* ===== Conditions column ===== */}
+          <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Conditions</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Conditions</span>
               <div className="flex-1 border-t" />
             </div>
 
-            {/* Sender emails */}
-            <div className="space-y-1.5">
-              <Label>Sender emails</Label>
-              {senderEmails.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {senderEmails.map((email) => (
-                    <Badge
-                      key={email}
-                      variant="secondary"
-                      className="text-xs gap-1"
-                    >
-                      {email}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveSender(email)}
-                        className="ml-0.5 hover:text-destructive"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-              <div className="flex gap-1.5">
-                <Input
-                  placeholder="Add sender email..."
-                  value={newSenderEmail}
-                  onChange={(e) => setNewSenderEmail(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddSender();
-                    }
-                  }}
-                  className="h-8 text-sm flex-1"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 px-3 text-xs"
-                  onClick={handleAddSender}
-                  disabled={!newSenderEmail.trim()}
-                >
-                  Add
-                </Button>
-              </div>
+            {/* Email From — multi-value with contact typeahead */}
+            <div className="space-y-1">
+              <Label htmlFor="edit-cond-email-from" className="text-xs text-muted-foreground">Email From</Label>
+              <EmailAutocomplete
+                id="edit-cond-email-from"
+                value={senderEmails}
+                onChange={setSenderEmails}
+                placeholder="Search contacts or type an email…"
+              />
             </div>
 
-            {/* Domain / Subject / Body — grouped plain inputs matching create rule style */}
-            <div className="space-y-1.5">
-              <Input
-                placeholder="Sender domain (e.g. newsletter.com)"
-                value={senderDomain}
-                onChange={(e) => setSenderDomain(e.target.value)}
-                className="h-8 text-sm"
-              />
-              <Input
-                placeholder="Subject contains..."
-                value={subjectContains}
-                onChange={(e) => setSubjectContains(e.target.value)}
-                className="h-8 text-sm"
-              />
-              <Input
-                placeholder="Body contains..."
-                value={bodyContains}
-                onChange={(e) => setBodyContains(e.target.value)}
-                className="h-8 text-sm"
-              />
-            </div>
-          </div>
+            <ClearableField
+              id="edit-cond-domain-from"
+              label="Domain From"
+              placeholder="Sender domain (e.g. newsletter.com)"
+              value={senderDomain}
+              onChange={setSenderDomain}
+            />
+            <ClearableField
+              id="edit-cond-subject"
+              label="Subject Line"
+              placeholder="Subject contains..."
+              value={subjectContains}
+              onChange={setSubjectContains}
+            />
+            <ClearableField
+              id="edit-cond-body"
+              label="MSG Body Text"
+              placeholder="Body contains..."
+              value={bodyContains}
+              onChange={setBodyContains}
+            />
+          </div>{/* end Conditions column */}
+
+          </div>{/* end two-column grid */}
         </div>
 
         {/* Simulation results */}

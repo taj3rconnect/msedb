@@ -11,10 +11,11 @@ export interface RuleConditions {
 }
 
 export interface RuleAction {
-  actionType: 'move' | 'delete' | 'markRead' | 'flag' | 'categorize' | 'archive' | 'popup';
+  actionType: 'move' | 'delete' | 'markRead' | 'flag' | 'categorize' | 'archive' | 'popup' | 'forward';
   toFolder?: string;
   category?: string;
   popupMessage?: string;
+  forwardTo?: string[];
   order?: number;
 }
 
