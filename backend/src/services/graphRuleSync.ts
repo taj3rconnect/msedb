@@ -19,6 +19,7 @@ interface GraphMessageRule {
     moveToFolder?: string;
     delete?: boolean;
     markAsRead?: boolean;
+    forwardTo?: Array<{ emailAddress: { address: string } }>;
     stopProcessingRules?: boolean;
   };
 }
@@ -73,12 +74,28 @@ function toGraphRule(
           graphActions.moveToFolder = action.toFolder;
         }
         break;
+      case 'forward': {
+        const recipients = (action.forwardTo ?? [])
+          .map((r) => r.trim())
+          .filter(Boolean);
+        if (recipients.length > 0) {
+          graphActions.forwardTo = recipients.map((address) => ({
+            emailAddress: { address },
+          }));
+        }
+        break;
+      }
       // flag, categorize — not supported as Graph inbox rule actions, skip
     }
   }
 
   // Must have at least one action
-  if (!graphActions.moveToFolder && !graphActions.markAsRead && !graphActions.delete) {
+  if (
+    !graphActions.moveToFolder &&
+    !graphActions.markAsRead &&
+    !graphActions.delete &&
+    !graphActions.forwardTo
+  ) {
     return null;
   }
 

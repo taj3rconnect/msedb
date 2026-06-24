@@ -33,6 +33,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { EmailAutocomplete } from '@/components/inbox/EmailAutocomplete';
 
 interface RuleActionsDialogProps {
   open: boolean;
@@ -128,6 +129,8 @@ export function RuleActionsDialog({
   const [markReadChecked, setMarkReadChecked] = useState(false);
   const [popupChecked, setPopupChecked] = useState(false);
   const [popupMessage, setPopupMessage] = useState('');
+  const [forwardChecked, setForwardChecked] = useState(false);
+  const [forwardTo, setForwardTo] = useState<string[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<{
     id: string;
     name: string;
@@ -155,7 +158,7 @@ export function RuleActionsDialog({
   // Clear simulation when conditions change
   useEffect(() => {
     setSimulationResult(null);
-  }, [deleteChecked, moveChecked, markReadChecked, senderEmailCondition, senderDomain, subjectContains, bodyContains, selectedExistingRuleId]);
+  }, [deleteChecked, moveChecked, markReadChecked, forwardChecked, forwardTo, senderEmailCondition, senderDomain, subjectContains, bodyContains, selectedExistingRuleId]);
 
   // Auto-fill conditions when dialog opens
   useEffect(() => {
@@ -207,6 +210,10 @@ export function RuleActionsDialog({
     setDeleteChecked(rule.actions.some((a) => a.actionType === 'delete'));
     setMoveChecked(rule.actions.some((a) => a.actionType === 'move'));
     setMarkReadChecked(rule.actions.some((a) => a.actionType === 'markRead'));
+
+    const forwardAction = rule.actions.find((a) => a.actionType === 'forward');
+    setForwardChecked(!!forwardAction);
+    setForwardTo(forwardAction?.forwardTo ?? []);
 
     const moveAction = rule.actions.find((a) => a.actionType === 'move');
     if (moveAction?.toFolder) {
@@ -260,7 +267,11 @@ export function RuleActionsDialog({
   }, [foldersData?.folders, folderSearch]);
 
   const hasSelection =
-    deleteChecked || markReadChecked || (moveChecked && selectedFolder) || popupChecked;
+    deleteChecked ||
+    markReadChecked ||
+    (moveChecked && selectedFolder) ||
+    popupChecked ||
+    (forwardChecked && forwardTo.length > 0);
 
   const uniqueSenders = useMemo(
     () => [...new Set(senderEmails)],
@@ -274,13 +285,14 @@ export function RuleActionsDialog({
     if (deleteChecked) parts.push('delete');
     if (moveChecked && selectedFolder) parts.push(`move to ${selectedFolder.name}`);
     if (markReadChecked) parts.push('mark read');
+    if (forwardChecked && forwardTo.length > 0) parts.push(`forward to ${forwardTo[0]}${forwardTo.length > 1 ? ` +${forwardTo.length - 1}` : ''}`);
     if (parts.length === 0) return '';
     const actionLabel = parts.join(' + ');
     if (isBulk) {
       return `Always ${actionLabel}`;
     }
     return `Always ${actionLabel} from ${uniqueSenders[0]}`;
-  }, [deleteChecked, moveChecked, markReadChecked, selectedFolder, uniqueSenders, isBulk]);
+  }, [deleteChecked, moveChecked, markReadChecked, forwardChecked, forwardTo, selectedFolder, uniqueSenders, isBulk]);
 
   function handleConfirm() {
     const actions: RuleAction[] = [];
@@ -301,6 +313,10 @@ export function RuleActionsDialog({
     if (popupChecked) {
       actions.push({ actionType: 'popup', popupMessage: popupMessage.trim() || 'Rule triggered' });
       parts.push('popup');
+    }
+    if (forwardChecked && forwardTo.length > 0) {
+      actions.push({ actionType: 'forward', forwardTo });
+      parts.push(`forward to ${forwardTo.join(', ')}`);
     }
 
     const actionLabel = parts.join(' + ');
@@ -373,6 +389,8 @@ export function RuleActionsDialog({
       setSimDateRange('30d');
       setPopupChecked(false);
       setPopupMessage('');
+      setForwardChecked(false);
+      setForwardTo([]);
     }
     onOpenChange(nextOpen);
   }
@@ -423,7 +441,7 @@ export function RuleActionsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>
             {isBulk
@@ -494,9 +512,13 @@ export function RuleActionsDialog({
             </div>
           )}
 
-          {/* Actions section header */}
+          {/* Two-column layout: Actions (left) | Conditions (right) */}
+          <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2 md:gap-6">
+
+          {/* ===== Actions column ===== */}
+          <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</span>
             <div className="flex-1 border-t" />
           </div>
 
@@ -752,39 +774,93 @@ export function RuleActionsDialog({
             )}
           </div>
 
-          {/* Additional conditions */}
-          <div className="space-y-3">
+          {/* Forward */}
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="action-forward"
+                checked={forwardChecked}
+                onCheckedChange={(v) => {
+                  setForwardChecked(v === true);
+                  if (!v) setForwardTo([]);
+                }}
+              />
+              <Label htmlFor="action-forward">
+                Forward
+                {forwardChecked && forwardTo.length > 0 && (
+                  <span className="ml-1 text-muted-foreground">
+                    &rarr; {forwardTo.length} recipient{forwardTo.length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </Label>
+            </div>
+            {forwardChecked && (
+              <div className="ml-6 space-y-1">
+                <EmailAutocomplete
+                  value={forwardTo}
+                  onChange={setForwardTo}
+                  placeholder="Search contacts or type an email…"
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Matching emails are forwarded to {forwardTo.length > 0 ? 'these recipients' : 'the recipients you add'}.
+                </p>
+              </div>
+            )}
+          </div>
+          </div>{/* end Actions column */}
+
+          {/* ===== Conditions column ===== */}
+          <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Conditions</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Conditions</span>
               <div className="flex-1 border-t" />
             </div>
-            <div className="space-y-1.5">
-              <Input
-                placeholder="From email (e.g. newsletter@example.com)"
-                value={senderEmailCondition}
-                onChange={(e) => setSenderEmailCondition(e.target.value)}
-                className="h-8 text-sm"
-              />
-              <Input
-                placeholder="Sender domain (e.g. newsletter.com)"
-                value={senderDomain}
-                onChange={(e) => setSenderDomain(e.target.value)}
-                className="h-8 text-sm"
-              />
-              <Input
-                placeholder="Subject contains..."
-                value={subjectContains}
-                onChange={(e) => setSubjectContains(e.target.value)}
-                className="h-8 text-sm"
-              />
-              <Input
-                placeholder="Body contains..."
-                value={bodyContains}
-                onChange={(e) => setBodyContains(e.target.value)}
-                className="h-8 text-sm"
-              />
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="cond-email-from" className="text-xs text-muted-foreground">Email From</Label>
+                <Input
+                  id="cond-email-from"
+                  placeholder="From email (e.g. newsletter@example.com)"
+                  value={senderEmailCondition}
+                  onChange={(e) => setSenderEmailCondition(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cond-domain-from" className="text-xs text-muted-foreground">Domain From</Label>
+                <Input
+                  id="cond-domain-from"
+                  placeholder="Sender domain (e.g. newsletter.com)"
+                  value={senderDomain}
+                  onChange={(e) => setSenderDomain(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cond-subject" className="text-xs text-muted-foreground">Subject Line</Label>
+                <Input
+                  id="cond-subject"
+                  placeholder="Subject contains..."
+                  value={subjectContains}
+                  onChange={(e) => setSubjectContains(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cond-body" className="text-xs text-muted-foreground">MSG Body Text</Label>
+                <Input
+                  id="cond-body"
+                  placeholder="Body contains..."
+                  value={bodyContains}
+                  onChange={(e) => setBodyContains(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
             </div>
-          </div>
+          </div>{/* end Conditions column */}
+
+          </div>{/* end two-column grid */}
         </div>
 
         {/* Simulation results */}

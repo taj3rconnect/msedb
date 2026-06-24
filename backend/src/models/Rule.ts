@@ -9,10 +9,11 @@ export interface IRuleConditions {
 }
 
 export interface IRuleAction {
-  actionType: 'move' | 'delete' | 'markRead' | 'flag' | 'categorize' | 'archive' | 'popup';
+  actionType: 'move' | 'delete' | 'markRead' | 'flag' | 'categorize' | 'archive' | 'popup' | 'forward';
   toFolder?: string;
   category?: string;
   popupMessage?: string;
+  forwardTo?: string[];
   order?: number;
 }
 
@@ -60,12 +61,13 @@ const ruleSchema = new Schema<IRule>(
       {
         actionType: {
           type: String,
-          enum: ['move', 'delete', 'markRead', 'flag', 'categorize', 'archive', 'popup'],
+          enum: ['move', 'delete', 'markRead', 'flag', 'categorize', 'archive', 'popup', 'forward'],
           required: true,
         },
         toFolder: { type: String },
         category: { type: String },
         popupMessage: { type: String },
+        forwardTo: { type: [String] },
         order: { type: Number },
       },
     ],

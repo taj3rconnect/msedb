@@ -180,6 +180,34 @@ export async function executeActions(params: {
           break;
         }
 
+        case 'forward': {
+          const recipients = (action.forwardTo ?? [])
+            .map((r) => r.trim())
+            .filter(Boolean);
+          if (recipients.length === 0) {
+            logger.warn('Forward action missing recipients', {
+              ruleId: ruleId.toString(),
+              messageId,
+            });
+            break;
+          }
+          await graphFetch(
+            `${userPath}/messages/${messageId}/forward`,
+            accessToken,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                comment: 'Automatically forwarded by an MSEDB rule.',
+                toRecipients: recipients.map((address) => ({
+                  emailAddress: { address },
+                })),
+              }),
+            },
+          );
+          executedActions.push(`forward to ${recipients.join(', ')}`);
+          break;
+        }
+
         default:
           logger.warn('Unknown action type', {
             actionType: action.actionType,

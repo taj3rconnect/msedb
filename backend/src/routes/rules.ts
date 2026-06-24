@@ -128,7 +128,7 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
     mailboxId?: string;
     name?: string;
     conditions?: Record<string, unknown>;
-    actions?: Array<{ actionType: string; toFolder?: string; category?: string; order?: number }>;
+    actions?: Array<{ actionType: string; toFolder?: string; category?: string; forwardTo?: string[]; order?: number }>;
     skipStaging?: boolean;
   };
 
@@ -474,7 +474,7 @@ rulesRouter.put('/:id', async (req: Request, res: Response) => {
   const { name, conditions, actions } = req.body as {
     name?: string;
     conditions?: Record<string, unknown>;
-    actions?: Array<{ actionType: string; toFolder?: string; category?: string; order?: number }>;
+    actions?: Array<{ actionType: string; toFolder?: string; category?: string; forwardTo?: string[]; order?: number }>;
   };
 
   // Capture before state for audit
@@ -725,6 +725,27 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
               },
             );
             break;
+          case 'forward': {
+            const recipients = (action.forwardTo ?? [])
+              .map((r) => r.trim())
+              .filter(Boolean);
+            if (recipients.length > 0) {
+              await graphFetch(
+                `/users/${email}/messages/${msgId}/forward`,
+                accessToken,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    comment: 'Automatically forwarded by an MSEDB rule.',
+                    toRecipients: recipients.map((address) => ({
+                      emailAddress: { address },
+                    })),
+                  }),
+                },
+              );
+            }
+            break;
+          }
         }
       }
       applied++;
