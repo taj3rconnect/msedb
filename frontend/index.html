@@ -9,5 +9,12 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!-- feedwid feedback widget — floating "Feedback" bubble on every page.
+         Shared multi-tenant service; placement/visibility controlled server-side via
+         widget_config (admin), not here. data-key is the browser-safe PUBLIC key. -->
+    <script src="https://feedwid.aptask.com/widget.js"
+            data-project="msedb" data-type="main"
+            data-key="feedwid_pub_aa816d9ce285ba1ec778eb8c232c51a98a814493414363f4"
+            data-api="https://feedwid.aptask.com" defer></script>
   </body>
 </html>
