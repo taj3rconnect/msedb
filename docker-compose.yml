@@ -98,9 +98,12 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD}"]
+    # No auth by design (REDIS_PASSWORD unused). Backend connects with no password
+    # (config.redisPassword '' → undefined → no AUTH), so requiring one here would
+    # mismatch and break the connection. Keep redis + backend + healthcheck all no-auth.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
