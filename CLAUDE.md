@@ -21,8 +21,8 @@ Microsoft Email Dashboard — monitors M365 mailboxes, detects repetitive action
 |----------|-----------|----------|-----------|-------|
 | Frontend | **3010**  | 8080     | msedb-frontend | React/Nginx |
 | Backend  | **8010**  | 8010     | msedb-backend | Express |
-| MongoDB  | **27020** | 27017    | msedb-mongo | mongo:7, db: msedb |
-| Redis    | **6382**  | 6379     | msedb-redis | Redis 7 |
+| MongoDB  | **27020** | 27017    | msedb-mongo | mongo:8.2, db: msedb |
+| Redis    | **6382**  | 6379     | msedb-redis | Redis 8 |
 | Tunnel   | —         | —        | msedb-tunnel | cloudflare/cloudflared |
 
 Shared: Uses AX1 Qdrant at port 6333.
@@ -176,3 +176,19 @@ Path alias: `@/*` → `frontend/src/*`
 NEVER run `node` or `vite dev` directly on host.
 ALWAYS: `docker compose up -d --build`
 See RUNBOOK.md for full startup procedure.
+
+# Project Claude Instructions
+
+Follow global standards from:
+
+- C:\Users\Taj\.claude\CLAUDE.md
+
+Project-specific rules override global rules only when explicitly stated here.
+
+Before coding:
+
+1. Read global standards.
+2. Inspect existing project structure.
+3. Reuse existing patterns.
+4. Make small changes.
+5. Test before completion.

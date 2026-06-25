@@ -61,7 +61,7 @@ services:
       retries: 3
 
   msedb-mongo:
-    image: mongo:7
+    image: mongo:8.2
     container_name: msedb-mongo
     ports:
       - "27020:27017"
@@ -84,7 +84,7 @@ services:
       start_period: 20s
 
   msedb-redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: msedb-redis
     ports:
       - "6382:6379"
