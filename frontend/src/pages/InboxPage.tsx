@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams, useLocation } from 'react-router';
+import { useParams, useLocation, useSearchParams } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useKeyboardShortcuts, type Shortcut } from '@/hooks/useKeyboardShortcuts';
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle, useDefaultLayout } from 'react-resizable-panels';
@@ -121,6 +121,7 @@ interface ConfirmPayload {
 
 function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: string; isUnifiedMode?: boolean }) {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const mailboxes = useAuthStore((s) => s.mailboxes);
   const folderFilter: string = useUiStore((s) => s.inboxFolder);
   const activeFolderId = useUiStore((s) => s.activeFolderId);
@@ -176,8 +177,8 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [dateFilter, setDateFilter] = useState('today');
-  const [unreadOnly, setUnreadOnly] = useState(true);
+  const [dateFilter, setDateFilter] = useState(() => searchParams.get('date') || 'today');
+  const [unreadOnly, setUnreadOnly] = useState(() => searchParams.get('status') === 'unread');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -328,6 +329,19 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     }, 400);
     return () => clearTimeout(debounceRef.current);
   }, [searchInput]);
+
+  // Sync filter state → URL query params for deep-link consistency
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('date', dateFilter);
+        next.set('status', unreadOnly ? 'unread' : 'all');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [dateFilter, unreadOnly, setSearchParams]);
 
   // Clear selection and reset page when page, search, date filter, or folder changes
   useEffect(() => {
