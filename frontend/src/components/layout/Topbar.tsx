@@ -1,4 +1,5 @@
 import { HelpCircle, LogOut } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -31,7 +32,34 @@ import { useAuth } from '@/hooks/useAuth';
  * Left: sidebar trigger (hamburger) for mobile.
  * Right: mailbox selector, kill switch toggle, user avatar dropdown.
  */
+function formatEstClock(): string {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: '2-digit',
+    day: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    weekday: 'short',
+  }).formatToParts(now);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  const meridiem = get('dayPeriod').toUpperCase();
+  const weekday = get('weekday');
+  return `${get('month')}-${get('day')}-${get('year')} -${meridiem} ${get('hour')}:${get('minute')} -${weekday}`;
+}
+
 export function Topbar() {
+  const [estTime, setEstTime] = useState<string>(formatEstClock);
+
+  useEffect(() => {
+    const tick = () => setEstTime(formatEstClock());
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const user = useAuthStore((s) => s.user);
   const mailboxes = useAuthStore((s) => s.mailboxes);
   const { logout } = useAuth();
@@ -66,6 +94,10 @@ export function Topbar() {
     <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-4" />
+
+      <span className="text-xs font-mono text-muted-foreground tabular-nums select-none">
+        {estTime}
+      </span>
 
       {/* Inbox label + mailbox tags — shown only on inbox pages */}
       {isInboxPage && connectedMailboxes.length > 0 && (
