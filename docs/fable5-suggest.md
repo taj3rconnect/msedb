@@ -78,6 +78,20 @@ Phases run in order; each phase = one or more small commits, gated by `cd backen
 | S13 | Rule-condition vocabulary gaps (regex, size, importance, multi-action, ordering) | Feature roadmap, not refactor | rule-engine |
 | S14 | Data retention/purge policy (nothing is ever purged) | Product/compliance decision | search-db |
 
+## Execution results (2026-07-06, this branch)
+
+All phases A–E executed and verified: backend `tsc` clean, **38/38 vitest tests pass** (2 were failing before Phase A), frontend `tsc -b && vite build` clean.
+
+- **Phase A+C** (`8d674ea`, `b7e1e68`): all 5 bug fixes + 2 indexes landed.
+- **Phase B** (`aeb8819`): 4 dead files + 5 dead exports removed, each re-verified at zero references. Frontend `yarn.lock` was missing entirely — added (`ffd5551`).
+- **Phase D** (`703827c`, `953ce43`): mailbox.ts 2164 → 10 subrouters; rules.ts 1012 → 776 (simulation + run-now extracted to `ruleEngine.ts`, run-now semantics preserved verbatim pending S5); InboxPage 2714 → 952 (+11 new modules); InboxDataGrid 935 → 612. No file exceeds 1,000 lines.
+- **Phase E** (`4cfc696`): `parsePagination()` (8 sites), `getUserId()` (118 sites/24 files), AppError unification (8 sites), `graphFetchAllPages()` (8/9 sites — `deltaService.ts` loop intentionally kept: per-page progress, abort, deltaLink semantics).
+
+New issues found during execution (not fixed here):
+- `frontend yarn lint` is broken repo-wide — eslint is in no package.json and no config exists, despite CLAUDE.md documenting it. Add eslint or drop the script.
+- No route-level tests exist for the mailbox/rules routers — splits were verified by build+line-preservation only; smoke-test mailbox + rules endpoints on next deploy.
+- Three endpoints changed error-response shape (flat `{error}` → AppError shape, status codes unchanged): `/api/ai-search`, `/api/events/summarize-today*`, `/api/tracking/:trackingId` — verify their toast/error UI on next deploy.
+
 ## Recommended next steps (after this branch)
 
 1. **S1 token encryption** — highest security value; do as its own branch with a lazy re-encrypt-on-refresh migration.
