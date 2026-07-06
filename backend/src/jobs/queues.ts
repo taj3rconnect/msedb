@@ -18,8 +18,12 @@ import { processBodyPrefetch } from './processors/bodyPrefetch.js';
 const queueConnectionConfig = getQueueConnectionConfig();
 const workerConnectionConfig = getWorkerConnectionConfig();
 
-// Default job options: auto-remove completed/failed jobs by age and count
+// Default job options: retries with exponential backoff, plus auto-remove
+// completed/failed jobs by age and count. Every queues[...].add() call
+// inherits these unless it passes its own opts (per-site override wins).
 const defaultJobOptions = {
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 5000 } as const,
   removeOnComplete: { age: 3600, count: 200 } as const,
   removeOnFail: { age: 86400, count: 1000 } as const,
 };
@@ -110,10 +114,26 @@ const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
   'body-prefetch': processBodyPrefetch,
 };
 
+// Per-queue worker concurrency. Anything not listed here defaults to
+// BullMQ's concurrency: 1 (strictly serial) — that's deliberate, not an
+// oversight, for queues that are order-sensitive or low-volume.
+const CONCURRENCY: Partial<Record<QueueName, number>> = {
+  // Duplicate-event rule-execution guard now lives in eventCollector, so
+  // running several Graph-fetch-bound notifications in parallel is safe.
+  'webhook-events': 4,
+  // Daily job over many mailboxes; independent per-mailbox work, no shared state.
+  'pattern-analysis': 2,
+  // Daily job over many mailboxes; independent per-mailbox Graph paging.
+  'contacts-sync': 2,
+  // 'delta-sync' intentionally left at 1: per-mailbox delta tokens race if
+  // two jobs for the same mailbox (e.g. scheduled + lifecycle-triggered) run concurrently.
+};
+
 // Create all workers (each with its own Redis connection via config object)
 const workers: Worker[] = QUEUE_NAMES.map((name) => {
   const worker = new Worker(name, processorMap[name], {
     connection: workerConnectionConfig,
+    concurrency: CONCURRENCY[name] ?? 1,
   });
 
   worker.on('completed', (job: Job) => {

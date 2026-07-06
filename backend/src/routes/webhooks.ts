@@ -64,23 +64,36 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
 
         // Route lifecycle vs change notifications
         if (notification.lifecycleEvent) {
+          // attempts/backoff now come from the queue's defaultJobOptions.
           await queues['webhook-renewal'].add('lifecycle-event', {
             notification,
             subscriptionId: notification.subscriptionId,
-          }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+          });
           logger.info('Lifecycle notification enqueued', {
             subscriptionId: notification.subscriptionId,
             lifecycleEvent: notification.lifecycleEvent,
           });
         } else {
+          // Dedup key: subscriptionId + resourceData.id + changeType identifies
+          // "this exact change event", which is what Graph sometimes redelivers.
+          // Window is short (removeOnComplete age 90s, overriding the queue
+          // default) because the SAME message legitimately produces repeated
+          // 'updated' notifications over its lifetime (read, moved, flagged,
+          // etc.) — we only want to collapse redeliveries that land within
+          // ~seconds of each other, not suppress later, real updates.
+          const jobId = `webhook:${notification.subscriptionId}:${notification.resourceData?.id ?? 'unknown'}:${notification.changeType}`;
           await queues['webhook-events'].add('change-notification', {
             notification,
             subscriptionId: notification.subscriptionId,
-          }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+          }, {
+            jobId,
+            removeOnComplete: { age: 90 },
+          });
           logger.debug('Change notification enqueued', {
             subscriptionId: notification.subscriptionId,
             resource: notification.resource,
             changeType: notification.changeType,
+            jobId,
           });
         }
       } catch (err) {
