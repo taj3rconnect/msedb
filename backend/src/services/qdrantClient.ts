@@ -36,7 +36,10 @@ export interface EmailVectorPayload {
  */
 export function getQdrantClient(): QdrantClient {
   if (!client) {
-    client = new QdrantClient({ url: config.qdrantUrl });
+    client = new QdrantClient({
+      url: config.qdrantUrl,
+      ...(config.qdrantApiKey ? { apiKey: config.qdrantApiKey } : {}),
+    });
   }
   return client;
 }

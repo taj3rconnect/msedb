@@ -23,6 +23,7 @@ interface AppConfig {
 
   // AI Search (Qdrant + Ollama)
   readonly qdrantUrl: string;
+  readonly qdrantApiKey: string;
   readonly qdrantCollection: string;
   readonly ollamaUrl: string;
   readonly ollamaEmbedModel: string;
@@ -69,6 +70,7 @@ export const config: AppConfig = {
 
   // AI Search (Qdrant + Ollama)
   qdrantUrl: process.env.QDRANT_URL || 'http://host.docker.internal:6333',
+  qdrantApiKey: process.env.QDRANT_API_KEY || '',
   qdrantCollection: process.env.QDRANT_COLLECTION || 'msedb-emails',
   ollamaUrl: process.env.OLLAMA_URL || 'http://host.docker.internal:11434',
   ollamaEmbedModel: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
