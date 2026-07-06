@@ -104,7 +104,9 @@ async function validateAzureToken(token: string): Promise<JwtPayload | null> {
  * 2. Bearer token (Authorization header) — Outlook add-in flow (Azure AD NAA)
  *
  * Sets req.user with the decoded payload on success.
- * Throws UnauthorizedError if no valid token found.
+ * Fails via next(UnauthorizedError) — never throws: ssoMiddleware calls this
+ * un-awaited, so a rejected promise here becomes an unhandled rejection and
+ * kills the process.
  */
 export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   // Try session cookie first
@@ -114,13 +116,13 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       const decoded = jwt.verify(cookieToken, config.jwtSecret) as JwtPayload;
       const activeUser = await User.findById(decoded.userId).select('isActive').lean();
       if (activeUser?.isActive === false) {
-        throw new UnauthorizedError('Account deactivated');
+        next(new UnauthorizedError('Account deactivated'));
+        return;
       }
       req.user = decoded;
       next();
       return;
-    } catch (err) {
-      if (err instanceof UnauthorizedError) throw err;
+    } catch {
       // Cookie invalid — fall through to check Bearer token
     }
   }
@@ -147,7 +149,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     return;
   }
 
-  throw new UnauthorizedError('No session token');
+  next(new UnauthorizedError('No session token'));
 }
 
 /**
