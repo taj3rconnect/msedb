@@ -63,20 +63,20 @@ Phases run in order; each phase = one or more small commits, gated by `cd backen
 
 | # | Item | Why skipped | Source doc |
 |--:|---|---|---|
-| S1 | Encrypt Graph tokens at rest (wire up existing AES-256-GCM utils) | Requires migration of live tokens in prod Mongo; a botched rollout logs every user out or bricks refresh | architecture |
+| S1 | ~~Encrypt Graph tokens at rest~~ **DONE 2026-07-06**: msalCache AES-256-GCM encrypted, lazy plaintext migration on next token refresh | Approved and executed | architecture |
 | S2 | Remove `Calendars.ReadWrite` scope | Azure app-registration + re-consent change (prod config) | architecture |
-| S3 | Bump BullMQ worker concurrency / parallelize per-mailbox fan-out | Behavioral change under prod load; needs the idempotency fixes (A3) soaked first, then load verification | scalability |
+| S3 | ~~Bump BullMQ worker concurrency~~ **PARTIALLY DONE 2026-07-06**: webhook-events 4, pattern-analysis 2, contacts-sync 2; per-mailbox fan-out parallelization still open | Conservative bumps executed | scalability |
 | S4 | Graph `$batch` adoption + full 429/503 backoff rework | Large blast radius across every Graph call; do as its own reviewed branch | scalability |
 | S5 | Run-now staging bypass (`skipStaging`) | Product decision: should manual "Run Now" honor the 24h staging grace period? Currently it bypasses it | rule-engine |
 | S6 | Org-scoped rules never evaluated | Dead-but-visible feature — wire up or remove is a product call | rule-engine |
 | S7 | Undo coverage for bulk runs (per-message audit entries) | Depends on S5 decision + audit schema change | rule-engine |
-| S8 | Qdrant embedding reconciliation job + keyword fallback on ai-search 500 | New background job — feature work, not cleanup | search-db |
+| S8 | ~~Qdrant embedding reconciliation job~~ **DONE 2026-07-06**: hourly embedding-reconcile job, embeddedAt marker, 500/batch. Keyword fallback on ai-search 500 still open | Reconciliation executed | search-db |
 | S9 | Qdrant snippet TTL/encryption | Data migration on live vector store | architecture |
 | S10 | ~~`routes/events.ts` reads `ANTHROPIC_API_KEY` directly (bypasses config + local-LLM policy)~~ **DONE 2026-07-06**: summarize-today now uses DGX Ollama (`ollamaWriteModel`, qwen); `@anthropic-ai/sdk` removed | Approved and executed | unused-code |
 | S11 | Rate-limit bucket split for `/auth/login` vs `/auth/me`; Qdrant in `/api/health` | Low risk but prod-visible behavior; batch with S3/S4 branch | architecture |
-| S12 | Webhook job `jobId` dedup + retry/backoff on all `queues.add()` sites | Pairs with S3; needs queue-drain testing | scalability |
+| S12 | ~~Webhook job `jobId` dedup + retry/backoff~~ **DONE 2026-07-06**: deterministic webhook jobId (90s window), attempts 3 + exponential backoff as queue defaults | Executed | scalability |
 | S13 | Rule-condition vocabulary gaps (regex, size, importance, multi-action, ordering) | Feature roadmap, not refactor | rule-engine |
-| S14 | Data retention/purge policy (nothing is ever purged) | Product/compliance decision | search-db |
+| S14 | Data retention/purge policy — **correction 2026-07-06**: AuditLog already has a 180-day TTL (AuditLog.ts:76), EmailEvent 90-day; staged emails, subscriptions, contacts cache still unpurged | Product/compliance decision (remaining collections) | search-db |
 
 ## Execution results (2026-07-06, this branch)
 
