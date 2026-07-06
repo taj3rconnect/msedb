@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { StagedEmail } from '../models/StagedEmail.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { AuditLog } from '../models/AuditLog.js';
@@ -12,6 +12,7 @@ import { graphFetch } from '../services/graphClient.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { NotFoundError, ValidationError } from '../middleware/errorHandler.js';
 import logger from '../config/logger.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const stagingRouter = Router();
 
@@ -25,24 +26,10 @@ stagingRouter.use(requireAuth);
  * Query params: mailboxId (optional), status (default 'staged'), page, limit
  */
 stagingRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   // Pagination
-  let page = 1;
-  if (req.query.page) {
-    const parsed = parseInt(req.query.page as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      page = parsed;
-    }
-  }
-
-  let limit = 20;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      limit = Math.min(parsed, 100);
-    }
-  }
+  const { page, limit } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
 
   // Build filter
   const filter: Record<string, unknown> = { userId };
@@ -80,7 +67,7 @@ stagingRouter.get('/', async (req: Request, res: Response) => {
  * Query params: mailboxId (optional)
  */
 stagingRouter.get('/count', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const filter: Record<string, unknown> = { userId, status: 'staged' };
   const { mailboxId } = req.query;
@@ -99,7 +86,7 @@ stagingRouter.get('/count', async (req: Request, res: Response) => {
  * Rescue a single staged email (cancel pending deletion).
  */
 stagingRouter.post('/:id/rescue', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const id = req.params.id as string;
 
   const stagedEmail = await rescueStagedEmail(id, new Types.ObjectId(userId));
@@ -114,7 +101,7 @@ stagingRouter.post('/:id/rescue', async (req: Request, res: Response) => {
  * Body: { ids: string[] }
  */
 stagingRouter.post('/batch-rescue', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { ids } = req.body as { ids?: string[] };
 
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -132,7 +119,7 @@ stagingRouter.post('/batch-rescue', async (req: Request, res: Response) => {
  * Execute a single staged email immediately (before grace period expires).
  */
 stagingRouter.post('/:id/execute', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const id = req.params.id as string;
 
   const item = await StagedEmail.findOne({
@@ -216,7 +203,7 @@ stagingRouter.post('/:id/execute', async (req: Request, res: Response) => {
  * Body: { ids: string[] }
  */
 stagingRouter.post('/batch-execute', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { ids } = req.body as { ids?: string[] };
 
   if (!ids || !Array.isArray(ids) || ids.length === 0) {

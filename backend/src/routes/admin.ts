@@ -5,7 +5,7 @@ import { Rule } from '../models/Rule.js';
 import { Pattern } from '../models/Pattern.js';
 import { WebhookSubscription } from '../models/WebhookSubscription.js';
 import { Mailbox } from '../models/Mailbox.js';
-import { requireAuth, requireAdmin } from '../auth/middleware.js';
+import { requireAuth, requireAdmin, getUserId } from '../auth/middleware.js';
 import {
   ValidationError,
   NotFoundError,
@@ -52,13 +52,13 @@ adminRouter.post('/invite', async (req: Request, res: Response) => {
     email: normalizedEmail,
     role: role || 'user',
     isActive: true,
-    invitedBy: req.user!.userId,
+    invitedBy: getUserId(req),
   });
 
   logger.info('User invited', {
     email: user.email,
     role: user.role,
-    invitedBy: req.user!.userId,
+    invitedBy: getUserId(req),
   });
 
   res.status(201).json({
@@ -95,7 +95,7 @@ adminRouter.patch('/users/:id/role', async (req: Request, res: Response) => {
   }
 
   // Prevent admin from demoting themselves
-  if (req.params.id === req.user!.userId && role !== 'admin') {
+  if (req.params.id === getUserId(req) && role !== 'admin') {
     throw new ValidationError('Cannot change your own role');
   }
 
@@ -112,7 +112,7 @@ adminRouter.patch('/users/:id/role', async (req: Request, res: Response) => {
   logger.info('User role updated', {
     targetUserId: user._id.toString(),
     newRole: role,
-    updatedBy: req.user!.userId,
+    updatedBy: getUserId(req),
   });
 
   res.json({
@@ -132,7 +132,7 @@ adminRouter.patch(
   '/users/:id/deactivate',
   async (req: Request, res: Response) => {
     // Prevent admin from deactivating themselves
-    if (req.params.id === req.user!.userId) {
+    if (req.params.id === getUserId(req)) {
       throw new ValidationError('Cannot deactivate your own account');
     }
 
@@ -148,7 +148,7 @@ adminRouter.patch(
 
     logger.info('User deactivated', {
       targetUserId: user._id.toString(),
-      deactivatedBy: req.user!.userId,
+      deactivatedBy: getUserId(req),
     });
 
     res.json({
@@ -254,14 +254,14 @@ adminRouter.post('/org-rules', async (req: Request, res: Response) => {
     isEnabled: isEnabled ?? true,
     priority: priority ?? 0,
     scope: 'org',
-    userId: req.user!.userId,
-    createdBy: req.user!.userId,
+    userId: getUserId(req),
+    createdBy: getUserId(req),
   });
 
   logger.info('Org-wide rule created', {
     ruleId: rule._id.toString(),
     name: rule.name,
-    createdBy: req.user!.userId,
+    createdBy: getUserId(req),
   });
 
   res.status(201).json(rule);
@@ -297,7 +297,7 @@ adminRouter.delete('/org-rules/:id', async (req: Request, res: Response) => {
 
   logger.info('Org-wide rule deleted', {
     ruleId: req.params.id,
-    deletedBy: req.user!.userId,
+    deletedBy: getUserId(req),
   });
 
   res.json({ success: true });
@@ -320,7 +320,7 @@ adminRouter.get('/tunnel-status', async (_req: Request, res: Response) => {
  * update DB and runtime config, and re-sync webhook subscriptions.
  */
 adminRouter.post('/tunnel-refresh', async (req: Request, res: Response) => {
-  logger.info('Tunnel refresh requested', { requestedBy: req.user!.userId });
+  logger.info('Tunnel refresh requested', { requestedBy: getUserId(req) });
   const result = await refreshTunnel();
   res.json(result);
 });
@@ -340,7 +340,7 @@ adminRouter.put('/tunnel-url', async (req: Request, res: Response) => {
 
   logger.info('Manual tunnel URL update', {
     url,
-    updatedBy: req.user!.userId,
+    updatedBy: getUserId(req),
   });
 
   const result = await updateTunnelUrl(url.trim());
@@ -376,7 +376,7 @@ adminRouter.get('/sync-status', async (_req: Request, res: Response) => {
  * Trigger an immediate delta sync for all connected mailboxes.
  */
 adminRouter.post('/sync-now', async (req: Request, res: Response) => {
-  logger.info('Manual sync requested', { requestedBy: req.user!.userId });
+  logger.info('Manual sync requested', { requestedBy: getUserId(req) });
 
   const job = await queues['delta-sync'].add('run-delta-sync', {}, {
     jobId: `manual-sync-${Date.now()}`,
@@ -435,7 +435,7 @@ adminRouter.post('/prefetch-unread-bodies', async (req: Request, res: Response) 
   }
 
   logger.info('Bulk body prefetch queued', {
-    requestedBy: req.user!.userId,
+    requestedBy: getUserId(req),
     total: events.length,
     queued,
     skipped,

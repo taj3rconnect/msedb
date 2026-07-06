@@ -1,12 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { Pattern } from '../models/Pattern.js';
 import { Rule } from '../models/Rule.js';
 import { User } from '../models/User.js';
 import { getRedisClient } from '../config/redis.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const dashboardRouter = Router();
 
@@ -20,7 +21,7 @@ dashboardRouter.use(requireAuth);
  * Optional ?mailboxId query param for per-mailbox filtering.
  */
 dashboardRouter.get('/stats', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.query;
 
   const filter: Record<string, unknown> = { userId };
@@ -115,16 +116,10 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
  * Optional ?mailboxId and ?limit (default 50, max 200) query params.
  */
 dashboardRouter.get('/activity', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.query;
 
-  let limit = 50;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      limit = Math.min(parsed, 200);
-    }
-  }
+  const { limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
 
   const filter: Record<string, unknown> = { userId };
   if (mailboxId && typeof mailboxId === 'string') {

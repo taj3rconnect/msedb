@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { getUserId } from '../../auth/middleware.js';
 import { Types } from 'mongoose';
 import { Mailbox } from '../../models/Mailbox.js';
 import { EmailEvent } from '../../models/EmailEvent.js';
@@ -6,7 +7,7 @@ import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
 import { refreshFolderCache } from '../../services/folderCache.js';
 import { getRedisClient } from '../../config/redis.js';
 import { runDeltaSync, type DeltaSyncResult } from '../../services/deltaService.js';
-import { graphFetch } from '../../services/graphClient.js';
+import { graphFetch, graphFetchAllPages } from '../../services/graphClient.js';
 import { buildSelectParam } from '../../utils/graph.js';
 import { NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
 
@@ -30,7 +31,7 @@ const HIDDEN_FOLDERS = new Set([
 foldersRouter.get('/:id/folders', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   if (!mailbox) {
@@ -41,9 +42,15 @@ foldersRouter.get('/:id/folders', async (req: Request, res: Response) => {
 
   // Fetch folders with counts directly from Graph API
   const selectParam = buildSelectParam('mailFolder');
-  let url: string | undefined =
-    `/users/${mailbox.email}/mailFolders?$select=${selectParam}&$top=100`;
+  const initialUrl = `/users/${mailbox.email}/mailFolders?$select=${selectParam}&$top=100`;
 
+  interface RawFolder {
+    id: string;
+    displayName: string;
+    totalItemCount?: number;
+    unreadItemCount?: number;
+    childFolderCount?: number;
+  }
   interface FolderResult {
     id: string;
     displayName: string;
@@ -51,29 +58,23 @@ foldersRouter.get('/:id/folders', async (req: Request, res: Response) => {
     unreadItemCount: number;
     childFolderCount: number;
   }
-  const folders: FolderResult[] = [];
 
-  while (url) {
-    const response = await graphFetch(url, accessToken);
-    const data = (await response.json()) as {
-      value: { id: string; displayName: string; totalItemCount?: number; unreadItemCount?: number; childFolderCount?: number }[];
-      '@odata.nextLink'?: string;
-    };
-
-    for (const folder of data.value) {
+  const folders = await graphFetchAllPages<RawFolder, FolderResult>(
+    initialUrl,
+    accessToken,
+    undefined,
+    (folder) => {
       // Skip non-useful system folders
-      if (HIDDEN_FOLDERS.has(folder.displayName)) continue;
-      folders.push({
+      if (HIDDEN_FOLDERS.has(folder.displayName)) return null;
+      return {
         id: folder.id,
         displayName: folder.displayName,
         totalItemCount: folder.totalItemCount ?? 0,
         unreadItemCount: folder.unreadItemCount ?? 0,
         childFolderCount: folder.childFolderCount ?? 0,
-      });
-    }
-
-    url = data['@odata.nextLink'];
-  }
+      };
+    },
+  );
 
   // Also refresh the folder cache as a side effect
   refreshFolderCache(mailbox.email, accessToken).catch(() => {});
@@ -170,7 +171,7 @@ async function getDbFolderCounts(
 foldersRouter.get('/:id/folders/:folderId/children', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   if (!mailbox) {
@@ -179,30 +180,27 @@ foldersRouter.get('/:id/folders/:folderId/children', async (req: Request, res: R
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
   const selectParam = buildSelectParam('mailFolder');
-  let url: string | undefined =
+  const initialUrl =
     `/users/${mailbox.email}/mailFolders/${req.params.folderId}/childFolders?$select=${selectParam}&$top=100`;
 
-  const folders: { id: string; displayName: string; totalItemCount: number; unreadItemCount: number; childFolderCount: number }[] = [];
-
-  while (url) {
-    const response = await graphFetch(url, accessToken);
-    const data = (await response.json()) as {
-      value: { id: string; displayName: string; totalItemCount?: number; unreadItemCount?: number; childFolderCount?: number }[];
-      '@odata.nextLink'?: string;
-    };
-
-    for (const folder of data.value) {
-      folders.push({
-        id: folder.id,
-        displayName: folder.displayName,
-        totalItemCount: folder.totalItemCount ?? 0,
-        unreadItemCount: folder.unreadItemCount ?? 0,
-        childFolderCount: folder.childFolderCount ?? 0,
-      });
-    }
-
-    url = data['@odata.nextLink'];
+  interface RawChildFolder {
+    id: string;
+    displayName: string;
+    totalItemCount?: number;
+    unreadItemCount?: number;
+    childFolderCount?: number;
   }
+
+  const folders = await graphFetchAllPages<
+    RawChildFolder,
+    { id: string; displayName: string; totalItemCount: number; unreadItemCount: number; childFolderCount: number }
+  >(initialUrl, accessToken, undefined, (folder) => ({
+    id: folder.id,
+    displayName: folder.displayName,
+    totalItemCount: folder.totalItemCount ?? 0,
+    unreadItemCount: folder.unreadItemCount ?? 0,
+    childFolderCount: folder.childFolderCount ?? 0,
+  }));
 
   // Overlay DB counts for child folders too
   const dbCounts = await getDbFolderCounts(mailbox._id.toString(), mailbox.email);
@@ -224,7 +222,7 @@ foldersRouter.get('/:id/folders/:folderId/children', async (req: Request, res: R
 foldersRouter.post('/:id/folders/:folderId/sync', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   if (!mailbox) {
@@ -291,7 +289,7 @@ foldersRouter.post('/:id/folders', async (req: Request, res: Response) => {
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   if (!mailbox) {

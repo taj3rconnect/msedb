@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { getUserId } from '../../auth/middleware.js';
 import { Mailbox } from '../../models/Mailbox.js';
 import { EmailEvent } from '../../models/EmailEvent.js';
 import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
@@ -19,7 +20,7 @@ const messagesRouter = Router();
 messagesRouter.get('/:id/messages/:messageId', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) {
     throw new NotFoundError('Mailbox not found');
@@ -101,7 +102,7 @@ messagesRouter.get('/:id/messages/:messageId', async (req: Request, res: Respons
  * Body: { categories: string[] }
  */
 messagesRouter.patch('/:id/messages/:messageId/categories', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const { categories } = req.body as { categories: string[] };

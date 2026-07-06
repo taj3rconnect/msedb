@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { getUserId } from '../../auth/middleware.js';
 import { Mailbox } from '../../models/Mailbox.js';
 import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
 import { graphFetch } from '../../services/graphClient.js';
@@ -68,7 +69,7 @@ composeRouter.post('/:id/reply', async (req: Request, res: Response) => {
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
@@ -93,7 +94,7 @@ composeRouter.post('/:id/reply', async (req: Request, res: Response) => {
     ).then((r) => r.json())) as { subject?: string; toRecipients?: { emailAddress: { address?: string } }[] };
 
     const { pixelHtml: replyPixel } = await createTrackedEmail({
-      userId: req.user!.userId,
+      userId: getUserId(req),
       mailboxId: req.params.id as string,
       subject: replyDraft.subject,
       recipients: replyDraft.toRecipients?.map((r) => r.emailAddress.address || '').filter(Boolean) || [],
@@ -124,7 +125,7 @@ composeRouter.post('/:id/reply', async (req: Request, res: Response) => {
   logger.info('Reply sent (tracked)', {
     mailboxId: req.params.id,
     messageId,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   res.json({ success: true });
@@ -150,7 +151,7 @@ composeRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
@@ -180,7 +181,7 @@ composeRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
     ].map((r) => r.emailAddress.address || '').filter(Boolean);
 
     const { pixelHtml: replyAllPixel } = await createTrackedEmail({
-      userId: req.user!.userId,
+      userId: getUserId(req),
       mailboxId: req.params.id as string,
       subject: replyAllDraft.subject,
       recipients: allRecips,
@@ -211,7 +212,7 @@ composeRouter.post('/:id/reply-all', async (req: Request, res: Response) => {
   logger.info('Reply-all sent (tracked)', {
     mailboxId: req.params.id,
     messageId,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   res.json({ success: true });
@@ -238,7 +239,7 @@ composeRouter.post('/:id/forward', async (req: Request, res: Response) => {
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
@@ -257,7 +258,7 @@ composeRouter.post('/:id/forward', async (req: Request, res: Response) => {
 
   // Inject tracking pixel
   const { pixelHtml: fwdPixel } = await createTrackedEmail({
-    userId: req.user!.userId,
+    userId: getUserId(req),
     mailboxId: req.params.id as string,
     subject: draft.subject,
     recipients: toRecipients.map((r) => r.email),
@@ -290,7 +291,7 @@ composeRouter.post('/:id/forward', async (req: Request, res: Response) => {
     mailboxId: req.params.id,
     messageId,
     toRecipients: toRecipients.map((r) => r.email),
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   res.json({ success: true });
@@ -323,7 +324,7 @@ composeRouter.post('/:id/send-email', async (req: Request, res: Response) => {
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
@@ -356,7 +357,7 @@ composeRouter.post('/:id/send-email', async (req: Request, res: Response) => {
   }
   if (track !== false) {
     const { pixelHtml } = await createTrackedEmail({
-      userId: req.user!.userId,
+      userId: getUserId(req),
       mailboxId: req.params.id as string,
       subject,
       recipients: [...to, ...(cc || []), ...(bcc || [])],
@@ -387,7 +388,7 @@ composeRouter.post('/:id/send-email', async (req: Request, res: Response) => {
     from: mailbox.email,
     to,
     subject,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   res.json({ success: true });

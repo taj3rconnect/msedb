@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { getActivityCounts, findMailboxesByUser } from '../services/reportService.js';
 
 const reportsRouter = Router();
@@ -15,7 +15,7 @@ reportsRouter.use(requireAuth);
  * categorized as deleted, movedAndRead, movedOnly, markedRead.
  */
 reportsRouter.get('/activity', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const period = (req.query.period as string) || 'today';
 
   const { start, end } = getDateRange(period);

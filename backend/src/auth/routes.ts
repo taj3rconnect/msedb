@@ -5,7 +5,7 @@ import logger from '../config/logger.js';
 import { User } from '../models/User.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { createLoginMsalClient, GRAPH_SCOPES } from './msalClient.js';
-import { requireAuth } from './middleware.js';
+import { requireAuth, getUserId } from './middleware.js';
 import { requireSsoOrCookieAuth } from './ssoMiddleware.js';
 
 const authRouter = Router();
@@ -279,7 +279,7 @@ authRouter.post('/auth/logout', requireAuth, (req: Request, res: Response) => {
  * Accepts both cookie-based auth (dashboard) and Bearer token auth (add-in).
  */
 authRouter.get('/auth/me', requireSsoOrCookieAuth, async (req: Request, res: Response) => {
-  const user = await User.findById(req.user!.userId).select(
+  const user = await User.findById(getUserId(req)).select(
     'email displayName role preferences'
   );
 
@@ -288,7 +288,7 @@ authRouter.get('/auth/me', requireSsoOrCookieAuth, async (req: Request, res: Res
     return;
   }
 
-  const mailboxes = await Mailbox.find({ userId: req.user!.userId }).select(
+  const mailboxes = await Mailbox.find({ userId: getUserId(req) }).select(
     'email displayName isConnected'
   );
 

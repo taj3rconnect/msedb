@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { getUserId } from '../../auth/middleware.js';
 import { Mailbox } from '../../models/Mailbox.js';
 import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
 import { graphFetch } from '../../services/graphClient.js';
@@ -25,7 +26,7 @@ const AI_WRITE_PROMPTS: Record<string, (body: string, subject: string) => string
  * Body: { action: 'check-grammar' | 'write' | 'rewrite', body: string, subject?: string }
  */
 aiRouter.post('/:id/ai-write', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const { action, body = '', subject = '' } = req.body as { action: string; body: string; subject: string };
@@ -54,7 +55,7 @@ aiRouter.post('/:id/ai-write', async (req: Request, res: Response) => {
  * Fetches thread + sent tone samples, streams a short crisp reply via Qwen.
  */
 aiRouter.post('/:id/messages/:messageId/auto-respond', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());

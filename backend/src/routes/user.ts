@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { User } from '../models/User.js';
 import { ValidationError, NotFoundError } from '../middleware/errorHandler.js';
 
@@ -18,7 +18,7 @@ userRouter.use(requireAuth);
  * Only provided fields are updated (field-level $set to prevent kill switch overwrite).
  */
 userRouter.patch('/preferences', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { automationPaused, workingHoursStart, workingHoursEnd, contactsMailboxId, contactsFolderId } = req.body;
 
   const updateFields: Record<string, unknown> = {};
@@ -91,7 +91,7 @@ userRouter.patch('/preferences', async (req: Request, res: Response) => {
  * Validates ranges: thresholds 50-100, window 7-365, cooldown 3-90, minEvents 2-20.
  */
 userRouter.patch('/pattern-settings', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const {
     thresholdDelete,
     thresholdMove,

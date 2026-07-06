@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { User } from '../models/User.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { EmailEvent } from '../models/EmailEvent.js';
@@ -22,7 +22,7 @@ settingsRouter.use(requireAuth);
  * NEVER exposes encrypted token data.
  */
 settingsRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const [user, mailboxes] = await Promise.all([
     User.findById(userId)
@@ -61,7 +61,7 @@ settingsRouter.get('/', async (req: Request, res: Response) => {
  * Uses .lean() on all queries for memory efficiency.
  */
 settingsRouter.get('/export-data', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const [user, mailboxes, rules, patterns, events, auditLogs] = await Promise.all([
     User.findById(userId).select('email displayName preferences createdAt').lean(),
@@ -106,7 +106,7 @@ settingsRouter.get('/export-data', async (req: Request, res: Response) => {
  * This is a destructive, irreversible action.
  */
 settingsRouter.delete('/delete-data', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   // Delete all user data across collections
   await Promise.all([

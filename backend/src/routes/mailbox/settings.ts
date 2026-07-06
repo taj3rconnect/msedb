@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { getUserId } from '../../auth/middleware.js';
 import { Mailbox } from '../../models/Mailbox.js';
 import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
 import { graphFetch } from '../../services/graphClient.js';
@@ -13,7 +14,7 @@ const settingsRouter = Router();
  * Returns the signature list for a mailbox.
  */
 settingsRouter.get('/:id/signatures', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
   res.json({ signatures: mailbox.settings.signatures ?? [] });
 });
@@ -24,7 +25,7 @@ settingsRouter.get('/:id/signatures', async (req: Request, res: Response) => {
  * Body: { signatures: [{ id, name, content, isDefault }] }
  */
 settingsRouter.put('/:id/signatures', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const { signatures } = req.body as { signatures: { id: string; name: string; content: string; isDefault: boolean }[] };
@@ -50,7 +51,7 @@ settingsRouter.put('/:id/signatures', async (req: Request, res: Response) => {
  * Fetches automaticRepliesSetting from Graph.
  */
 settingsRouter.get('/:id/oof', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
@@ -68,7 +69,7 @@ settingsRouter.get('/:id/oof', async (req: Request, res: Response) => {
  * Body: { status, internalReplyMessage, externalReplyMessage, externalAudience?, scheduledStartDateTime?, scheduledEndDateTime? }
  */
 settingsRouter.put('/:id/oof', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const { status, internalReplyMessage, externalReplyMessage, externalAudience, scheduledStartDateTime, scheduledEndDateTime } = req.body;
@@ -103,7 +104,7 @@ settingsRouter.put('/:id/oof', async (req: Request, res: Response) => {
  * Fetches Outlook master categories from Graph.
  */
 settingsRouter.get('/:id/categories', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
@@ -118,7 +119,7 @@ settingsRouter.get('/:id/categories', async (req: Request, res: Response) => {
  * Body: { displayName, color }
  */
 settingsRouter.post('/:id/categories', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const { displayName, color } = req.body as { displayName: string; color: string };
@@ -138,7 +139,7 @@ settingsRouter.post('/:id/categories', async (req: Request, res: Response) => {
  * Deletes an Outlook master category.
  */
 settingsRouter.delete('/:id/categories/:categoryId', async (req: Request, res: Response) => {
-  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: req.user!.userId });
+  const mailbox = await Mailbox.findOne({ _id: req.params.id, userId: getUserId(req) });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());

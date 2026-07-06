@@ -1,9 +1,10 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { undoAction } from '../services/undoService.js';
 import { ValidationError } from '../middleware/errorHandler.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const auditRouter = Router();
 
@@ -17,24 +18,10 @@ auditRouter.use(requireAuth);
  * Query params: mailboxId, ruleId, action (comma-separated), startDate, endDate, page, limit
  */
 auditRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   // Pagination
-  let page = 1;
-  if (req.query.page) {
-    const parsed = parseInt(req.query.page as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      page = parsed;
-    }
-  }
-
-  let limit = 50;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      limit = Math.min(parsed, 100);
-    }
-  }
+  const { page, limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 100 });
 
   // Build filter
   const filter: Record<string, unknown> = { userId };
@@ -108,7 +95,7 @@ auditRouter.get('/', async (req: Request, res: Response) => {
  * Undo an automated action within the 48-hour safety window.
  */
 auditRouter.post('/:id/undo', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const id = req.params.id as string;
   const auditLog = await undoAction(id, new Types.ObjectId(userId));

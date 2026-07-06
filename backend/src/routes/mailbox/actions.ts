@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { getUserId } from '../../auth/middleware.js';
 import { Types } from 'mongoose';
 import { Mailbox } from '../../models/Mailbox.js';
 import { EmailEvent } from '../../models/EmailEvent.js';
@@ -34,7 +35,7 @@ actionsRouter.post(
 
     const mailbox = await Mailbox.findOne({
       _id: req.params.id,
-      userId: req.user!.userId,
+      userId: getUserId(req),
     });
 
     if (!mailbox) {
@@ -103,14 +104,14 @@ actionsRouter.post(
       const bulkOps = successMsgIds.map((msgId) => ({
         updateOne: {
           filter: {
-            userId: new Types.ObjectId(req.user!.userId),
+            userId: new Types.ObjectId(getUserId(req)),
             mailboxId: mailbox._id,
             messageId: msgId,
             eventType: 'deleted' as const,
           },
           update: {
             $setOnInsert: {
-              userId: new Types.ObjectId(req.user!.userId),
+              userId: new Types.ObjectId(getUserId(req)),
               mailboxId: mailbox._id,
               messageId: msgId,
               eventType: 'deleted' as const,
@@ -150,7 +151,7 @@ actionsRouter.post(
  * Returns the total number of messages in Deleted Items across all connected mailboxes.
  */
 actionsRouter.get('/deleted-count-all', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const mailboxes = await Mailbox.find({ userId, isConnected: true }).select('email').lean();
 
   let total = 0;
@@ -183,7 +184,7 @@ actionsRouter.get('/deleted-count-all', async (req: Request, res: Response) => {
 actionsRouter.get('/:id/deleted-count', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) {
     throw new NotFoundError('Mailbox not found');
@@ -207,7 +208,7 @@ actionsRouter.get('/:id/deleted-count', async (req: Request, res: Response) => {
 actionsRouter.post('/:id/empty-deleted', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) {
     throw new NotFoundError('Mailbox not found');

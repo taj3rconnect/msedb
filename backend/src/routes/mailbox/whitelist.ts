@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { Mailbox } from '../../models/Mailbox.js';
 import { AuditLog } from '../../models/AuditLog.js';
-import { requireAdmin } from '../../auth/middleware.js';
+import { requireAdmin, getUserId } from '../../auth/middleware.js';
 import {
   addToOrgWhitelist,
   removeFromOrgWhitelist,
@@ -99,7 +99,7 @@ whitelistRouter.put(
 whitelistRouter.get('/:id/whitelist', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   }).select('settings.whitelistedSenders settings.whitelistedDomains');
 
   if (!mailbox) {
@@ -119,7 +119,7 @@ whitelistRouter.get('/:id/whitelist', async (req: Request, res: Response) => {
  * Body: { senders?: string[], domains?: string[] }
  */
 whitelistRouter.put('/:id/whitelist', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,

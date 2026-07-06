@@ -1,8 +1,9 @@
 import { Router, type Request, type Response } from 'express';
+import { getUserId } from '../../auth/middleware.js';
 import { Mailbox } from '../../models/Mailbox.js';
 import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
 import { getRedisClient } from '../../config/redis.js';
-import { graphFetch } from '../../services/graphClient.js';
+import { graphFetch, graphFetchAllPages } from '../../services/graphClient.js';
 import logger from '../../config/logger.js';
 import { NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
 
@@ -18,7 +19,7 @@ const contactsRouter = Router();
 contactsRouter.get('/:id/contact-folders', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   if (!mailbox) {
@@ -54,26 +55,16 @@ contactsRouter.get('/:id/contact-folders', async (req: Request, res: Response) =
   }
 
   // 2. List user-created sub-folders under the default contacts folder
-  let url: string | undefined =
-    `/users/${mailbox.email}/contactFolders?$top=100&$select=id,displayName`;
-
-  while (url) {
-    const response = await graphFetch(url, accessToken);
-    const data = (await response.json()) as {
-      value: { id: string; displayName: string }[];
-      '@odata.nextLink'?: string;
-    };
-
-    for (const folder of data.value) {
-      folders.push({
-        id: folder.id,
-        displayName: folder.displayName,
-        totalCount: 0,
-      });
-    }
-
-    url = data['@odata.nextLink'];
-  }
+  const subFolderResults = await graphFetchAllPages<
+    { id: string; displayName: string },
+    ContactFolderResult
+  >(
+    `/users/${mailbox.email}/contactFolders?$top=100&$select=id,displayName`,
+    accessToken,
+    undefined,
+    (folder) => ({ id: folder.id, displayName: folder.displayName, totalCount: 0 }),
+  );
+  folders.push(...subFolderResults);
 
   // Fetch contact counts for sub-folders in parallel
   const subFolders = folders.filter((f) => f.id !== 'default');
@@ -121,7 +112,7 @@ contactsRouter.get('/:id/contacts', async (req: Request, res: Response) => {
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
 
   if (!mailbox) {
@@ -217,16 +208,10 @@ contactsRouter.get('/:id/contacts', async (req: Request, res: Response) => {
     // Background: fetch remaining pages and populate cache
     (async () => {
       try {
-        const allContacts = [...firstPageContacts];
-        let nextUrl: string | undefined = nextLink;
-        while (nextUrl) {
-          const resp = await graphFetch(nextUrl, accessToken, {
-            headers: { 'ConsistencyLevel': 'eventual' },
-          });
-          const data = (await resp.json()) as { value: RawContact[]; '@odata.nextLink'?: string };
-          allContacts.push(...(data.value || []).map(mapContact));
-          nextUrl = data['@odata.nextLink'];
-        }
+        const restContacts = await graphFetchAllPages(nextLink, accessToken, {
+          headers: { 'ConsistencyLevel': 'eventual' },
+        }, mapContact);
+        const allContacts = [...firstPageContacts, ...restContacts];
         allContacts.sort((a, b) => (!a.displayName ? 1 : 0) - (!b.displayName ? 1 : 0) || (a.displayName || '').localeCompare(b.displayName || ''));
         const now = new Date().toISOString();
         await redis.set(cacheKey, JSON.stringify(allContacts), 'EX', 86400);
@@ -273,7 +258,7 @@ contactsRouter.post('/:id/contacts/bulk-delete', async (req: Request, res: Respo
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
@@ -328,7 +313,7 @@ contactsRouter.post('/:id/contacts/import', async (req: Request, res: Response) 
 
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
@@ -377,7 +362,7 @@ contactsRouter.post('/:id/contacts/import', async (req: Request, res: Response) 
 contactsRouter.delete('/:id/contacts/:contactId', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 
@@ -398,7 +383,7 @@ contactsRouter.delete('/:id/contacts/:contactId', async (req: Request, res: Resp
 contactsRouter.patch('/:id/contacts/:contactId', async (req: Request, res: Response) => {
   const mailbox = await Mailbox.findOne({
     _id: req.params.id,
-    userId: req.user!.userId,
+    userId: getUserId(req),
   });
   if (!mailbox) throw new NotFoundError('Mailbox not found');
 

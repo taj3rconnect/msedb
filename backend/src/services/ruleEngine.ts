@@ -3,7 +3,7 @@ import { User } from '../models/User.js';
 import { Rule, type IRuleAction, type IRuleConditions } from '../models/Rule.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { isWhitelisted } from './whitelistService.js';
-import { graphFetch } from './graphClient.js';
+import { graphFetch, graphFetchAllPages } from './graphClient.js';
 import logger from '../config/logger.js';
 import type { GraphMessage } from './metadataExtractor.js';
 
@@ -252,22 +252,9 @@ export async function findMatchingMessagesForRule(
   const filterStr = encodeURIComponent('isRead eq false');
 
   // Fetch all unread messages from the mailbox (paginated via @odata.nextLink)
-  const allMessages: RunNowMessage[] = [];
   const initialUrl = `/users/${email}/messages?$select=${selectFields}&$filter=${filterStr}&$top=100`;
   logger.info('RunRule: fetching unread messages', { initialUrl, senders, email });
-  let nextUrl: string | null = initialUrl;
-
-  while (nextUrl) {
-    const response = await graphFetch(nextUrl, accessToken);
-    const data = (await response.json()) as {
-      value: RunNowMessage[];
-      '@odata.nextLink'?: string;
-    };
-    for (const msg of data.value) {
-      allMessages.push(msg);
-    }
-    nextUrl = data['@odata.nextLink'] ?? null;
-  }
+  const allMessages = await graphFetchAllPages<RunNowMessage>(initialUrl, accessToken);
 
   logger.info('RunRule: fetch complete', { totalFetched: allMessages.length, sampleFrom: allMessages.slice(0, 3).map((m) => m.from?.emailAddress?.address) });
 

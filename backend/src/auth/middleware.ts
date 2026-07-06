@@ -151,6 +151,17 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
 }
 
 /**
+ * Return the authenticated user's ID. Must be used AFTER requireAuth.
+ * Throws UnauthorizedError instead of a non-null assertion if req.user is missing.
+ */
+export function getUserId(req: Request): string {
+  if (!req.user) {
+    throw new UnauthorizedError('No authenticated user');
+  }
+  return req.user.userId;
+}
+
+/**
  * Middleware that requires admin role. Must be used AFTER requireAuth.
  * Throws ForbiddenError if user is not an admin.
  */

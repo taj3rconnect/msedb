@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { getUserId } from '../../auth/middleware.js';
 import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import { Mailbox } from '../../models/Mailbox.js';
@@ -26,7 +27,7 @@ connectionRouter.post('/connect', async (req: Request, res: Response) => {
   const stateToken = jwt.sign(
     {
       action: 'connect_mailbox',
-      userId: req.user!.userId,
+      userId: getUserId(req),
       ts: Date.now(),
     },
     config.jwtSecret,
@@ -55,7 +56,7 @@ connectionRouter.post('/connect', async (req: Request, res: Response) => {
   const authUrl = await msalClient.getAuthCodeUrl(authCodeUrlParams);
 
   logger.info('Mailbox connect flow initiated', {
-    userId: req.user!.userId,
+    userId: getUserId(req),
     loginHint: loginHint || 'none',
   });
 
@@ -68,7 +69,7 @@ connectionRouter.post('/connect', async (req: Request, res: Response) => {
  * List all mailboxes connected by the current user.
  */
 connectionRouter.get('/', async (req: Request, res: Response) => {
-  const mailboxes = await Mailbox.find({ userId: req.user!.userId })
+  const mailboxes = await Mailbox.find({ userId: getUserId(req) })
     .select(
       'email displayName isConnected homeAccountId tenantId lastSyncAt settings createdAt',
     )
@@ -90,7 +91,7 @@ connectionRouter.get('/autocomplete', async (req: Request, res: Response) => {
     return;
   }
 
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const mailboxes = await Mailbox.find({ userId, isConnected: true }).select('_id email');
 
   const seen = new Map<string, { email: string; name?: string; score: number }>();
@@ -175,7 +176,7 @@ connectionRouter.delete(
   async (req: Request, res: Response) => {
     const mailbox = await Mailbox.findOne({
       _id: req.params.id,
-      userId: req.user!.userId,
+      userId: getUserId(req),
     });
 
     if (!mailbox) {
@@ -191,7 +192,7 @@ connectionRouter.delete(
     logger.info('Mailbox disconnected', {
       mailboxId: req.params.id,
       email: mailbox.email,
-      userId: req.user!.userId,
+      userId: getUserId(req),
     });
 
     res.json({ message: 'Mailbox disconnected', mailboxId: req.params.id });

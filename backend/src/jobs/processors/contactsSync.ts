@@ -1,7 +1,7 @@
 import type { Job } from 'bullmq';
 import { Mailbox } from '../../models/Mailbox.js';
 import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
-import { graphFetch } from '../../services/graphClient.js';
+import { graphFetchAllPages } from '../../services/graphClient.js';
 import { getRedisClient } from '../../config/redis.js';
 import logger from '../../config/logger.js';
 
@@ -28,21 +28,11 @@ export async function syncContactsForMailbox(mailboxId: string, email: string): 
     personalNotes?: string;
   }
 
-  const allContacts: RawContact[] = [];
-  let url: string | undefined =
-    `/users/${email}/contacts?$select=${CONTACTS_SELECT}&$top=100&$orderby=displayName`;
-
-  while (url) {
-    const response = await graphFetch(url, accessToken, {
-      headers: { ConsistencyLevel: 'eventual' },
-    });
-    const data = (await response.json()) as {
-      value: RawContact[];
-      '@odata.nextLink'?: string;
-    };
-    allContacts.push(...(data.value || []));
-    url = data['@odata.nextLink'];
-  }
+  const allContacts = await graphFetchAllPages<RawContact>(
+    `/users/${email}/contacts?$select=${CONTACTS_SELECT}&$top=100&$orderby=displayName`,
+    accessToken,
+    { headers: { ConsistencyLevel: 'eventual' } },
+  );
 
   // Normalize and store in Redis
   const contacts = allContacts.map((c) => ({

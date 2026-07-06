@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { Rule } from '../models/Rule.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { EmailEvent } from '../models/EmailEvent.js';
@@ -14,6 +14,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../middleware/errorHandler.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const rulesRouter = Router();
 
@@ -27,24 +28,10 @@ rulesRouter.use(requireAuth);
  * Query params: mailboxId (optional), page (default 1), limit (default 50, max 100)
  */
 rulesRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   // Pagination
-  let page = 1;
-  if (req.query.page) {
-    const parsed = parseInt(req.query.page as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      page = parsed;
-    }
-  }
-
-  let limit = 50;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      limit = Math.min(parsed, 100);
-    }
-  }
+  const { page, limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 100 });
 
   // Build filter
   const filter: Record<string, unknown> = { userId };
@@ -123,7 +110,7 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
  * Body: { mailboxId, name, conditions, actions }
  */
 rulesRouter.post('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, name, conditions, actions, skipStaging } = req.body as {
     mailboxId?: string;
     name?: string;
@@ -252,7 +239,7 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
  * Body: { patternId }
  */
 rulesRouter.post('/from-pattern', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { patternId } = req.body as { patternId?: string };
 
   if (!patternId) {
@@ -271,7 +258,7 @@ rulesRouter.post('/from-pattern', async (req: Request, res: Response) => {
  * Body: { mailboxId }
  */
 rulesRouter.post('/sync-to-graph', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.body as { mailboxId?: string };
 
   if (!mailboxId) {
@@ -296,7 +283,7 @@ rulesRouter.post('/sync-to-graph', async (req: Request, res: Response) => {
  * Body: { mailboxId, conditions, dateRange? }
  */
 rulesRouter.post('/simulate', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, conditions, dateRange } = req.body as {
     mailboxId?: string;
     conditions?: Record<string, unknown>;
@@ -330,7 +317,7 @@ rulesRouter.post('/simulate', async (req: Request, res: Response) => {
  * 'reorder' being captured as an :id parameter.
  */
 rulesRouter.put('/reorder', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, ruleIds } = req.body as {
     mailboxId?: string;
     ruleIds?: string[];
@@ -373,7 +360,7 @@ rulesRouter.put('/reorder', async (req: Request, res: Response) => {
  * Update a rule (name, conditions, actions).
  */
 rulesRouter.put('/:id', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
@@ -432,7 +419,7 @@ rulesRouter.put('/:id', async (req: Request, res: Response) => {
  * Enable or disable a rule.
  */
 rulesRouter.patch('/:id/toggle', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
@@ -480,7 +467,7 @@ rulesRouter.patch('/:id/toggle', async (req: Request, res: Response) => {
  * Returns stats: { matched, applied, failed }.
  */
 rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
@@ -623,7 +610,7 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
  * Body: { dateRange? } — optional override (default 30d)
  */
 rulesRouter.post('/:id/simulate', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
@@ -652,7 +639,7 @@ rulesRouter.post('/:id/simulate', async (req: Request, res: Response) => {
  * Body: { senderEmail: string }
  */
 rulesRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { senderEmail } = req.body as { senderEmail?: string };
 
   if (!senderEmail) throw new ValidationError('senderEmail is required');
@@ -724,7 +711,7 @@ rulesRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
  * Delete a rule.
  */
 rulesRouter.delete('/:id', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
