@@ -40,25 +40,9 @@ export interface AiSearchResponse {
   };
 }
 
-export interface AiSearchStatus {
-  qdrant: { healthy: boolean; pointCount: number };
-  ollama: { embed: boolean; instruct: boolean };
-}
-
 export function aiSearch(query: string, mailboxId?: string, limit?: number): Promise<AiSearchResponse> {
   return apiFetch<AiSearchResponse>('/ai-search', {
     method: 'POST',
     body: JSON.stringify({ query, mailboxId, limit }),
-  });
-}
-
-export function aiSearchStatus(): Promise<AiSearchStatus> {
-  return apiFetch<AiSearchStatus>('/ai-search/status');
-}
-
-export function triggerBackfill(mailboxId: string): Promise<{ jobId: string }> {
-  return apiFetch<{ jobId: string }>('/ai-search/backfill', {
-    method: 'POST',
-    body: JSON.stringify({ mailboxId }),
   });
 }

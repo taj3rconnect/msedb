@@ -40,9 +40,3 @@ export function formatEmail(email?: string): string {
   return `${email.slice(0, 27)}...`;
 }
 
-/**
- * Capitalize and humanize an event type name.
- */
-export function formatEventType(type: string): string {
-  return type.charAt(0).toUpperCase() + type.slice(1);
-}

@@ -194,20 +194,6 @@ export async function deleteCategory(mailboxId: string, categoryId: string): Pro
 }
 
 /**
- * Update categories assigned to a message.
- */
-export async function updateMessageCategories(
-  mailboxId: string,
-  messageId: string,
-  categories: string[],
-): Promise<{ categories: string[] }> {
-  return apiFetch<{ categories: string[] }>(`/mailboxes/${mailboxId}/messages/${messageId}/categories`, {
-    method: 'PATCH',
-    body: JSON.stringify({ categories }),
-  });
-}
-
-/**
  * Update per-mailbox whitelist (senders and domains).
  */
 export async function updateMailboxWhitelist(

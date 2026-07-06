@@ -134,29 +134,6 @@ export function syncFolderStream(
 }
 
 /**
- * Trigger delta sync for a specific folder (simple, non-streaming).
- */
-export async function syncFolder(
-  mailboxId: string,
-  folderId: string,
-): Promise<SyncResult> {
-  return new Promise((resolve, reject) => {
-    let lastResult: SyncResult | null = null;
-    syncFolderStream(
-      mailboxId,
-      folderId,
-      () => {},
-      (result) => { lastResult = result; resolve(result); },
-      (err) => reject(new Error(err)),
-    );
-    // Fallback timeout
-    setTimeout(() => {
-      if (lastResult) resolve(lastResult);
-    }, 120000);
-  });
-}
-
-/**
  * Create a new mail folder in a mailbox.
  */
 export async function createMailboxFolder(
