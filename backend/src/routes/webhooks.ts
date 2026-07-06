@@ -81,7 +81,8 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
           // 'updated' notifications over its lifetime (read, moved, flagged,
           // etc.) — we only want to collapse redeliveries that land within
           // ~seconds of each other, not suppress later, real updates.
-          const jobId = `webhook:${notification.subscriptionId}:${notification.resourceData?.id ?? 'unknown'}:${notification.changeType}`;
+          // BullMQ forbids ':' in custom jobIds (used internally as key separator)
+          const jobId = `webhook_${notification.subscriptionId}_${notification.resourceData?.id ?? 'unknown'}_${notification.changeType}`.replaceAll(':', '_');
           await queues['webhook-events'].add('change-notification', {
             notification,
             subscriptionId: notification.subscriptionId,
