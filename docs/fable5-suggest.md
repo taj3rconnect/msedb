@@ -72,7 +72,7 @@ Phases run in order; each phase = one or more small commits, gated by `cd backen
 | S7 | Undo coverage for bulk runs (per-message audit entries) | Depends on S5 decision + audit schema change | rule-engine |
 | S8 | Qdrant embedding reconciliation job + keyword fallback on ai-search 500 | New background job — feature work, not cleanup | search-db |
 | S9 | Qdrant snippet TTL/encryption | Data migration on live vector store | architecture |
-| S10 | `routes/events.ts:398` reads `ANTHROPIC_API_KEY` directly (bypasses config + local-LLM policy) | Policy decision: move to DGX Ollama or keep paid API | unused-code |
+| S10 | ~~`routes/events.ts` reads `ANTHROPIC_API_KEY` directly (bypasses config + local-LLM policy)~~ **DONE 2026-07-06**: summarize-today now uses DGX Ollama (`ollamaWriteModel`, qwen); `@anthropic-ai/sdk` removed | Approved and executed | unused-code |
 | S11 | Rate-limit bucket split for `/auth/login` vs `/auth/me`; Qdrant in `/api/health` | Low risk but prod-visible behavior; batch with S3/S4 branch | architecture |
 | S12 | Webhook job `jobId` dedup + retry/backoff on all `queues.add()` sites | Pairs with S3; needs queue-drain testing | scalability |
 | S13 | Rule-condition vocabulary gaps (regex, size, importance, multi-action, ordering) | Feature roadmap, not refactor | rule-engine |

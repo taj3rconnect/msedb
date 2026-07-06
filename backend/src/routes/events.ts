@@ -1,6 +1,5 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
-import Anthropic from '@anthropic-ai/sdk';
 import { requireAuth, getUserId } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
@@ -10,6 +9,8 @@ import { graphFetch } from '../services/graphClient.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { parsePagination } from '../utils/pagination.js';
 import { AppError, ValidationError } from '../middleware/errorHandler.js';
+import { generateOllamaCompletion } from '../services/ollamaClient.js';
+import { config } from '../config/index.js';
 
 const eventsRouter = Router();
 
@@ -383,11 +384,6 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
   const userId = getUserId(req);
   const { mailboxId } = req.body;
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new AppError('ANTHROPIC_API_KEY not configured', 500);
-  }
-
   // Query today's arrived events
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -470,7 +466,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
     return;
   }
 
-  // Build text list for Claude
+  // Build text list for the LLM
   const emailList = events.map((e, i) => {
     const sender = e.sender?.name
       ? `${e.sender.name} <${e.sender.email}>`
@@ -509,19 +505,15 @@ Here are today's emails:
 ${emailList}${truncatedNote}`;
 
   try {
-    const anthropic = new Anthropic({ apiKey });
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
+    const summary = await generateOllamaCompletion(prompt, {
+      model: config.ollamaWriteModel,
+      temperature: 0.3,
+      numPredict: 2048,
     });
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    const summary = textBlock?.text || '<p>Failed to generate summary.</p>';
-
-    res.json({ summary, stats });
+    res.json({ summary: summary.trim() || '<p>Failed to generate summary.</p>', stats });
   } catch (err: any) {
-    console.error('Anthropic API error:', err.message);
+    console.error('Ollama summary error:', err.message);
     throw new AppError(`AI summary failed: ${err.message}`, 500);
   }
 });

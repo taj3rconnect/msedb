@@ -123,6 +123,34 @@ Query: "unread newsletters"
 }
 
 /**
+ * Generate a single non-streaming completion from Ollama's generate API.
+ */
+export async function generateOllamaCompletion(
+  prompt: string,
+  opts: { model: string; temperature: number; numPredict: number },
+): Promise<string> {
+  const response = await fetch(`${config.ollamaUrl}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: opts.model,
+      prompt,
+      stream: false,
+      think: false,
+      options: { temperature: opts.temperature, num_predict: opts.numPredict },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Ollama generate failed (${response.status}): ${body.substring(0, 200)}`);
+  }
+
+  const data = (await response.json()) as { response: string };
+  return data.response;
+}
+
+/**
  * Check health of Ollama embedding and instruct models.
  */
 export async function checkOllamaHealth(): Promise<{ embed: boolean; instruct: boolean }> {
