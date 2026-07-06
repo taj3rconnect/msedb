@@ -40,3 +40,16 @@ export function formatEmail(email?: string): string {
   return `${email.slice(0, 27)}...`;
 }
 
+/**
+ * Wrap whitespace-separated query words found in `text` with a <mark> tag.
+ * Used to highlight search matches in inbox sender/subject/body text.
+ */
+export function highlightText(text: string, query: string): string {
+  if (!query || !text) return text;
+  const words = query.split(/\s+/).filter((w) => w.length >= 2);
+  if (!words.length) return text;
+  const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+  return text.replace(pattern, '<mark class="bg-yellow-200 dark:bg-yellow-500/30 rounded-sm px-0.5">$1</mark>');
+}
+
