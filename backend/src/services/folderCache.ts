@@ -1,5 +1,5 @@
 import { getRedisClient } from '../config/redis.js';
-import { graphFetch, GraphApiError } from './graphClient.js';
+import { graphFetch, graphFetchAllPages, GraphApiError } from './graphClient.js';
 import { buildSelectParam } from '../utils/graph.js';
 import logger from '../config/logger.js';
 
@@ -32,11 +32,6 @@ interface GraphMailFolder {
   childFolderCount?: number;
 }
 
-interface GraphMailFolderListResponse {
-  value: GraphMailFolder[];
-  '@odata.nextLink'?: string;
-}
-
 /**
  * Recursively fetch child folders for a given parent folder.
  */
@@ -48,30 +43,25 @@ async function fetchChildFoldersRecursive(
   folderMap: Map<string, string>,
 ): Promise<void> {
   const selectParam = buildSelectParam('mailFolder');
-  let url: string | undefined =
+  const initialUrl =
     `/users/${mailboxEmail}/mailFolders/${parentFolderId}/childFolders?$select=${selectParam}&$top=100`;
 
-  while (url) {
-    const response = await graphFetch(url, accessToken);
-    const data = (await response.json()) as GraphMailFolderListResponse;
+  const folders = await graphFetchAllPages<GraphMailFolder>(initialUrl, accessToken);
 
-    for (const folder of data.value) {
-      const fullPath = parentPath ? `${parentPath}/${folder.displayName}` : folder.displayName;
-      folderMap.set(folder.id, fullPath);
+  for (const folder of folders) {
+    const fullPath = parentPath ? `${parentPath}/${folder.displayName}` : folder.displayName;
+    folderMap.set(folder.id, fullPath);
 
-      // Recurse into children
-      if (folder.childFolderCount && folder.childFolderCount > 0) {
-        await fetchChildFoldersRecursive(
-          mailboxEmail,
-          folder.id,
-          fullPath,
-          accessToken,
-          folderMap,
-        );
-      }
+    // Recurse into children
+    if (folder.childFolderCount && folder.childFolderCount > 0) {
+      await fetchChildFoldersRecursive(
+        mailboxEmail,
+        folder.id,
+        fullPath,
+        accessToken,
+        folderMap,
+      );
     }
-
-    url = data['@odata.nextLink'];
   }
 }
 
@@ -92,21 +82,12 @@ export async function refreshFolderCache(
   const folderMap = new Map<string, string>();
 
   const selectParam = buildSelectParam('mailFolder');
-  let url: string | undefined =
-    `/users/${mailboxEmail}/mailFolders?$select=${selectParam}&$top=100`;
+  const initialUrl = `/users/${mailboxEmail}/mailFolders?$select=${selectParam}&$top=100`;
 
   // Fetch top-level folders
-  const topLevelFolders: GraphMailFolder[] = [];
-  while (url) {
-    const response = await graphFetch(url, accessToken);
-    const data = (await response.json()) as GraphMailFolderListResponse;
-
-    for (const folder of data.value) {
-      folderMap.set(folder.id, folder.displayName);
-      topLevelFolders.push(folder);
-    }
-
-    url = data['@odata.nextLink'];
+  const topLevelFolders = await graphFetchAllPages<GraphMailFolder>(initialUrl, accessToken);
+  for (const folder of topLevelFolders) {
+    folderMap.set(folder.id, folder.displayName);
   }
 
   // Recursively fetch child folders

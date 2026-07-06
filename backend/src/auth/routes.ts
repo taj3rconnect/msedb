@@ -5,7 +5,8 @@ import logger from '../config/logger.js';
 import { User } from '../models/User.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { createLoginMsalClient, GRAPH_SCOPES } from './msalClient.js';
-import { requireAuth } from './middleware.js';
+import { encryptTokenData } from './tokenManager.js';
+import { requireAuth, getUserId } from './middleware.js';
 import { requireSsoOrCookieAuth } from './ssoMiddleware.js';
 
 const authRouter = Router();
@@ -142,7 +143,7 @@ authRouter.get('/auth/callback', async (req: Request, res: Response) => {
       // Persist MSAL token cache to the mailbox
       const serializedCache = loginMsalClient.getTokenCache().serialize();
       await Mailbox.findByIdAndUpdate(mailbox._id, {
-        msalCache: serializedCache,
+        msalCache: encryptTokenData(serializedCache),
         'encryptedTokens.expiresAt': tokenResponse.expiresOn,
       });
 
@@ -236,7 +237,7 @@ authRouter.get('/auth/callback', async (req: Request, res: Response) => {
       // Persist MSAL token cache to the mailbox
       const connectCache = loginMsalClient.getTokenCache().serialize();
       await Mailbox.findByIdAndUpdate(mailboxId, {
-        msalCache: connectCache,
+        msalCache: encryptTokenData(connectCache),
         'encryptedTokens.expiresAt': tokenResponse.expiresOn,
       });
 
@@ -279,7 +280,7 @@ authRouter.post('/auth/logout', requireAuth, (req: Request, res: Response) => {
  * Accepts both cookie-based auth (dashboard) and Bearer token auth (add-in).
  */
 authRouter.get('/auth/me', requireSsoOrCookieAuth, async (req: Request, res: Response) => {
-  const user = await User.findById(req.user!.userId).select(
+  const user = await User.findById(getUserId(req)).select(
     'email displayName role preferences'
   );
 
@@ -288,7 +289,7 @@ authRouter.get('/auth/me', requireSsoOrCookieAuth, async (req: Request, res: Res
     return;
   }
 
-  const mailboxes = await Mailbox.find({ userId: req.user!.userId }).select(
+  const mailboxes = await Mailbox.find({ userId: getUserId(req) }).select(
     'email displayName isConnected'
   );
 

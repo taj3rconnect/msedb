@@ -1,10 +1,11 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { requireAuth, requireAdmin } from '../auth/middleware.js';
+import { requireAuth, requireAdmin, getUserId } from '../auth/middleware.js';
 import { parseSearchQuery, generateEmbedding, checkOllamaHealth } from '../services/ollamaClient.js';
 import { searchEmailVectors, getCollectionInfo } from '../services/qdrantClient.js';
 import { backfillMailboxEmbeddings } from '../services/embeddingService.js';
 import { queues } from '../jobs/queues.js';
 import logger from '../config/logger.js';
+import { ValidationError } from '../middleware/errorHandler.js';
 
 const router = Router();
 
@@ -23,11 +24,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     };
 
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
-      res.status(400).json({ error: 'Query is required' });
-      return;
+      throw new ValidationError('Query is required');
     }
 
-    const userId = req.user!.userId;
+    const userId = getUserId(req);
     const totalStart = Date.now();
 
     // Step 1: Parse the natural language query
@@ -147,11 +147,10 @@ router.get('/status', async (_req: Request, res: Response, next: NextFunction) =
 router.post('/backfill', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { mailboxId } = req.body as { mailboxId?: string };
-    const userId = req.user!.userId;
+    const userId = getUserId(req);
 
     if (!mailboxId) {
-      res.status(400).json({ error: 'mailboxId is required' });
-      return;
+      throw new ValidationError('mailboxId is required');
     }
 
     const job = await queues['email-embedding'].add('backfill-embeddings', {

@@ -1,19 +1,20 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { Rule } from '../models/Rule.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { convertPatternToRule } from '../services/ruleConverter.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
-import { graphFetch } from '../services/graphClient.js';
 import { syncRuleToGraph, deleteGraphRule, syncAllRulesToGraph } from '../services/graphRuleSync.js';
+import { simulateRule, findMatchingMessagesForRule, applyRuleActionsToMessages } from '../services/ruleEngine.js';
 import logger from '../config/logger.js';
 import {
   NotFoundError,
   ValidationError,
 } from '../middleware/errorHandler.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const rulesRouter = Router();
 
@@ -27,24 +28,10 @@ rulesRouter.use(requireAuth);
  * Query params: mailboxId (optional), page (default 1), limit (default 50, max 100)
  */
 rulesRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   // Pagination
-  let page = 1;
-  if (req.query.page) {
-    const parsed = parseInt(req.query.page as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      page = parsed;
-    }
-  }
-
-  let limit = 50;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      limit = Math.min(parsed, 100);
-    }
-  }
+  const { page, limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 100 });
 
   // Build filter
   const filter: Record<string, unknown> = { userId };
@@ -123,7 +110,7 @@ rulesRouter.get('/', async (req: Request, res: Response) => {
  * Body: { mailboxId, name, conditions, actions }
  */
 rulesRouter.post('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, name, conditions, actions, skipStaging } = req.body as {
     mailboxId?: string;
     name?: string;
@@ -252,7 +239,7 @@ rulesRouter.post('/', async (req: Request, res: Response) => {
  * Body: { patternId }
  */
 rulesRouter.post('/from-pattern', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { patternId } = req.body as { patternId?: string };
 
   if (!patternId) {
@@ -271,7 +258,7 @@ rulesRouter.post('/from-pattern', async (req: Request, res: Response) => {
  * Body: { mailboxId }
  */
 rulesRouter.post('/sync-to-graph', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.body as { mailboxId?: string };
 
   if (!mailboxId) {
@@ -290,104 +277,13 @@ rulesRouter.post('/sync-to-graph', async (req: Request, res: Response) => {
 });
 
 /**
- * Shared simulation helper: runs a read-only query against EmailEvent
- * to estimate how many historical emails would match given conditions.
- */
-async function runSimulation(
-  userId: string,
-  mailboxId: string,
-  conditions: {
-    senderEmail?: string | string[];
-    senderDomain?: string;
-    subjectContains?: string;
-    bodyContains?: string;
-    fromFolder?: string;
-  },
-  dateRange?: '30d' | '60d' | '90d',
-) {
-  const days = dateRange === '60d' ? 60 : dateRange === '90d' ? 90 : 30;
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-
-  // Base filter: arrived events only, not automated by rules
-  const baseFilter: Record<string, unknown> = {
-    userId: new Types.ObjectId(userId),
-    mailboxId: new Types.ObjectId(mailboxId),
-    eventType: 'arrived',
-    'metadata.automatedByRule': { $exists: false },
-    timestamp: { $gte: since },
-  };
-
-  // Build condition-specific filter
-  const filter: Record<string, unknown> = { ...baseFilter };
-
-  // senderEmail — case-insensitive match
-  const senders = conditions.senderEmail
-    ? Array.isArray(conditions.senderEmail)
-      ? conditions.senderEmail
-      : [conditions.senderEmail]
-    : [];
-  if (senders.length > 0) {
-    filter['sender.email'] = {
-      $in: senders.map((s) => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')),
-    };
-  }
-
-  // senderDomain — exact match
-  if (conditions.senderDomain) {
-    filter['sender.domain'] = conditions.senderDomain.toLowerCase();
-  }
-
-  // subjectContains — case-insensitive regex
-  if (conditions.subjectContains) {
-    const escaped = conditions.subjectContains.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    filter.subject = { $regex: escaped, $options: 'i' };
-  }
-
-  // fromFolder — exact match
-  if (conditions.fromFolder) {
-    filter.fromFolder = conditions.fromFolder;
-  }
-
-  // bodyContains is skipped — EmailEvent doesn't store body text
-  const bodyContainsSkipped = !!conditions.bodyContains;
-
-  // Run 3 parallel queries
-  const [totalMatched, emails, scannedCount] = await Promise.all([
-    EmailEvent.countDocuments(filter),
-    EmailEvent.find(filter)
-      .sort({ timestamp: -1 })
-      .limit(50)
-      .select('sender subject timestamp fromFolder isRead importance')
-      .lean(),
-    EmailEvent.countDocuments(baseFilter),
-  ]);
-
-  return {
-    totalMatched,
-    emails: emails.map((e) => ({
-      _id: e._id.toString(),
-      sender: e.sender,
-      subject: e.subject,
-      timestamp: e.timestamp,
-      fromFolder: e.fromFolder,
-      isRead: e.isRead,
-      importance: e.importance,
-    })),
-    dateRange: `${days}d`,
-    scannedCount,
-    ...(bodyContainsSkipped ? { bodyContainsSkipped: true } : {}),
-  };
-}
-
-/**
  * POST /api/rules/simulate
  *
  * Simulate a rule against historical emails without saving or executing.
  * Body: { mailboxId, conditions, dateRange? }
  */
 rulesRouter.post('/simulate', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, conditions, dateRange } = req.body as {
     mailboxId?: string;
     conditions?: Record<string, unknown>;
@@ -407,7 +303,7 @@ rulesRouter.post('/simulate', async (req: Request, res: Response) => {
     throw new NotFoundError('Mailbox not found');
   }
 
-  const result = await runSimulation(userId, mailboxId, conditions as Parameters<typeof runSimulation>[2], dateRange);
+  const result = await simulateRule(userId, mailboxId, conditions as Parameters<typeof simulateRule>[2], dateRange);
   res.json(result);
 });
 
@@ -421,7 +317,7 @@ rulesRouter.post('/simulate', async (req: Request, res: Response) => {
  * 'reorder' being captured as an :id parameter.
  */
 rulesRouter.put('/reorder', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, ruleIds } = req.body as {
     mailboxId?: string;
     ruleIds?: string[];
@@ -464,7 +360,7 @@ rulesRouter.put('/reorder', async (req: Request, res: Response) => {
  * Update a rule (name, conditions, actions).
  */
 rulesRouter.put('/:id', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
@@ -523,7 +419,7 @@ rulesRouter.put('/:id', async (req: Request, res: Response) => {
  * Enable or disable a rule.
  */
 rulesRouter.patch('/:id/toggle', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
@@ -571,7 +467,7 @@ rulesRouter.patch('/:id/toggle', async (req: Request, res: Response) => {
  * Returns stats: { matched, applied, failed }.
  */
 rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
@@ -589,175 +485,30 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
   const accessToken = await getAccessTokenForMailbox(mailbox._id.toString());
   const email = mailbox.email;
 
-  // Build Graph API query from rule conditions.
-  // NOTE: $search (KQL) and $filter CANNOT be combined for messages in Graph API.
-  // Strategy: use $search with KQL "from:email" for sender matching (case-insensitive),
-  // and do all other filtering (isRead, domain, subject, body) client-side.
   const { conditions } = rule;
 
+  // senderEmail(s) — also needed below for the bulk isRead-by-sender update
   const senders = conditions.senderEmail
     ? Array.isArray(conditions.senderEmail)
       ? conditions.senderEmail
       : [conditions.senderEmail]
     : [];
 
-  // Use $filter=isRead eq false to fetch only unread messages server-side.
-  // $search and $filter cannot be combined for messages in Graph API, so we
-  // fetch all unread messages and do sender/domain/subject/body matching client-side.
-  const selectParts = ['id', 'from'];
-  if (conditions.subjectContains || conditions.bodyContains) selectParts.push('subject', 'bodyPreview');
-  const selectFields = [...new Set(selectParts)].join(',');
-  const filterStr = encodeURIComponent('isRead eq false');
-
-  // Fetch all unread messages from the mailbox (paginated via @odata.nextLink)
-  const allMessages: { id: string; from?: { emailAddress: { address?: string } }; subject?: string; bodyPreview?: string }[] = [];
-  const initialUrl = `/users/${email}/messages?$select=${selectFields}&$filter=${filterStr}&$top=100`;
-  logger.info('RunRule: fetching unread messages', { initialUrl, senders, email });
-  let nextUrl: string | null = initialUrl;
-
-  while (nextUrl) {
-    const response = await graphFetch(nextUrl, accessToken);
-    const data = (await response.json()) as {
-      value: typeof allMessages;
-      '@odata.nextLink'?: string;
-    };
-    for (const msg of data.value) {
-      allMessages.push(msg);
-    }
-    nextUrl = data['@odata.nextLink'] ?? null;
-  }
-
-  logger.info('RunRule: fetch complete', { totalFetched: allMessages.length, sampleFrom: allMessages.slice(0, 3).map((m) => m.from?.emailAddress?.address) });
-
-  // Client-side filtering
-  let filteredMessages = allMessages;
-
-  // Exact sender email match
-  if (senders.length > 0) {
-    const senderSet = new Set(senders.map((s) => s.toLowerCase()));
-    filteredMessages = filteredMessages.filter((msg) => {
-      const addr = msg.from?.emailAddress?.address?.toLowerCase() ?? '';
-      return senderSet.has(addr);
-    });
-  }
-
-  // senderDomain: client-side endsWith
-  if (conditions.senderDomain) {
-    const domainLower = conditions.senderDomain.toLowerCase();
-    filteredMessages = filteredMessages.filter((msg) => {
-      const addr = msg.from?.emailAddress?.address?.toLowerCase() ?? '';
-      const domain = addr.split('@')[1] ?? '';
-      return domain === domainLower;
-    });
-  }
-
-  // subjectContains: client-side case-insensitive
-  if (conditions.subjectContains) {
-    const needle = conditions.subjectContains.toLowerCase();
-    filteredMessages = filteredMessages.filter(
-      (msg) => (msg.subject ?? '').toLowerCase().includes(needle),
-    );
-  }
-
-  // bodyContains: client-side case-insensitive (uses bodyPreview)
-  if (conditions.bodyContains) {
-    const needle = conditions.bodyContains.toLowerCase();
-    filteredMessages = filteredMessages.filter(
-      (msg) => (msg.bodyPreview ?? '').toLowerCase().includes(needle),
-    );
-  }
-
+  // Find matching messages (Graph fetch + client-side condition filter)
+  const filteredMessages = await findMatchingMessagesForRule(email, accessToken, conditions);
   const allMessageIds = filteredMessages.map((m) => m.id);
   const matched = allMessageIds.length;
 
-  // Apply rule actions to each message
-  let applied = 0;
-  let failed = 0;
-
-  for (const msgId of allMessageIds) {
-    try {
-      for (const action of rule.actions) {
-        switch (action.actionType) {
-          case 'delete':
-            await graphFetch(
-              `/users/${email}/messages/${msgId}/move`,
-              accessToken,
-              {
-                method: 'POST',
-                body: JSON.stringify({ destinationId: 'deleteditems' }),
-              },
-            );
-            break;
-          case 'move':
-            if (action.toFolder) {
-              await graphFetch(
-                `/users/${email}/messages/${msgId}/move`,
-                accessToken,
-                {
-                  method: 'POST',
-                  body: JSON.stringify({ destinationId: action.toFolder }),
-                },
-              );
-            }
-            break;
-          case 'markRead':
-            await graphFetch(
-              `/users/${email}/messages/${msgId}`,
-              accessToken,
-              {
-                method: 'PATCH',
-                body: JSON.stringify({ isRead: true }),
-              },
-            );
-            // Update our DB so inbox page reflects the change
-            await EmailEvent.updateMany(
-              { userId: new Types.ObjectId(userId), mailboxId: rule.mailboxId, messageId: msgId },
-              { $set: { isRead: true } },
-            );
-            break;
-          case 'archive':
-            await graphFetch(
-              `/users/${email}/messages/${msgId}/move`,
-              accessToken,
-              {
-                method: 'POST',
-                body: JSON.stringify({ destinationId: 'archive' }),
-              },
-            );
-            break;
-          case 'forward': {
-            const recipients = (action.forwardTo ?? [])
-              .map((r) => r.trim())
-              .filter(Boolean);
-            if (recipients.length > 0) {
-              await graphFetch(
-                `/users/${email}/messages/${msgId}/forward`,
-                accessToken,
-                {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    comment: 'Automatically forwarded by an MSEDB rule.',
-                    toRecipients: recipients.map((address) => ({
-                      emailAddress: { address },
-                    })),
-                  }),
-                },
-              );
-            }
-            break;
-          }
-        }
-      }
-      applied++;
-    } catch (err) {
-      failed++;
-      logger.warn('Failed to apply rule action to message', {
-        ruleId: rule._id?.toString(),
-        messageId: msgId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  // Apply rule actions to each matched message
+  const { applied, failed } = await applyRuleActionsToMessages({
+    email,
+    accessToken,
+    actions: rule.actions,
+    messageIds: allMessageIds,
+    userId,
+    mailboxId: rule.mailboxId,
+    ruleId: rule._id!.toString(),
+  });
 
   // Record 'deleted' EmailEvent records for messages that were deleted,
   // so the excludeDeleted filter removes them from inbox listings.
@@ -859,7 +610,7 @@ rulesRouter.post('/:id/run', async (req: Request, res: Response) => {
  * Body: { dateRange? } — optional override (default 30d)
  */
 rulesRouter.post('/:id/simulate', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {
@@ -871,7 +622,7 @@ rulesRouter.post('/:id/simulate', async (req: Request, res: Response) => {
 
   const { dateRange } = req.body as { dateRange?: '30d' | '60d' | '90d' };
 
-  const result = await runSimulation(
+  const result = await simulateRule(
     userId,
     rule.mailboxId.toString(),
     rule.conditions,
@@ -888,7 +639,7 @@ rulesRouter.post('/:id/simulate', async (req: Request, res: Response) => {
  * Body: { senderEmail: string }
  */
 rulesRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { senderEmail } = req.body as { senderEmail?: string };
 
   if (!senderEmail) throw new ValidationError('senderEmail is required');
@@ -960,7 +711,7 @@ rulesRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
  * Delete a rule.
  */
 rulesRouter.delete('/:id', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const rule = await Rule.findOne({ _id: req.params.id, userId });
   if (!rule) {

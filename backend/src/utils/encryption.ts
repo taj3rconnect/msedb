@@ -11,6 +11,20 @@ export interface EncryptedData {
 }
 
 /**
+ * Type guard distinguishing an EncryptedData object from other stored shapes
+ * (e.g. a legacy plaintext string). Used to detect pre-encryption data at rest.
+ */
+export function isEncryptedData(value: unknown): value is EncryptedData {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as EncryptedData).encrypted === 'string' &&
+    typeof (value as EncryptedData).iv === 'string' &&
+    typeof (value as EncryptedData).tag === 'string'
+  );
+}
+
+/**
  * Encrypt a plaintext string using AES-256-GCM.
  * @param text - The plaintext to encrypt
  * @param keyHex - The 256-bit encryption key as a hex string (64 hex chars)

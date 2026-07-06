@@ -1,13 +1,16 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
-import Anthropic from '@anthropic-ai/sdk';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { getFolderName } from '../services/folderCache.js';
 import { getRedisClient } from '../config/redis.js';
 import { graphFetch } from '../services/graphClient.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
+import { parsePagination } from '../utils/pagination.js';
+import { AppError, ValidationError } from '../middleware/errorHandler.js';
+import { generateOllamaCompletion } from '../services/ollamaClient.js';
+import { config } from '../config/index.js';
 
 const eventsRouter = Router();
 
@@ -21,25 +24,11 @@ eventsRouter.use(requireAuth);
  * Query params: mailboxId, eventType, senderDomain, page, limit, sortBy, sortOrder
  */
 eventsRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, eventType, senderDomain, search, excludeDeleted, inboxOnly, unreadOnly, dateFrom, dateTo, folder } = req.query;
 
   // Pagination
-  let page = 1;
-  if (req.query.page) {
-    const parsed = parseInt(req.query.page as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      page = parsed;
-    }
-  }
-
-  let limit = 50;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      limit = Math.min(parsed, 200);
-    }
-  }
+  const { page, limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
 
   // Sort
   const sortBy = (req.query.sortBy as string) || 'timestamp';
@@ -298,12 +287,12 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
  * Optional ?mailboxId filter.
  */
 eventsRouter.get('/sender-breakdown', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.query;
 
-  const matchFilter: Record<string, unknown> = { userId };
+  const matchFilter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
   if (mailboxId && typeof mailboxId === 'string') {
-    matchFilter.mailboxId = mailboxId;
+    matchFilter.mailboxId = new Types.ObjectId(mailboxId);
   }
 
   const breakdown = await EmailEvent.aggregate([
@@ -329,13 +318,13 @@ eventsRouter.get('/sender-breakdown', async (req: Request, res: Response) => {
  * Optional ?mailboxId and ?range ('24h' or '30d', default '24h') filters.
  */
 eventsRouter.get('/timeline', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.query;
   const range = (req.query.range as string) === '30d' ? '30d' : '24h';
 
-  const matchFilter: Record<string, unknown> = { userId };
+  const matchFilter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
   if (mailboxId && typeof mailboxId === 'string') {
-    matchFilter.mailboxId = mailboxId;
+    matchFilter.mailboxId = new Types.ObjectId(mailboxId);
   }
 
   // Calculate the start date based on range
@@ -370,7 +359,7 @@ eventsRouter.get('/timeline', async (req: Request, res: Response) => {
  * Returns total indexed event counts grouped by mailboxId.
  */
 eventsRouter.get('/mailbox-counts', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const counts = await EmailEvent.aggregate([
     { $match: { userId: new Types.ObjectId(userId), eventType: 'arrived' } },
@@ -392,14 +381,8 @@ eventsRouter.get('/mailbox-counts', async (req: Request, res: Response) => {
  * Body: { mailboxId?: string }
  */
 eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.body;
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
-    return;
-  }
 
   // Query today's arrived events
   const now = new Date();
@@ -483,7 +466,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
     return;
   }
 
-  // Build text list for Claude
+  // Build text list for the LLM
   const emailList = events.map((e, i) => {
     const sender = e.sender?.name
       ? `${e.sender.name} <${e.sender.email}>`
@@ -522,20 +505,16 @@ Here are today's emails:
 ${emailList}${truncatedNote}`;
 
   try {
-    const anthropic = new Anthropic({ apiKey });
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
+    const summary = await generateOllamaCompletion(prompt, {
+      model: config.ollamaWriteModel,
+      temperature: 0.3,
+      numPredict: 2048,
     });
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    const summary = textBlock?.text || '<p>Failed to generate summary.</p>';
-
-    res.json({ summary, stats });
+    res.json({ summary: summary.trim() || '<p>Failed to generate summary.</p>', stats });
   } catch (err: any) {
-    console.error('Anthropic API error:', err.message);
-    res.status(500).json({ error: `AI summary failed: ${err.message}` });
+    console.error('Ollama summary error:', err.message);
+    throw new AppError(`AI summary failed: ${err.message}`, 500);
   }
 });
 
@@ -546,7 +525,7 @@ ${emailList}${truncatedNote}`;
  * Query: ?mailboxId (optional)
  */
 eventsRouter.get('/summarize-today/csv', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.query;
 
   const now = new Date();
@@ -626,19 +605,17 @@ eventsRouter.get('/summarize-today/csv', async (req: Request, res: Response) => 
  * Body: { to: string, summary: string }
  */
 eventsRouter.post('/summarize-today/send', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { to, summary } = req.body;
 
   if (!to || !summary) {
-    res.status(400).json({ error: 'Missing "to" or "summary" in request body' });
-    return;
+    throw new ValidationError('Missing "to" or "summary" in request body');
   }
 
   // Find the first connected mailbox to send from
   const mailbox = await Mailbox.findOne({ userId, isConnected: true }).lean();
   if (!mailbox) {
-    res.status(400).json({ error: 'No connected mailbox to send from' });
-    return;
+    throw new ValidationError('No connected mailbox to send from');
   }
 
   try {
@@ -676,7 +653,7 @@ eventsRouter.post('/summarize-today/send', async (req: Request, res: Response) =
     res.json({ success: true });
   } catch (err: any) {
     console.error('Send summary email error:', err.message);
-    res.status(500).json({ error: `Failed to send email: ${err.message}` });
+    throw new AppError(`Failed to send email: ${err.message}`, 500);
   }
 });
 

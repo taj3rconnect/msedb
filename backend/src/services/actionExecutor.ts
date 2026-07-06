@@ -51,213 +51,221 @@ export async function executeActions(params: {
 
   const userPath = `/users/${encodeURIComponent(mailboxEmail)}`;
   const executedActions: string[] = [];
+  let thrownError: unknown;
 
-  for (const action of sortedActions) {
-    try {
-      switch (action.actionType) {
-        case 'delete': {
-          if (skipStaging) {
-            // Direct delete — skip staging for user-initiated quick actions
+  try {
+    for (const action of sortedActions) {
+      try {
+        switch (action.actionType) {
+          case 'delete': {
+            if (skipStaging) {
+              // Direct delete — skip staging for user-initiated quick actions
+              await graphFetch(
+                `${userPath}/messages/${messageId}/move`,
+                accessToken,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({ destinationId: 'deleteditems' }),
+                },
+              );
+              executedActions.push('delete (direct)');
+            } else {
+              // Route through staging folder for webhook-triggered automation
+              const stagingFolderId = await ensureStagingFolder(
+                mailboxEmail,
+                accessToken,
+              );
+              await graphFetch(
+                `${userPath}/messages/${messageId}/move`,
+                accessToken,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({ destinationId: stagingFolderId }),
+                },
+              );
+              await createStagedEmail({
+                userId,
+                mailboxId,
+                ruleId,
+                messageId,
+                originalFolder,
+                actions: [{ actionType: 'delete' }],
+              });
+              executedActions.push('delete (staged)');
+            }
+            break;
+          }
+
+          case 'move': {
+            if (!action.toFolder) {
+              logger.warn('Move action missing toFolder', {
+                ruleId: ruleId.toString(),
+                messageId,
+              });
+              break;
+            }
             await graphFetch(
               `${userPath}/messages/${messageId}/move`,
               accessToken,
               {
                 method: 'POST',
-                body: JSON.stringify({ destinationId: 'deleteditems' }),
+                body: JSON.stringify({ destinationId: action.toFolder }),
               },
             );
-            executedActions.push('delete (direct)');
-          } else {
-            // Route through staging folder for webhook-triggered automation
-            const stagingFolderId = await ensureStagingFolder(
-              mailboxEmail,
+            executedActions.push(`move to ${action.toFolder}`);
+            break;
+          }
+
+          case 'markRead': {
+            await graphFetch(
+              `${userPath}/messages/${messageId}`,
               accessToken,
+              {
+                method: 'PATCH',
+                body: JSON.stringify({ isRead: true }),
+              },
             );
+            // Update our DB so the inbox page reflects the change
+            await EmailEvent.updateMany(
+              { userId, mailboxId, messageId },
+              { $set: { isRead: true } },
+            );
+            executedActions.push('markRead');
+            break;
+          }
+
+          case 'categorize': {
+            if (!action.category) {
+              logger.warn('Categorize action missing category', {
+                ruleId: ruleId.toString(),
+                messageId,
+              });
+              break;
+            }
+            await graphFetch(
+              `${userPath}/messages/${messageId}`,
+              accessToken,
+              {
+                method: 'PATCH',
+                body: JSON.stringify({ categories: [action.category] }),
+              },
+            );
+            executedActions.push(`categorize as ${action.category}`);
+            break;
+          }
+
+          case 'archive': {
             await graphFetch(
               `${userPath}/messages/${messageId}/move`,
               accessToken,
               {
                 method: 'POST',
-                body: JSON.stringify({ destinationId: stagingFolderId }),
+                body: JSON.stringify({ destinationId: 'archive' }),
               },
             );
-            await createStagedEmail({
-              userId,
-              mailboxId,
-              ruleId,
-              messageId,
-              originalFolder,
-              actions: [{ actionType: 'delete' }],
-            });
-            executedActions.push('delete (staged)');
-          }
-          break;
-        }
-
-        case 'move': {
-          if (!action.toFolder) {
-            logger.warn('Move action missing toFolder', {
-              ruleId: ruleId.toString(),
-              messageId,
-            });
+            executedActions.push('archive');
             break;
           }
-          await graphFetch(
-            `${userPath}/messages/${messageId}/move`,
-            accessToken,
-            {
-              method: 'POST',
-              body: JSON.stringify({ destinationId: action.toFolder }),
-            },
-          );
-          executedActions.push(`move to ${action.toFolder}`);
-          break;
-        }
 
-        case 'markRead': {
-          await graphFetch(
-            `${userPath}/messages/${messageId}`,
-            accessToken,
-            {
-              method: 'PATCH',
-              body: JSON.stringify({ isRead: true }),
-            },
-          );
-          // Update our DB so the inbox page reflects the change
-          await EmailEvent.updateMany(
-            { userId, mailboxId, messageId },
-            { $set: { isRead: true } },
-          );
-          executedActions.push('markRead');
-          break;
-        }
-
-        case 'categorize': {
-          if (!action.category) {
-            logger.warn('Categorize action missing category', {
-              ruleId: ruleId.toString(),
-              messageId,
-            });
+          case 'flag': {
+            await graphFetch(
+              `${userPath}/messages/${messageId}`,
+              accessToken,
+              {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  flag: { flagStatus: 'flagged' },
+                }),
+              },
+            );
+            executedActions.push('flag');
             break;
           }
-          await graphFetch(
-            `${userPath}/messages/${messageId}`,
-            accessToken,
-            {
-              method: 'PATCH',
-              body: JSON.stringify({ categories: [action.category] }),
-            },
-          );
-          executedActions.push(`categorize as ${action.category}`);
-          break;
-        }
 
-        case 'archive': {
-          await graphFetch(
-            `${userPath}/messages/${messageId}/move`,
-            accessToken,
-            {
-              method: 'POST',
-              body: JSON.stringify({ destinationId: 'archive' }),
-            },
-          );
-          executedActions.push('archive');
-          break;
-        }
-
-        case 'flag': {
-          await graphFetch(
-            `${userPath}/messages/${messageId}`,
-            accessToken,
-            {
-              method: 'PATCH',
-              body: JSON.stringify({
-                flag: { flagStatus: 'flagged' },
-              }),
-            },
-          );
-          executedActions.push('flag');
-          break;
-        }
-
-        case 'forward': {
-          const recipients = (action.forwardTo ?? [])
-            .map((r) => r.trim())
-            .filter(Boolean);
-          if (recipients.length === 0) {
-            logger.warn('Forward action missing recipients', {
-              ruleId: ruleId.toString(),
-              messageId,
-            });
+          case 'forward': {
+            const recipients = (action.forwardTo ?? [])
+              .map((r) => r.trim())
+              .filter(Boolean);
+            if (recipients.length === 0) {
+              logger.warn('Forward action missing recipients', {
+                ruleId: ruleId.toString(),
+                messageId,
+              });
+              break;
+            }
+            await graphFetch(
+              `${userPath}/messages/${messageId}/forward`,
+              accessToken,
+              {
+                method: 'POST',
+                body: JSON.stringify({
+                  comment: 'Automatically forwarded by an MSEDB rule.',
+                  toRecipients: recipients.map((address) => ({
+                    emailAddress: { address },
+                  })),
+                }),
+              },
+            );
+            executedActions.push(`forward to ${recipients.join(', ')}`);
             break;
           }
-          await graphFetch(
-            `${userPath}/messages/${messageId}/forward`,
-            accessToken,
-            {
-              method: 'POST',
-              body: JSON.stringify({
-                comment: 'Automatically forwarded by an MSEDB rule.',
-                toRecipients: recipients.map((address) => ({
-                  emailAddress: { address },
-                })),
-              }),
-            },
-          );
-          executedActions.push(`forward to ${recipients.join(', ')}`);
-          break;
-        }
 
-        default:
-          logger.warn('Unknown action type', {
+          default:
+            logger.warn('Unknown action type', {
+              actionType: action.actionType,
+              ruleId: ruleId.toString(),
+            });
+        }
+      } catch (error) {
+        // Handle 404 gracefully -- message may have been moved/deleted by user
+        if (error instanceof GraphApiError && error.status === 404) {
+          logger.warn('Message not found during action execution (user may have moved/deleted)', {
+            messageId,
             actionType: action.actionType,
             ruleId: ruleId.toString(),
           });
+          break; // Stop processing further actions for this message
+        }
+        throw error; // Re-throw non-404 errors
       }
-    } catch (error) {
-      // Handle 404 gracefully -- message may have been moved/deleted by user
-      if (error instanceof GraphApiError && error.status === 404) {
-        logger.warn('Message not found during action execution (user may have moved/deleted)', {
-          messageId,
-          actionType: action.actionType,
-          ruleId: ruleId.toString(),
-        });
-        break; // Stop processing further actions for this message
-      }
-      throw error; // Re-throw non-404 errors
     }
+  } catch (error) {
+    // Record the error but still persist stats/audit for actions already executed
+    thrownError = error;
+  } finally {
+    // Update rule execution stats
+    await Rule.findByIdAndUpdate(ruleId, {
+      $inc: {
+        'stats.totalExecutions': 1,
+        'stats.emailsProcessed': 1,
+      },
+      $set: {
+        'stats.lastExecutedAt': new Date(),
+      },
+    });
+
+    // Audit trail
+    await AuditLog.create({
+      userId,
+      mailboxId,
+      action: 'rule_executed',
+      targetType: 'email',
+      targetId: messageId,
+      details: {
+        ruleId: ruleId.toString(),
+        actions: executedActions,
+        messageId,
+        originalFolder,
+      },
+      undoable: true,
+    });
+
+    logger.info('Rule actions executed', {
+      ruleId: ruleId.toString(),
+      messageId,
+      actions: executedActions,
+    });
   }
 
-  // Update rule execution stats
-  await Rule.findByIdAndUpdate(ruleId, {
-    $inc: {
-      'stats.totalExecutions': 1,
-      'stats.emailsProcessed': 1,
-    },
-    $set: {
-      'stats.lastExecutedAt': new Date(),
-    },
-  });
-
-  // Audit trail
-  await AuditLog.create({
-    userId,
-    mailboxId,
-    action: 'rule_executed',
-    targetType: 'email',
-    targetId: messageId,
-    details: {
-      ruleId: ruleId.toString(),
-      actions: executedActions,
-      messageId,
-      originalFolder,
-    },
-    undoable: true,
-  });
-
-  logger.info('Rule actions executed', {
-    ruleId: ruleId.toString(),
-    messageId,
-    actions: executedActions,
-  });
+  if (thrownError) throw thrownError;
 }

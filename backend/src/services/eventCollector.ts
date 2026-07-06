@@ -300,7 +300,10 @@ async function handleCreated(
     } catch { /* non-blocking */ }
   }
 
-  // Evaluate automation rules for the new message
+  // Evaluate automation rules for the new message -- skip on duplicate delivery
+  // (webhook redelivery) to avoid executing actions twice
+  if (!saved) return;
+
   try {
     const result = await evaluateRulesForMessage(
       userId as Types.ObjectId,
@@ -425,10 +428,7 @@ async function handleUpdated(
 
   // Detect flag change: flag status changed to 'flagged'
   if (graphMessage.flag?.flagStatus === 'flagged') {
-    const priorFlagStatus = priorEvent
-      ? undefined // We do not store flag status in EmailEvent, so check if prior event was 'flagged' type
-      : undefined;
-
+    // We do not store flag status in EmailEvent, so check if prior event was 'flagged' type
     // Only create flagged event if there is no prior 'flagged' event for this message
     const hasPriorFlagEvent = await EmailEvent.findOne({
       messageId,

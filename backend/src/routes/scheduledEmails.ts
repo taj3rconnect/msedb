@@ -1,8 +1,9 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { ScheduledEmail } from '../models/ScheduledEmail.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { NotFoundError, ValidationError } from '../middleware/errorHandler.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const scheduledEmailsRouter = Router();
 
@@ -16,19 +17,9 @@ scheduledEmailsRouter.use(requireAuth);
  * Query params: status (optional), page, limit
  */
 scheduledEmailsRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
-  let page = 1;
-  if (req.query.page) {
-    const parsed = parseInt(req.query.page as string, 10);
-    if (!isNaN(parsed) && parsed > 0) page = parsed;
-  }
-
-  let limit = 20;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) limit = Math.min(parsed, 100);
-  }
+  const { page, limit } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
 
   const filter: Record<string, unknown> = { userId };
   const { status } = req.query;
@@ -62,7 +53,7 @@ scheduledEmailsRouter.get('/', async (req: Request, res: Response) => {
  * Get count of pending scheduled emails (for sidebar badge).
  */
 scheduledEmailsRouter.get('/count', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const count = await ScheduledEmail.countDocuments({ userId, status: 'pending' });
   res.json({ count });
 });
@@ -74,7 +65,7 @@ scheduledEmailsRouter.get('/count', async (req: Request, res: Response) => {
  * Body: { mailboxId, to, cc?, bcc?, subject, body, scheduledAt }
  */
 scheduledEmailsRouter.post('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, to, cc, bcc, subject, body, scheduledAt } = req.body;
 
   if (!mailboxId || !to || !Array.isArray(to) || to.length === 0) {
@@ -127,7 +118,7 @@ scheduledEmailsRouter.post('/', async (req: Request, res: Response) => {
  * Cancel a scheduled email (only if status is 'pending').
  */
 scheduledEmailsRouter.delete('/:id', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { id } = req.params;
 
   const scheduledEmail = await ScheduledEmail.findOne({ _id: id, userId });

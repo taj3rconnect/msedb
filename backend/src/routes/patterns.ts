@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { Pattern } from '../models/Pattern.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { Rule } from '../models/Rule.js';
@@ -11,6 +11,7 @@ import { convertPatternToRule } from '../services/ruleConverter.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { graphFetch } from '../services/graphClient.js';
 import logger from '../config/logger.js';
+import { parsePagination } from '../utils/pagination.js';
 import {
   NotFoundError,
   ConflictError,
@@ -32,25 +33,11 @@ const VALID_ACTION_TYPES = ['delete', 'move', 'archive', 'markRead', 'flag', 'ca
  * Query params: mailboxId (optional), status (optional, comma-separated), page, limit
  */
 patternsRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId, status, hasRule, search } = req.query;
 
   // Pagination
-  let page = 1;
-  if (req.query.page) {
-    const parsed = parseInt(req.query.page as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      page = parsed;
-    }
-  }
-
-  let limit = 20;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      limit = Math.min(parsed, 100);
-    }
-  }
+  const { page, limit } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 100 });
 
   // Build filter using $and to safely combine multiple $or clauses
   const filterClauses: Record<string, unknown>[] = [{ userId }];
@@ -195,7 +182,7 @@ patternsRouter.get('/', async (req: Request, res: Response) => {
  * 'analyze' being captured as an :id parameter.
  */
 patternsRouter.post('/analyze', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.body as { mailboxId?: string };
 
   const job = await queues['pattern-analysis'].add('on-demand-analysis', {
@@ -216,7 +203,7 @@ patternsRouter.post('/analyze', async (req: Request, res: Response) => {
  * Returns message list (id, subject, from, receivedDateTime, bodyPreview).
  */
 patternsRouter.get('/:id/messages', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const pattern = await Pattern.findOne({ _id: req.params.id, userId });
   if (!pattern) {
@@ -280,7 +267,7 @@ patternsRouter.get('/:id/messages', async (req: Request, res: Response) => {
  * Fetch a single message with full body for preview.
  */
 patternsRouter.get('/:id/messages/:messageId', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const pattern = await Pattern.findOne({ _id: req.params.id, userId });
   if (!pattern) {
@@ -319,7 +306,7 @@ patternsRouter.get('/:id/messages/:messageId', async (req: Request, res: Respons
  * Approve a detected/suggested pattern.
  */
 patternsRouter.post('/:id/approve', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const pattern = await Pattern.findOne({ _id: req.params.id, userId });
   if (!pattern) {
@@ -368,7 +355,7 @@ patternsRouter.post('/:id/approve', async (req: Request, res: Response) => {
  * Reject a detected/suggested pattern with 30-day cooldown.
  */
 patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const pattern = await Pattern.findOne({ _id: req.params.id, userId });
   if (!pattern) {
@@ -431,7 +418,7 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
  * Customize a pattern's suggested action and approve it.
  */
 patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
 
   const pattern = await Pattern.findOne({ _id: req.params.id, userId });
   if (!pattern) {

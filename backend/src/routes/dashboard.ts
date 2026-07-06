@@ -1,11 +1,13 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth } from '../auth/middleware.js';
+import { Types } from 'mongoose';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { Pattern } from '../models/Pattern.js';
 import { Rule } from '../models/Rule.js';
 import { User } from '../models/User.js';
 import { getRedisClient } from '../config/redis.js';
+import { parsePagination } from '../utils/pagination.js';
 
 const dashboardRouter = Router();
 
@@ -19,7 +21,7 @@ dashboardRouter.use(requireAuth);
  * Optional ?mailboxId query param for per-mailbox filtering.
  */
 dashboardRouter.get('/stats', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.query;
 
   const filter: Record<string, unknown> = { userId };
@@ -32,7 +34,7 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
 
   // Get per-mailbox breakdown
   const perMailboxAgg = await EmailEvent.aggregate([
-    { $match: { userId } },
+    { $match: { userId: new Types.ObjectId(userId) } },
     { $group: { _id: '$mailboxId', count: { $sum: 1 } } },
   ]);
 
@@ -63,9 +65,9 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
   const patternsPending = await Pattern.countDocuments(patternFilter);
 
   // Aggregate rules fired (total emails processed by rules)
-  const ruleFilter: Record<string, unknown> = { userId };
+  const ruleFilter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
   if (mailboxId && typeof mailboxId === 'string') {
-    ruleFilter.mailboxId = mailboxId;
+    ruleFilter.mailboxId = new Types.ObjectId(mailboxId);
   }
   const ruleStatsAgg = await Rule.aggregate([
     { $match: ruleFilter },
@@ -114,16 +116,10 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
  * Optional ?mailboxId and ?limit (default 50, max 200) query params.
  */
 dashboardRouter.get('/activity', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const { mailboxId } = req.query;
 
-  let limit = 50;
-  if (req.query.limit) {
-    const parsed = parseInt(req.query.limit as string, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      limit = Math.min(parsed, 200);
-    }
-  }
+  const { limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
 
   const filter: Record<string, unknown> = { userId };
   if (mailboxId && typeof mailboxId === 'string') {

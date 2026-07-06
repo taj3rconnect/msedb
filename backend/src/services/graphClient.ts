@@ -23,7 +23,7 @@ export class GraphApiError extends Error {
  * Semaphore limiting the number of concurrent outbound Graph API calls.
  *
  * Graph enforces a MailboxConcurrency limit (~4 parallel connections per
- * mailbox per app). We cap at 3 so background workers don't starve
+ * mailbox per app). We cap at 2 so background workers don't starve
  * user-triggered interactive requests.
  */
 class Semaphore {
@@ -59,7 +59,7 @@ const graphConcurrency = new Semaphore(2);
  *
  * - Injects Bearer token via Authorization header
  * - Supports absolute URLs (e.g., nextLink/deltaLink) and relative paths (prepends GRAPH_BASE)
- * - Enforces a process-wide concurrency limit of 3 to avoid MailboxConcurrency 429s
+ * - Enforces a process-wide concurrency limit of 2 to avoid MailboxConcurrency 429s
  * - On 429 (rate limit): reads Retry-After header, waits, then retries once
  * - Throws GraphApiError on non-ok responses
  *
@@ -122,4 +122,46 @@ export async function graphFetch(
   }
 
   return response;
+}
+
+interface GraphPagedResponse<T> {
+  value: T[];
+  '@odata.nextLink'?: string;
+}
+
+/**
+ * Fetch every page of a Graph API `@odata.nextLink`-paginated list endpoint,
+ * accumulating results into a single array.
+ *
+ * @param initialUrl - First page URL (relative path or absolute; same rules as graphFetch)
+ * @param accessToken - OAuth2 Bearer token
+ * @param options - Additional fetch options passed through to graphFetch on every page
+ * @param mapFn - Optional per-item transform/filter; return null/undefined to drop an item.
+ *                Defaults to passing the raw item through unchanged.
+ * @returns All accumulated (and optionally mapped) items across every page
+ */
+export async function graphFetchAllPages<T, R = T>(
+  initialUrl: string,
+  accessToken: string,
+  options?: RequestInit,
+  mapFn?: (item: T) => R | null | undefined,
+): Promise<R[]> {
+  const results: R[] = [];
+  let url: string | undefined = initialUrl;
+
+  while (url) {
+    const response = await graphFetch(url, accessToken, options);
+    const data = (await response.json()) as GraphPagedResponse<T>;
+
+    for (const item of data.value ?? []) {
+      const mapped = mapFn ? mapFn(item) : ((item as unknown) as R);
+      if (mapped !== null && mapped !== undefined) {
+        results.push(mapped);
+      }
+    }
+
+    url = data['@odata.nextLink'];
+  }
+
+  return results;
 }

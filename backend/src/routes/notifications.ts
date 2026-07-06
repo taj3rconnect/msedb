@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAuth, getUserId } from '../auth/middleware.js';
 import { Notification } from '../models/Notification.js';
 import { NotFoundError } from '../middleware/errorHandler.js';
 
@@ -15,7 +15,7 @@ notificationsRouter.use(requireAuth);
  * Returns notifications, total count, and unread count.
  */
 notificationsRouter.get('/', async (req: Request, res: Response) => {
-  const userId = req.user!.userId;
+  const userId = getUserId(req);
   const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
   const offset = parseInt(req.query.offset as string) || 0;
 
@@ -40,7 +40,7 @@ notificationsRouter.get('/', async (req: Request, res: Response) => {
  */
 notificationsRouter.get('/unread-count', async (req: Request, res: Response) => {
   const count = await Notification.countDocuments({
-    userId: req.user!.userId,
+    userId: getUserId(req),
     isRead: false,
   });
   res.json({ count });
@@ -54,7 +54,7 @@ notificationsRouter.get('/unread-count', async (req: Request, res: Response) => 
  */
 notificationsRouter.patch('/read-all', async (req: Request, res: Response) => {
   await Notification.updateMany(
-    { userId: req.user!.userId, isRead: false },
+    { userId: getUserId(req), isRead: false },
     { isRead: true, readAt: new Date() },
   );
   res.json({ success: true });
@@ -67,7 +67,7 @@ notificationsRouter.patch('/read-all', async (req: Request, res: Response) => {
  */
 notificationsRouter.patch('/:id/read', async (req: Request, res: Response) => {
   const notification = await Notification.findOneAndUpdate(
-    { _id: req.params.id, userId: req.user!.userId },
+    { _id: req.params.id, userId: getUserId(req) },
     { isRead: true, readAt: new Date() },
     { new: true },
   );

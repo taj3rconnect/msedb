@@ -7,7 +7,7 @@ const schedulerJobOpts = {
 };
 
 /**
- * Initialize all 8 job schedulers using BullMQ's upsertJobScheduler API.
+ * Initialize all job schedulers using BullMQ's upsertJobScheduler API.
  * This replaces the deprecated `repeat` option and is idempotent (safe to call on every startup).
  */
 export async function initializeSchedulers(): Promise<void> {
@@ -119,5 +119,19 @@ export async function initializeSchedulers(): Promise<void> {
   );
   logger.info('Scheduler registered: scheduled-email-cleanup (daily at 3 AM UTC)');
 
-  logger.info('All 9 job schedulers initialized');
+  // 10. Embedding reconcile -- hourly (interval). Backfills EmailEvents whose
+  // embed-email job failed permanently during a Qdrant/Ollama outage longer
+  // than that job's retry budget (see jobs/processors/embeddingReconcile.ts).
+  await queues['embedding-reconcile'].upsertJobScheduler(
+    'embedding-reconcile-schedule',
+    { every: 60 * 60 * 1000 },
+    {
+      name: 'reconcile-embeddings',
+      data: {},
+      opts: schedulerJobOpts,
+    }
+  );
+  logger.info('Scheduler registered: embedding-reconcile (hourly)');
+
+  logger.info('All 10 job schedulers initialized');
 }
