@@ -174,6 +174,13 @@ export async function embedEmail(params: EmbedEmailParams): Promise<boolean> {
     EMBED_TTL_SECONDS,
   );
 
+  // Mark the source event as embedded (Mongo-side marker for reconciliation —
+  // Redis is a cache, not queryable for "which events are missing an embedding").
+  await EmailEvent.updateOne(
+    { userId, mailboxId, messageId, eventType: 'arrived' },
+    { $set: { embeddedAt: new Date() } },
+  );
+
   return true;
 }
 

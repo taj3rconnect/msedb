@@ -13,6 +13,7 @@ import { processContactsSync } from './processors/contactsSync.js';
 import { processDailyReport } from './processors/dailyReport.js';
 import { processScheduledEmailCleanup } from './processors/scheduledEmailCleanup.js';
 import { processBodyPrefetch } from './processors/bodyPrefetch.js';
+import { processEmbeddingReconcile } from './processors/embeddingReconcile.js';
 
 // Connection configs (plain objects avoid ioredis version conflicts with BullMQ)
 const queueConnectionConfig = getQueueConnectionConfig();
@@ -42,6 +43,7 @@ const QUEUE_NAMES = [
   'daily-report',
   'scheduled-email-cleanup',
   'body-prefetch',
+  'embedding-reconcile',
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
@@ -96,6 +98,10 @@ export const queues: Record<QueueName, Queue> = {
     connection: queueConnectionConfig,
     defaultJobOptions,
   }),
+  'embedding-reconcile': new Queue('embedding-reconcile', {
+    connection: queueConnectionConfig,
+    defaultJobOptions,
+  }),
 };
 
 // Map queue names to their processor functions
@@ -112,6 +118,7 @@ const processorMap: Record<QueueName, (job: Job) => Promise<void>> = {
   'daily-report': processDailyReport,
   'scheduled-email-cleanup': processScheduledEmailCleanup,
   'body-prefetch': processBodyPrefetch,
+  'embedding-reconcile': processEmbeddingReconcile,
 };
 
 // Per-queue worker concurrency. Anything not listed here defaults to

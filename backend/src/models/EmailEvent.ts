@@ -34,6 +34,7 @@ export interface IEmailEvent extends Document {
   isRead: boolean;
   isDeleted: boolean;
   metadata: IEmailEventMetadata;
+  embeddedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -73,6 +74,10 @@ const emailEventSchema = new Schema<IEmailEvent>(
       isAutomated: { type: Boolean },
       automatedByRule: { type: Schema.Types.ObjectId, ref: 'Rule' },
     },
+    // Set by embeddingService.embedEmail() on successful Qdrant upsert.
+    // Absence + timestamp >= reconcile cutoff = a real gap the reconciler
+    // should re-enqueue (see jobs/processors/embeddingReconcile.ts).
+    embeddedAt: { type: Date },
   },
   { timestamps: true }
 );
@@ -87,6 +92,10 @@ emailEventSchema.index(
 emailEventSchema.index({ messageId: 1, timestamp: -1 });
 emailEventSchema.index({ userId: 1, timestamp: -1 });
 emailEventSchema.index({ receivedAt: 1 });
+// Supports the hourly embedding-reconcile scan (eventType + isDeleted
+// equality, timestamp range); embeddedAt existence is filtered in-memory
+// over the already-narrowed result set.
+emailEventSchema.index({ eventType: 1, isDeleted: 1, timestamp: 1 });
 emailEventSchema.index({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }); // 90-day TTL
 
 export const EmailEvent = model<IEmailEvent>('EmailEvent', emailEventSchema);
