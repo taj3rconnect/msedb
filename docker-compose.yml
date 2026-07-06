@@ -17,6 +17,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - msedb-network
+      - ax1-network # AX1 Qdrant (loopback-bound on host; reachable only container-to-container)
     volumes:
       - msedb-logs:/app/logs
     restart: unless-stopped
@@ -114,6 +115,9 @@ networks:
   msedb-network:
     driver: bridge
     name: msedb-network
+  ax1-network:
+    external: true
+    name: ax1_default
 
 volumes:
   msedb-mongo-data:
