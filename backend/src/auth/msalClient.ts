@@ -7,6 +7,8 @@ import {
 import { config } from '../config/index.js';
 import logger from '../config/logger.js';
 import { Mailbox } from '../models/Mailbox.js';
+import { isEncryptedData } from '../utils/encryption.js';
+import { encryptTokenData, decryptTokenData } from './tokenManager.js';
 
 /**
  * Microsoft Graph API scopes required by MSEDB.
@@ -53,15 +55,38 @@ export class MongoDBCachePlugin implements ICachePlugin {
 
   async beforeCacheAccess(cacheContext: TokenCacheContext): Promise<void> {
     const mailbox = await Mailbox.findById(this.mailboxId).select('msalCache');
-    if (mailbox?.msalCache) {
-      cacheContext.tokenCache.deserialize(mailbox.msalCache);
+    const cache = mailbox?.msalCache;
+    if (!cache) {
+      return;
+    }
+
+    // Legacy plaintext cache (pre-encryption rollout). Deserialize as-is;
+    // it will be re-encrypted automatically on the next afterCacheAccess write.
+    if (typeof cache === 'string') {
+      cacheContext.tokenCache.deserialize(cache);
+      return;
+    }
+
+    if (isEncryptedData(cache)) {
+      try {
+        const plaintext = decryptTokenData(cache);
+        cacheContext.tokenCache.deserialize(plaintext);
+      } catch (error) {
+        // Never crash on a bad/undecryptable cache — force re-auth for this
+        // mailbox only by leaving the token cache empty.
+        logger.error('Failed to decrypt MSAL token cache; mailbox requires re-authentication', {
+          mailboxId: this.mailboxId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
   async afterCacheAccess(cacheContext: TokenCacheContext): Promise<void> {
     if (cacheContext.cacheHasChanged) {
+      const serialized = cacheContext.tokenCache.serialize();
       await Mailbox.findByIdAndUpdate(this.mailboxId, {
-        msalCache: cacheContext.tokenCache.serialize(),
+        msalCache: encryptTokenData(serialized),
       });
     }
   }

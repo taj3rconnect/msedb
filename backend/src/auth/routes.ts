@@ -5,6 +5,7 @@ import logger from '../config/logger.js';
 import { User } from '../models/User.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { createLoginMsalClient, GRAPH_SCOPES } from './msalClient.js';
+import { encryptTokenData } from './tokenManager.js';
 import { requireAuth, getUserId } from './middleware.js';
 import { requireSsoOrCookieAuth } from './ssoMiddleware.js';
 
@@ -142,7 +143,7 @@ authRouter.get('/auth/callback', async (req: Request, res: Response) => {
       // Persist MSAL token cache to the mailbox
       const serializedCache = loginMsalClient.getTokenCache().serialize();
       await Mailbox.findByIdAndUpdate(mailbox._id, {
-        msalCache: serializedCache,
+        msalCache: encryptTokenData(serializedCache),
         'encryptedTokens.expiresAt': tokenResponse.expiresOn,
       });
 
@@ -236,7 +237,7 @@ authRouter.get('/auth/callback', async (req: Request, res: Response) => {
       // Persist MSAL token cache to the mailbox
       const connectCache = loginMsalClient.getTokenCache().serialize();
       await Mailbox.findByIdAndUpdate(mailboxId, {
-        msalCache: connectCache,
+        msalCache: encryptTokenData(connectCache),
         'encryptedTokens.expiresAt': tokenResponse.expiresOn,
       });
 

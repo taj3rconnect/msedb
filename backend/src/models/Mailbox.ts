@@ -1,5 +1,6 @@
 import { Schema, model, type Document, type Types } from 'mongoose';
 import type { IEncryptedToken } from './User.js';
+import type { EncryptedData } from '../utils/encryption.js';
 
 export interface ISignature {
   id: string;
@@ -27,7 +28,9 @@ export interface IMailbox extends Document {
     refreshToken?: IEncryptedToken;
     expiresAt?: Date;
   };
-  msalCache?: string;
+  // string = legacy plaintext (pre-encryption, read-only until next write re-encrypts it)
+  // EncryptedData = AES-256-GCM encrypted MSAL cache blob (current format)
+  msalCache?: string | EncryptedData;
   lastSyncAt?: Date;
   deltaLinks: Map<string, string>;
   settings: IMailboxSettings;
@@ -57,7 +60,7 @@ const mailboxSchema = new Schema<IMailbox>(
       refreshToken: { type: encryptedTokenSchema },
       expiresAt: { type: Date },
     },
-    msalCache: { type: String },
+    msalCache: { type: Schema.Types.Mixed },
     lastSyncAt: { type: Date },
     deltaLinks: { type: Map, of: String, default: new Map() },
     settings: {
