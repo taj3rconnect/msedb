@@ -301,9 +301,9 @@ eventsRouter.get('/sender-breakdown', async (req: Request, res: Response) => {
   const userId = req.user!.userId;
   const { mailboxId } = req.query;
 
-  const matchFilter: Record<string, unknown> = { userId };
+  const matchFilter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
   if (mailboxId && typeof mailboxId === 'string') {
-    matchFilter.mailboxId = mailboxId;
+    matchFilter.mailboxId = new Types.ObjectId(mailboxId);
   }
 
   const breakdown = await EmailEvent.aggregate([
@@ -333,9 +333,9 @@ eventsRouter.get('/timeline', async (req: Request, res: Response) => {
   const { mailboxId } = req.query;
   const range = (req.query.range as string) === '30d' ? '30d' : '24h';
 
-  const matchFilter: Record<string, unknown> = { userId };
+  const matchFilter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
   if (mailboxId && typeof mailboxId === 'string') {
-    matchFilter.mailboxId = mailboxId;
+    matchFilter.mailboxId = new Types.ObjectId(mailboxId);
   }
 
   // Calculate the start date based on range

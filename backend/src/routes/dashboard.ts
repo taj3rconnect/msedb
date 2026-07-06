@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { Types } from 'mongoose';
 import { requireAuth } from '../auth/middleware.js';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
@@ -32,7 +33,7 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
 
   // Get per-mailbox breakdown
   const perMailboxAgg = await EmailEvent.aggregate([
-    { $match: { userId } },
+    { $match: { userId: new Types.ObjectId(userId) } },
     { $group: { _id: '$mailboxId', count: { $sum: 1 } } },
   ]);
 
@@ -63,9 +64,9 @@ dashboardRouter.get('/stats', async (req: Request, res: Response) => {
   const patternsPending = await Pattern.countDocuments(patternFilter);
 
   // Aggregate rules fired (total emails processed by rules)
-  const ruleFilter: Record<string, unknown> = { userId };
+  const ruleFilter: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
   if (mailboxId && typeof mailboxId === 'string') {
-    ruleFilter.mailboxId = mailboxId;
+    ruleFilter.mailboxId = new Types.ObjectId(mailboxId);
   }
   const ruleStatsAgg = await Rule.aggregate([
     { $match: ruleFilter },

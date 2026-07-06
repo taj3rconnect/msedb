@@ -9,6 +9,7 @@ import logger from '../config/logger.js';
 // ---------------------------------------------------------------------------
 
 const MAX_EVIDENCE_ITEMS = 10;
+const MIN_OBSERVATION_DAYS = 14;
 
 export interface PatternEngineSettings {
   thresholdDelete: number;
@@ -141,7 +142,7 @@ export function shouldSuggestPattern(
 ): boolean {
   // Check observation period
   const daysSinceFirstSeen = (Date.now() - firstSeen.getTime()) / (1000 * 60 * 60 * 24);
-  if (daysSinceFirstSeen < 1) {
+  if (daysSinceFirstSeen < MIN_OBSERVATION_DAYS) {
     return false;
   }
 

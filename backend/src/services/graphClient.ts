@@ -23,7 +23,7 @@ export class GraphApiError extends Error {
  * Semaphore limiting the number of concurrent outbound Graph API calls.
  *
  * Graph enforces a MailboxConcurrency limit (~4 parallel connections per
- * mailbox per app). We cap at 3 so background workers don't starve
+ * mailbox per app). We cap at 2 so background workers don't starve
  * user-triggered interactive requests.
  */
 class Semaphore {
@@ -59,7 +59,7 @@ const graphConcurrency = new Semaphore(2);
  *
  * - Injects Bearer token via Authorization header
  * - Supports absolute URLs (e.g., nextLink/deltaLink) and relative paths (prepends GRAPH_BASE)
- * - Enforces a process-wide concurrency limit of 3 to avoid MailboxConcurrency 429s
+ * - Enforces a process-wide concurrency limit of 2 to avoid MailboxConcurrency 429s
  * - On 429 (rate limit): reads Retry-After header, waits, then retries once
  * - Throws GraphApiError on non-ok responses
  *
