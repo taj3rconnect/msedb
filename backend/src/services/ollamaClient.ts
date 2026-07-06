@@ -1,3 +1,4 @@
+import type { Response } from 'express';
 import { config } from '../config/index.js';
 import logger from '../config/logger.js';
 
@@ -140,6 +141,63 @@ export async function checkOllamaHealth(): Promise<{ embed: boolean; instruct: b
   }
 
   return result;
+}
+
+/**
+ * Stream tokens from Ollama's generate API as Server-Sent Events onto `res`.
+ * Caller is responsible for setting SSE headers (Content-Type, Cache-Control,
+ * Connection) and calling `res.flushHeaders()` before invoking this.
+ * Ends the response when the stream completes or errors.
+ */
+export async function streamOllamaTokens(
+  res: Response,
+  prompt: string,
+  opts: { model: string; temperature: number; numPredict: number; errorLogMessage: string },
+): Promise<void> {
+  try {
+    const ollamaRes = await fetch(`${config.ollamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: opts.model,
+        prompt,
+        stream: true,
+        think: false,
+        options: { temperature: opts.temperature, num_predict: opts.numPredict },
+      }),
+    });
+
+    if (!ollamaRes.ok || !ollamaRes.body) {
+      res.write(`data: ${JSON.stringify({ error: 'LLM unavailable' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    const reader = ollamaRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const obj = JSON.parse(line) as { response?: string; done?: boolean };
+          if (obj.response) res.write(`data: ${JSON.stringify({ token: obj.response })}\n\n`);
+          if (obj.done) res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        } catch { /* skip malformed */ }
+      }
+    }
+  } catch (err) {
+    logger.error(opts.errorLogMessage, { error: err });
+    res.write(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
+  }
+
+  res.end();
 }
 
 // --- Helpers ---

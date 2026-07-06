@@ -16,7 +16,7 @@ import healthRouter from './routes/health.js';
 import webhooksRouter from './routes/webhooks.js';
 import authRouter from './auth/routes.js';
 import adminRouter from './routes/admin.js';
-import mailboxRouter from './routes/mailbox.js';
+import mailboxRouter from './routes/mailbox/index.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { userRouter } from './routes/user.js';
 import { eventsRouter } from './routes/events.js';
