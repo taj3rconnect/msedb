@@ -85,6 +85,8 @@ emailEventSchema.index(
   { unique: true }
 ); // Dedup
 emailEventSchema.index({ messageId: 1, timestamp: -1 });
+emailEventSchema.index({ userId: 1, timestamp: -1 });
+emailEventSchema.index({ receivedAt: 1 });
 emailEventSchema.index({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }); // 90-day TTL
 
 export const EmailEvent = model<IEmailEvent>('EmailEvent', emailEventSchema);
