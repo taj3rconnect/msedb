@@ -4,6 +4,13 @@ A self-hosted email intelligence portal that connects to Microsoft 365 mailboxes
 
 **Version:** v1.0 MVP | **Codebase:** 19,644 LOC TypeScript/TSX/CSS across 296 files
 
+## Feedback & Product Board
+
+MSEDB embeds the [feedwid](https://feedwid.com) feedback widget — a floating **Feedback** button
+visible on every page. Use it to report bugs, request features, or leave general feedback directly
+from within the app. The public product board (roadmap, upcoming features, vote on ideas) lives at:
+**https://msedb.aptask.com/prodmgr**
+
 ## Core Value
 
 Users never lose control of their email. The system observes, learns, suggests, and only acts with explicit approval — and every action can be undone.
