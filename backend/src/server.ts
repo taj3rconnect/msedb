@@ -21,7 +21,7 @@ import { dashboardRouter } from './routes/dashboard.js';
 import { userRouter } from './routes/user.js';
 import { eventsRouter } from './routes/events.js';
 import { patternsRouter } from './routes/patterns.js';
-import { rulesRouter } from './routes/rules.js';
+import { rulesRouter } from './routes/rules/index.js';
 import { stagingRouter } from './routes/staging.js';
 import { auditRouter } from './routes/audit.js';
 import { notificationsRouter } from './routes/notifications.js';
