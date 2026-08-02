@@ -1,0 +1,46 @@
+name: CI
+
+# Gates every PR and every push to develop/main. LOG_DIR is set because the app resolves a log directory at import time.
+# Install is FROZEN (lockfile must match package.json) and no step is allowed to
+# soft-fail -- a red run means the branch is genuinely broken, not that a gate slipped.
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        env:
+          LOG_DIR: ${{ runner.temp }}/logs
+        run: npm run build
+
+      - name: Test
+        env:
+          LOG_DIR: ${{ runner.temp }}/logs
+        run: npm test
