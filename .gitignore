@@ -38,3 +38,20 @@ yarn-error.log*
 # Claude local settings (may contain secrets)
 .claude/settings.local.json
 .gstack/
+
+# --- Per-App Standard secrets baseline (SEC-001 / SEC-003) ---
+# Every .env variant is ignored; only the key-name template is tracked.
+**/.env*
+!**/.env.example
+
+# TLS / signing / tunnel material — NEVER commit.
+# NOTE: this does NOT untrack material already committed to history.
+# See SECURITY.md and docs/tauditall-2026-08-08.md — those files must be ROTATED.
+*.pem
+*.key
+*.pfx
+*.p12
+.cloudflared/
+
+# Audit accelerator cache (local only, not a deliverable)
+docs/.audit-cache.json
