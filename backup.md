@@ -19,6 +19,10 @@ rows below are unanswered and must be filled in by a human.
 | TLS / tunnel material | `certs/`, `/etc/cloudflared/config.yml` | See `SECURITY.md` and the open SEC-002 finding — some of this is currently committed to git and must be rotated. |
 | Qdrant vectors | AX1's shared Qdrant (port 6333) | **Owned by AX1, not by MSEDB.** Rebuildable from MongoDB via the `email-embedding` queue. |
 
+DDL snapshot: `docs/msedb-ddl.md` (canonical in-repo copy) — intended offsite
+destination `dgx:~/backups/msedb/msedb-ddl.md`, **not yet provisioned**.
+Regenerated read-only by `/tdbaudit` on every run.
+
 ## Destination
 
 - **TODO** — no backup destination is configured. Decide and record: DGX local
@@ -68,4 +72,7 @@ Append-only. Every backup that runs adds a row.
 
 | Date | Scope | Destination | Result |
 |---|---|---|---|
-| — | — | — | _no backup has been recorded_ |
+| 2026-08-08 | DDL snapshot (schema only, no data) | `docs/msedb-ddl.md` | OK |
+
+> No **data** backup has ever been recorded. The row above is a schema-only
+> snapshot — it is not a backup of the database contents.

@@ -85,3 +85,37 @@ row.
 | Date | Change | Migration/ref | Why |
 |---|---|---|---|
 | 2026-08-08 | Log created (no historical entries reconstructed) | `/tappaudit --fix` | Per-App Standard DOC-010 |
+
+_No schema change has been made by an audit run. `/tdbaudit` on 2026-08-08 was
+read-only — see the audit notes below._
+
+## Audit notes — what `/tdbaudit` learned (2026-08-08)
+
+Live facts confirmed against the prod DB (read-only):
+
+- Engine is **MongoDB 8.2.7, standalone** — `mongod --bind_ip_all`, **no replica
+  set**. Consequences that shape every future fix run:
+  - **No oplog** → `mongodump --oplog` is unavailable → **no point-in-time
+    recovery**, and no consistent snapshot across collections under write load.
+  - No failover. A single container is the whole database.
+- Scale: 14 collections, ~493k documents, 408 MB data, 86 MB indexes, 54 indexes.
+- **Referential integrity is clean** — zero orphaned documents across
+  `emailevents`, `patterns`, `rules`, `mailboxes`, `auditlogs`, `trackedemails`,
+  `stagedemails`, `webhooksubscriptions` (checked against `users._id`).
+- **No unused indexes** — every index shows `$indexStats` ops > 0. Caveat: index
+  stats reset on the 2026-08-08 13:13 container restart, so this reflects hours,
+  not a full workload cycle.
+- An **audit mechanism already exists** (`auditlogs`, 142,730 docs, 6 indexes,
+  180-day TTL). Any future audit work must EXTEND this, never install a parallel
+  design.
+- TTL indexes are already in place on `auditlogs`, `emailevents`, `notifications`,
+  `scheduledemails`, `stagedemails` — retention is enforced DB-side.
+
+Fix categories for THIS project:
+
+- **Auto-safe: none.** The only database MSEDB has is production, and the shared
+  mongod also serves JTCRM. Every mutation here is a manual, gated operation —
+  a `/tdbaudit --fix` run cannot legitimately mutate anything until a non-prod
+  environment exists.
+- **Manual/gated:** orphan-collection disposition, any index change, and the
+  adoption of a migration framework.
