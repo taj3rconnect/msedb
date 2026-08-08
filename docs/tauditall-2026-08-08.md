@@ -182,7 +182,38 @@ untracking those files without a plan breaks a fresh clone on the DGX.
 `git rm --cached` and any history rewrite are destructive, coordinated
 operations that need an explicit go.
 
-### 2. 🔴 CRITICAL — no git-triggered prod deploy runner (`AGT-002`)
+### 2. ✅ CLOSED — git-triggered prod deploy runner (`AGT-002`) — 2026-08-08
+
+Built, and **proven by a real push-triggered production deploy**.
+
+| Piece | Value |
+|---|---|
+| Workflow | `.github/workflows/deploy.yml` — `push: [main]` (docs paths ignored) + `workflow_dispatch` |
+| Runner | `msedb-dgx-prod-runner`, labels `[self-hosted, Linux, ARM64, msedb-dgx]` |
+| Service | `actions.runner.taj3rconnect-msedb.msedb-dgx-prod-runner.service` — enabled, active |
+| Script | `tools/deploy-live.sh` |
+
+Verifier output — prod moved `ad97ea3` → `8994004`:
+
+```
+gh run list  → 31274735767  Deploy (DGX)  event=push  status=completed  concl=success  sha=8994004
+             → 31274735758  CI            event=push  status=completed  concl=success  sha=8994004
+DGX git rev-parse --short HEAD  → 8994004   (== origin/main)
+curl localhost:8010/api/health  → HTTP 200 {"status":"healthy","version":"v1.33.01"}
+curl https://msedb.aptask.com   → HTTP 200
+mongo/redis StartedAt           → predate the deploy, restarts=0  (only app services rebuilt)
+```
+
+The untracked-file rescue fired for real on its first run: the DGX's untracked
+`AGENTS.md` — which this branch starts tracking — was moved to
+`~/backups/msedb/clobbered-20260808-193359/AGENTS.md` instead of being silently
+overwritten by `reset --hard`.
+
+**Still unproven:** the rollback path. It is `bash -n` clean and straightforward,
+but no deploy has yet failed its health gate, so "rollback works" is untested. If
+a future deploy fails, confirm the rollback actually landed rather than assuming.
+
+### ~~2b.~~ Original finding (for history)
 
 `DEPLOY.md` documents prod deploys as hand-run SSH steps, and — worse — a
 **patch-based** flow (`git apply` of a diff onto a dirty DGX tree) because the
@@ -262,18 +293,22 @@ Start with the highest-cardinality lists: ContactsSection, CategoriesSection,
 UserManagement, EventFilters.
 ```
 
-### 8. 🟠 HIGH — install the prod watchdog (`AGT-003`)
+### 8. ✅ CLOSED — prod watchdog installed (`AGT-003`) — 2026-08-08
 
-`tools/watchdog.sh` now exists in-repo and is LF-clean, but it is **inert**:
-nothing installs its cron entry, and `DEPLOY.md` does not name it. The 252
-unnoticed Redis restarts are the cost of that gap.
+Shipped with item 2, exactly as the standard intends: `tools/deploy-live.sh`
+installs/refreshes the cron on **every** deploy, so a host rebuild or fresh clone
+cannot silently lose it. Idempotent via a marker comment.
 
 ```
-Resolve: add to DEPLOY.md (script + cadence + alert-file location), and have the
-prod deploy script install/refresh:
-  */1 * * * * /home/admin/claude/MSEDB/tools/watchdog.sh >/dev/null 2>&1
+crontab -l → */1 * * * * /home/admin/claude/MSEDB/tools/watchdog.sh >/dev/null 2>&1 # msedb-watchdog (managed by tools/deploy-live.sh)
+/var/tmp/msedb-watchdog/alive → age 30s (must be < 60)
+/var/tmp/msedb-watchdog/ALERT → absent
 ```
-Ships naturally with item 2 — the deploy runner is what should install it.
+
+Named in `DEPLOY.md` § Prod deploy runner. Self-heals only the stateless
+frontend; alerts on backend/mongo/redis. Had this existed yesterday, the
+265-restart Redis crash loop would have raised an ALERT within a minute instead
+of going unnoticed for ~16 hours.
 
 ### 9. 🟠 HIGH — reconcile the DGX working tree
 

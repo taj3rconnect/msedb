@@ -7,6 +7,14 @@ name: Deploy (DGX)
 on:
   push:
     branches: [main]
+    # Docs-only commits must not rebuild prod containers. Consequence to know:
+    # after a docs-only push the deployed SHA legitimately lags origin/main —
+    # that is expected, not drift. Use `gh workflow run deploy.yml` to force one.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'wireframes/**'
+      - 'log/**'
   workflow_dispatch:
 
 # Never let two deploys overlap — a reset --hard + container rebuild mid-flight
