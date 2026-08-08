@@ -102,7 +102,16 @@ services:
     # No auth by design (REDIS_PASSWORD unused). Backend connects with no password
     # (config.redisPassword '' → undefined → no AUTH), so requiring one here would
     # mismatch and break the connection. Keep redis + backend + healthcheck all no-auth.
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru"]
+    # aof-load-corrupt-tail-max-size: tolerate a torn AOF tail on load instead of
+    # refusing to start. On 2026-08-08 a 872-byte torn tail in
+    # appendonly.aof.2559.incr.aof put this container in a 265-restart crash loop
+    # that stalled all 11 BullMQ queues and held /api/health at 503. Redis's own
+    # error message suggests the exact remaining-byte count (872), but that value
+    # is an exact fit and did NOT clear the error — 4096 gives the framing headroom
+    # it actually needs. Recovery is lossy by design: Redis discards the corrupt
+    # tail (a few writes), which is safe here because MongoDB is the system of
+    # record and BullMQ jobs are replayable.
+    command: ["redis-server", "--appendonly", "yes", "--aof-load-corrupt-tail-max-size", "4096", "--maxmemory", "384mb", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

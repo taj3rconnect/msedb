@@ -192,3 +192,21 @@ Before coding:
 3. Reuse existing patterns.
 4. Make small changes.
 5. Test before completion.
+
+## Accepted deviations
+
+Taj's explicit decisions for MSEDB. Audits (`/tappaudit`, `/tdbaudit`, `/tuiaudit`)
+report these as `EXCEPTION`, not `GAP`.
+
+| ID | Rationale | Date |
+|---|---|---|
+| STG-001, STG-002, STG-003 | MSEDB has no staging tier and does not need one. There is one environment: prod on the DGX. | 2026-08-08 |
+| ENV-001 | Staging outbound containment is moot with no staging tier — there is no non-prod environment whose side effects need bounding. | 2026-08-08 |
+| GIT-001 | No `develop` branch in the working flow; work lands on `main`. (The `develop` branch still exists on origin — left in place, not deleted.) | 2026-08-08 |
+| DB-PRISMA-000 | Datastore is MongoDB, accessed via Mongoose. The global Prisma rule governs SQL work and does not apply. | 2026-08-08 |
+
+**Consequence to hold onto:** with one environment, prod IS the test environment.
+Every change is exercised against live mailboxes and live Microsoft Graph
+credentials. That is an accepted trade, not an oversight — but it means the
+`/api/health` check and the prod watchdog are the only safety net, so keep them
+working.

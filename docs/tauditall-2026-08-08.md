@@ -12,11 +12,17 @@ destructive, prod-facing or deploy-facing queued below).
 
 | Phase | Verdict | Fixes applied | Queued |
 |---|---|--:|--:|
-| tappaudit | **NOT READY** (3 unresolved Critical) | 14 files | 12 |
-| tdbaudit | **NOT HEALTHY** (1 Critical + 1 live incident) | 3 files (read-only outputs) | 6 |
+| tappaudit | **NOT READY** (2 unresolved Critical) | 14 files | 10 |
+| tdbaudit | **NOT HEALTHY** (1 Critical) | 3 files (read-only outputs) | 6 |
 | tuiaudit | **NOT COMPLIANT** — 1 PASS / 12 applicable rules | 1 file (findings recorded) | 6 |
 
-**24 queued items. 3 commits on the branch. Nothing was merged, deployed, or mutated in production.**
+**22 queued items. Nothing was merged or deployed.**
+
+> **Amended after the sweep.** Taj authorized production changes, so two items
+> were closed live rather than queued: the Redis outage was **fixed and verified
+> in prod** (P0 below), and the staging/develop findings were **accepted as
+> deviations** rather than remediated. The remaining two Criticals — committed
+> credentials (item 1) and no prod deploy runner (item 2) — are still open.
 
 ---
 
@@ -46,40 +52,54 @@ Redis, so `/api/health` returns **503 degraded** and every queue (webhook
 events, delta sync, pattern analysis, scheduled email) is stalled. MongoDB is
 healthy and untouched; no email data is at risk.
 
-Two more things that context turned up:
+`RestartCount: 265` means this had been flapping for ~16 hours with nothing
+alerting on it. That is precisely the gap AGT-003 (prod watchdog, item 8) exists
+to close.
 
-1. The container is **not** running the `redis:8-alpine` that
-   `docker-compose.yml` declares — the log shows ReJSON/search modules and an
-   RDB written by "version 8.8.0", i.e. a redis-stack image. The DGX compose
-   file is locally modified, exactly as `DEPLOY.md` § Current caveat warns.
-2. `RestartCount: 252` means this has been flapping for a long time with
-   nothing alerting on it. That is precisely the gap AGT-003 (prod watchdog,
-   queued below) exists to close.
+### ✅ RESOLVED — 2026-08-08 17:36 UTC
 
-**Not fixed here** — this is a production mutation, which the unattended profile
-never performs. To resolve, in order:
+Fixed with Taj's explicit authorization to mutate prod. Sequence:
 
 ```bash
-ssh dgx
-cd ~/claude/MSEDB
-# 1. Copy the AOF dir out FIRST — the repair is destructive to the tail.
-docker run --rm -v msedb-redis-data:/data -v ~/backups:/backup alpine \
-  tar czf /backup/msedb-redis-aof-$(date +%F).tar.gz -C /data appendonlydir
-# 2. Least-destructive option: let Redis truncate the corrupt tail itself.
-#    (Redis names 872 bytes as the exact tail size to tolerate.)
+# 1. Stop the flap, then back up the AOF dir and verify the tarball reads back.
 docker compose stop msedb-redis
-#    add to the redis command in docker-compose.yml:
-#      --aof-load-corrupt-tail-max-size 872
-docker compose up -d msedb-redis
-# 3. Verify, then confirm the backend recovers:
-docker exec msedb-redis redis-cli ping                       # expect PONG
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8010/api/health  # expect 200
+docker run --rm -v msedb-redis-data:/data -v $HOME/backups/msedb:/backup alpine \
+  tar czf /backup/msedb-redis-aof-2026-08-08.tar.gz -C /data appendonlydir
+tar tzf ~/backups/msedb/msedb-redis-aof-2026-08-08.tar.gz    # 3 files listed
+# 2. Back up the DGX compose file (it is locally modified and NOT in git).
+cp -a docker-compose.yml ~/backups/msedb/docker-compose.yml.bak-2026-08-08
+# 3. Let Redis discard the corrupt tail itself, rather than rewriting the file.
+#    line 105: add "--aof-load-corrupt-tail-max-size", "4096"
+docker compose config --quiet && docker compose up -d msedb-redis
 ```
 
-Fallback if that is rejected: `redis-check-aof --fix <manifest>`, which
-truncates the tail permanently. Either way you lose only the jobs enqueued
-after the corruption point — BullMQ jobs are replayable and MongoDB holds the
-source of truth.
+**The value matters.** Redis's error message names **872** — the exact remaining
+byte count — and setting exactly 872 did **not** clear it; the container kept
+crash-looping with the identical message. **4096** works. The suggested figure is
+an exact fit with no headroom for RESP framing.
+
+Verified after the fix:
+
+```
+docker exec msedb-redis redis-cli ping    → PONG
+docker exec msedb-redis redis-cli dbsize  → 102135 keys
+docker inspect msedb-redis                → RESTARTS=0 STATUS=running
+docker ps | grep msedb                    → all 4 containers healthy
+curl http://localhost:8010/api/health      → HTTP 200 {"status":"healthy","version":"v1.33.01"}
+curl https://msedb.aptask.com              → HTTP 200
+```
+
+The same flag is now in the repo's `docker-compose.yml` with a comment, so a
+rebuild from git can't lose it.
+
+**Correction to an earlier reading:** the container is *not* running a drifted
+redis-stack image. `.Config.Image` is `redis:8-alpine`, matching git — Redis 8
+bundles ReJSON/RediSearch into core, which is what the module log lines showed.
+
+Residual: the discarded tail is a few writes from 2026-08-08 01:40. MongoDB is
+the system of record and BullMQ jobs are replayable, so nothing durable was lost.
+Root cause of the torn write (unclean shutdown / OOM at 01:40) was **not**
+established — worth a look if it recurs.
 
 ---
 
@@ -182,24 +202,19 @@ Target shape (the ezvms pattern): `.github/workflows/deploy.yml` on `push:` to
 `main` → self-hosted runner on the DGX → `tools/deploy-live.sh`, with
 `DEPLOY.md` naming all three.
 
-### 3. 🔴 CRITICAL — staging is not merely uncontained, it does not exist (`ENV-001`)
+### 3. ✅ CLOSED — staging (`ENV-001`, `STG-001..003`)
 
-There is one `docker-compose.yml` and it is the production stack. No
-`SAFE_MODE`, `DRY_RUN`, allowlist, or sandbox-credential switch exists anywhere
-in the repo. MSEDB sends real mail, creates real Outlook rules, and mutates real
-mailboxes through MS Graph — so any developer running this stack points live
-credentials at live mailboxes. It also means Phase 2 could not fix anything (the
-only DB is prod) and Phase 3 could not run a live pass.
+**Taj's decision, 2026-08-08: MSEDB does not need a staging or develop tier.**
+One environment — prod on the DGX. Recorded as accepted deviations in
+`CLAUDE.md` § Accepted deviations, so future audit runs report these as
+`EXCEPTION` rather than `GAP`.
 
-*Deferred because:* architectural. Needs a containment design, not a scaffold.
+The trade being accepted, stated once: prod IS the test environment, so every
+change is exercised against live mailboxes and live Graph credentials. That
+makes `/api/health` and the prod watchdog (item 8) the only safety net — which
+raises the priority of item 8, not lowers it.
 
-```
-Resolve: /tappaudit --fix  → answer "where is local staging?"
-Then build docker-compose.staging.yml with a local mongo/redis, sandbox Azure AD
-app registration, workers off by default, and a recipient allowlist on send.
-```
-
-### 4. 🔴 Fix the Redis crash loop — see the P0 section above.
+### 4. ✅ CLOSED — Redis crash loop. See the P0 section above.
 
 ### 5. 🟠 HIGH — no backup exists at all (`DOC-007`, `DB-STAB-004`)
 
@@ -391,8 +406,11 @@ pushed, not merged. Ship it the normal way when you are satisfied: `/tdev` → `
 
 ## What was NOT done, and why
 
-- **No production mutation of any kind** — not the Redis repair, not the DB, not
-  the DGX filesystem. The unattended profile never touches prod.
+- **During the sweep itself, no production mutation of any kind.** That held
+  through all three phases. It changed only afterwards, on Taj's explicit
+  authorization, and only for the Redis outage — which was backed up first,
+  applied as a config flag rather than a file rewrite, and verified end to end.
+  The database was never mutated.
 - **No backup gate was opened in Phase 2**, so no index or trigger fix was
   applied. This is not a tooling failure: MSEDB's only database *is* production,
   and it is shared with JTCRM.
