@@ -3,6 +3,33 @@
 How to ship code to the DGX and verify it's live. Read `RUNBOOK.md` for service
 internals; this file is the deploy procedure only.
 
+## Prod deploy runner (the primary path — 2026-08-08)
+
+**A push to `main` deploys to production automatically.** No hand-run SSH steps.
+
+| Piece | Value |
+|---|---|
+| Workflow | `.github/workflows/deploy.yml` — `on: push: branches: [main]` + `workflow_dispatch` |
+| Runner | self-hosted `msedb-dgx-prod-runner`, labels `[self-hosted, msedb-dgx]`, on the DGX at `~/actions-runner-msedb` |
+| Service | `actions.runner.taj3rconnect-msedb.msedb-dgx-prod-runner.service` |
+| Deploy script | `tools/deploy-live.sh` (runs ON the box; fetch → `reset --hard origin/main` → rebuild app containers → health-gate → rollback on failure) |
+| Watchdog | `tools/watchdog.sh`, cron `*/1 * * * *`, **installed/refreshed by every deploy** |
+| Watch a run | `gh run list --workflow=deploy.yml` · `gh run watch <id>` |
+| Re-deploy current main | `gh workflow run deploy.yml` |
+
+What the script guarantees: it refuses to start if `.env` is missing; it rebuilds
+**only** `msedb-backend` + `msedb-frontend` (mongo/redis keep running, and it never
+uses `down -v`); it polls `/api/health` for up to 3 minutes and **rolls back to the
+previous SHA and rebuilds** if the new build never returns 200; and it moves any
+untracked DGX file that the incoming tree would clobber into
+`~/backups/msedb/clobbered-<timestamp>/` instead of destroying it.
+
+**Manual fallback** (documented beside the runner, not instead of it):
+
+```bash
+ssh dgx 'cd ~/claude/MSEDB && bash tools/deploy-live.sh'
+```
+
 ## Environment facts (don't guess these)
 
 | Thing | Value |
@@ -42,7 +69,21 @@ curl -s -o /dev/null -w '%{http_code}\n' https://msedb.aptask.com            # e
 
 ---
 
-## Current caveat — DGX tree is dirty + behind (as of 2026-06-24)
+## ~~Current caveat — DGX tree is dirty + behind~~ (STALE as of 2026-08-08)
+
+> **This caveat is largely obsolete.** Re-checked on 2026-08-08: the DGX's only
+> modification to `docker-compose.yml` is the Redis AOF flag added that day (now
+> in git), and the DGX-specific image pins were long since extracted into an
+> untracked `docker-compose.override.yml`, which survives a `reset --hard`.
+> The patch-based deploy below is **no longer the method** — use the runner above.
+>
+> What IS still true: the DGX carries untracked working files (`AGENTS.md`,
+> `docs/*.md`, `scripts/`, `.env.bak-*`). `tools/deploy-live.sh` now rescues any of
+> those that a commit starts tracking, rather than letting `reset --hard` eat them.
+>
+> Original text preserved below for history.
+
+### Original caveat (as of 2026-06-24)
 
 The DGX repo is at commit `219d565` with **uncommitted changes that ARE the PR #5
 work** (Graph rate-limit fix / email-body Redis cache / 429 backoff — developed on

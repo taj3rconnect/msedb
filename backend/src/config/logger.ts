@@ -1,5 +1,11 @@
+import path from 'node:path';
 import winston from 'winston';
 import { config } from './index.js';
+
+// Log destination is configurable so the test suite can run outside the
+// container. Defaults to the in-container path, so deployed behaviour
+// is unchanged.
+const logDir = process.env.LOG_DIR ?? '/app/logs';
 
 const logger = winston.createLogger({
   level: config.logLevel,
@@ -20,13 +26,13 @@ const logger = winston.createLogger({
           : winston.format.json(),
     }),
     new winston.transports.File({
-      filename: '/app/logs/error.log',
+      filename: path.join(logDir, 'error.log'),
       level: 'error',
       maxsize: 10 * 1024 * 1024, // 10MB
       maxFiles: 5,
     }),
     new winston.transports.File({
-      filename: '/app/logs/combined.log',
+      filename: path.join(logDir, 'combined.log'),
       maxsize: 10 * 1024 * 1024, // 10MB
       maxFiles: 10,
     }),
