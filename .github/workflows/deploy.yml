@@ -1,0 +1,37 @@
+name: Deploy (DGX)
+
+# Push-to-deploy: a push to main fires this workflow on the self-hosted runner that
+# lives ON the DGX, so it deploys the just-pushed main to the live app
+# (https://msedb.aptask.com). This IS the deploy — no hand-run SSH steps.
+# `workflow_dispatch` re-deploys the current main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never let two deploys overlap — a reset --hard + container rebuild mid-flight
+# would be unsafe. Queue them instead of cancelling: cancelling a deploy halfway
+# through leaves the checkout moved but the containers not rebuilt.
+concurrency:
+  group: deploy-msedb-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # The runner labelled 'msedb-dgx' runs on the DGX itself (the deploy target is
+    # local), so no inbound SSH from GitHub-cloud is needed — the box is
+    # Tailscale-only.
+    runs-on: [self-hosted, msedb-dgx]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout pushed main (for tools/deploy-live.sh)
+        uses: actions/checkout@v4
+
+      - name: Deploy origin/main to the live DGX checkout
+        run: bash tools/deploy-live.sh
+
+      - name: Report deployed SHA
+        run: |
+          cd /home/admin/claude/MSEDB
+          echo "deployed=$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          curl -s http://localhost:8010/api/health >> "$GITHUB_STEP_SUMMARY"
