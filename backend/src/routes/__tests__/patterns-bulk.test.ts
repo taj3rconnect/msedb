@@ -29,10 +29,9 @@ function validateBulkRequest(body: { patternIds?: unknown; actionType?: unknown 
   return null;
 }
 
-/** Mirrors the route's per-pattern eligibility check. */
-function isApprovable(status: string): boolean {
-  return status === 'detected' || status === 'suggested';
-}
+// The per-pattern decision is imported, not re-described, so this test fails if
+// the route's behaviour drifts.
+import { classifyBulkTarget } from '../../services/patternBulkPlan.js';
 
 /** Mirrors BulkRuleDrawer.actedRate. */
 function actedRate(sampleSize: number, exceptionCount: number): number {
@@ -69,16 +68,27 @@ describe('POST /api/patterns/bulk-approve validation', () => {
   });
 });
 
-describe('bulk-approve pattern eligibility', () => {
-  it('approves only detected and suggested patterns', () => {
-    expect(isApprovable('detected')).toBe(true);
-    expect(isApprovable('suggested')).toBe(true);
+describe('bulk-approve per-pattern plan', () => {
+  it('approves detected and suggested patterns', () => {
+    expect(classifyBulkTarget('detected', 'delete', 'delete')).toBe('approve');
+    expect(classifyBulkTarget('suggested', 'move', 'markRead')).toBe('approve');
   });
 
-  it('skips patterns that are already resolved', () => {
-    for (const status of ['approved', 'rejected', 'expired']) {
-      expect(isApprovable(status)).toBe(false);
-    }
+  it('rebuilds the rule when an approved pattern is pointed at a new action', () => {
+    expect(classifyBulkTarget('approved', 'delete', 'markRead')).toBe('retarget');
+    expect(classifyBulkTarget('approved', 'move', 'delete')).toBe('retarget');
+  });
+
+  it('leaves an approved pattern alone when the action is unchanged', () => {
+    expect(classifyBulkTarget('approved', 'delete', 'delete')).toBe('skip');
+    expect(classifyBulkTarget('approved', 'markRead', 'markRead')).toBe('skip');
+  });
+
+  it('lifts the silence before re-approving a rejected or expired pattern', () => {
+    // Without this the created rule would exist but never fire, because the
+    // sender is still on the mailbox whitelist.
+    expect(classifyBulkTarget('rejected', 'delete', 'delete')).toBe('unsilence');
+    expect(classifyBulkTarget('expired', 'delete', 'markRead')).toBe('unsilence');
   });
 });
 

@@ -9,6 +9,7 @@ export type AuditAction =
   | 'email_rescued'
   | 'email_executed'
   | 'pattern_approved'
+  | 'pattern_unapproved'
   | 'pattern_rejected'
   | 'automation_paused'
   | 'automation_resumed'
@@ -46,6 +47,7 @@ const auditLogSchema = new Schema<IAuditLog>(
         'email_rescued',
         'email_executed',
         'pattern_approved',
+        'pattern_unapproved',
         'pattern_rejected',
         'automation_paused',
         'automation_resumed',

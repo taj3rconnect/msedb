@@ -8,6 +8,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { User } from '../models/User.js';
 import { queues } from '../jobs/queues.js';
 import { convertPatternToRule } from '../services/ruleConverter.js';
+import { classifyBulkTarget } from '../services/patternBulkPlan.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { graphFetch } from '../services/graphClient.js';
 import logger from '../config/logger.js';
@@ -29,6 +30,29 @@ const VALID_ACTION_TYPES = ['delete', 'move', 'archive', 'markRead', 'flag', 'ca
 // Upper bound on a single bulk-approve request — keeps one click from queuing
 // an unbounded number of Graph-backed rule creations.
 const BULK_APPROVE_MAX = 500;
+
+/**
+ * Delete every rule this pattern is responsible for — the one converted from it
+ * plus any rule targeting the same sender email/domain (quick actions create
+ * those without a sourcePatternId).
+ *
+ * Used wherever a pattern stops standing behind its rule: reject, unapprove, and
+ * re-targeting an approved pattern to a different action.
+ */
+async function deleteRulesForPattern(
+  userId: string,
+  pattern: { _id: Types.ObjectId; condition?: { senderEmail?: string; senderDomain?: string } },
+): Promise<number> {
+  const clauses: Record<string, unknown>[] = [{ sourcePatternId: pattern._id }];
+  if (pattern.condition?.senderEmail) {
+    clauses.push({ 'conditions.senderEmail': pattern.condition.senderEmail });
+  }
+  if (pattern.condition?.senderDomain) {
+    clauses.push({ 'conditions.senderDomain': pattern.condition.senderDomain });
+  }
+  const result = await Rule.deleteMany({ userId, $or: clauses });
+  return result.deletedCount ?? 0;
+}
 
 /**
  * GET /api/patterns
@@ -268,10 +292,58 @@ patternsRouter.get('/suggest', async (req: Request, res: Response) => {
 });
 
 /**
+ * Re-enable a sender the user previously silenced, so approving its pattern
+ * cannot produce a rule that the whitelist gate would quietly refuse to fire.
+ * Returns the values pulled from the mailbox whitelist.
+ */
+async function unsilenceSenderForPattern(
+  userId: string,
+  pattern: { mailboxId: Types.ObjectId; condition?: { senderEmail?: string; senderDomain?: string } },
+): Promise<string[]> {
+  const email = pattern.condition?.senderEmail?.trim().toLowerCase();
+  const domain = pattern.condition?.senderDomain?.trim().toLowerCase();
+  const pull: Record<string, unknown> = {};
+  if (email) pull['settings.whitelistedSenders'] = email;
+  if (domain) pull['settings.whitelistedDomains'] = domain;
+  if (!Object.keys(pull).length) return [];
+
+  const mailbox = await Mailbox.findOne({ _id: pattern.mailboxId, userId })
+    .select('settings.whitelistedSenders settings.whitelistedDomains')
+    .lean();
+  if (!mailbox) return [];
+
+  const removed: string[] = [];
+  if (email && mailbox.settings?.whitelistedSenders?.some((s) => s.toLowerCase() === email)) {
+    removed.push(email);
+  }
+  if (domain && mailbox.settings?.whitelistedDomains?.some((d) => d.toLowerCase() === domain)) {
+    removed.push(domain);
+  }
+  if (!removed.length) return [];
+
+  await Mailbox.updateOne({ _id: pattern.mailboxId, userId }, { $pull: pull });
+  await AuditLog.create({
+    userId,
+    mailboxId: pattern.mailboxId,
+    action: 'whitelist_updated',
+    targetType: 'mailbox',
+    targetId: pattern.mailboxId.toString(),
+    details: { source: 'pattern_bulk_approve', removed },
+  });
+  return removed;
+}
+
+/**
  * POST /api/patterns/bulk-approve
  *
- * Approve many patterns at once with a single chosen action, converting each
- * to a rule. Body: { patternIds: string[], actionType: 'delete' | 'markRead' }
+ * Apply one chosen action to many patterns at once, whatever state each one is
+ * in. Body: { patternIds: string[], actionType: 'delete' | 'markRead' }
+ *
+ *   detected / suggested → approved, and a rule is created
+ *   approved             → the old rule is deleted and rebuilt on the new action
+ *   rejected / expired   → re-approved: cooldown cleared, the sender is taken
+ *                          back off the whitelist (otherwise the new rule would
+ *                          never fire), and a rule is created
  *
  * Never runs implicitly — the frontend only calls this on an explicit click,
  * preserving the "no rule without user approval" contract.
@@ -302,7 +374,7 @@ patternsRouter.post('/bulk-approve', async (req: Request, res: Response) => {
 
   const results: Array<{
     patternId: string;
-    status: 'created' | 'skipped' | 'failed';
+    status: 'created' | 'updated' | 'skipped' | 'failed';
     ruleId?: string;
     reason?: string;
   }> = uniqueIds
@@ -311,11 +383,7 @@ patternsRouter.post('/bulk-approve', async (req: Request, res: Response) => {
 
   for (const pattern of patterns) {
     const patternId = pattern._id.toString();
-
-    if (pattern.status !== 'detected' && pattern.status !== 'suggested') {
-      results.push({ patternId, status: 'skipped', reason: `Pattern is already ${pattern.status}` });
-      continue;
-    }
+    const priorStatus = pattern.status;
 
     try {
       const originalAction = {
@@ -324,10 +392,29 @@ patternsRouter.post('/bulk-approve', async (req: Request, res: Response) => {
         category: pattern.suggestedAction.category,
       };
 
+      const plan = classifyBulkTarget(priorStatus, originalAction.actionType, actionType);
+
+      // Already doing exactly this — leave the live rule (and its stats) alone.
+      if (plan === 'skip') {
+        results.push({ patternId, status: 'skipped', reason: `Already set to ${actionType}` });
+        continue;
+      }
+
+      // An approved pattern's rule is replaced outright rather than edited, so a
+      // stale action can never outlive the change.
+      const rulesDeleted = plan === 'retarget' ? await deleteRulesForPattern(userId, pattern) : 0;
+
+      // Re-approving something the user had silenced: lift the whitelist entry
+      // too, or the rule we are about to create would never fire.
+      const unsilenced =
+        plan === 'unsilence' ? await unsilenceSenderForPattern(userId, pattern) : [];
+
       // Bulk actions are always terminal (delete / markRead) — no folder or category carries over.
       pattern.suggestedAction = { actionType };
       pattern.status = 'approved';
       pattern.approvedAt = new Date();
+      pattern.rejectedAt = undefined;
+      pattern.rejectionCooldownUntil = undefined;
       await pattern.save();
 
       await AuditLog.create({
@@ -342,12 +429,19 @@ patternsRouter.post('/bulk-approve', async (req: Request, res: Response) => {
           condition: pattern.condition,
           suggestedAction: pattern.suggestedAction,
           bulk: true,
+          priorStatus,
           originalAction,
+          ...(rulesDeleted ? { retargeted: true, rulesDeleted } : {}),
+          ...(unsilenced.length ? { unsilenced } : {}),
         },
       });
 
       const rule = await convertPatternToRule(pattern._id, new Types.ObjectId(userId));
-      results.push({ patternId, status: 'created', ruleId: rule._id?.toString() });
+      results.push({
+        patternId,
+        status: plan === 'retarget' ? 'updated' : 'created',
+        ruleId: rule._id?.toString(),
+      });
     } catch (err) {
       // One bad pattern must not abort the batch — record it and keep going.
       logger.warn('Bulk pattern approval failed for one pattern', {
@@ -363,12 +457,20 @@ patternsRouter.post('/bulk-approve', async (req: Request, res: Response) => {
   }
 
   const created = results.filter((r) => r.status === 'created').length;
+  const updated = results.filter((r) => r.status === 'updated').length;
   const skipped = results.filter((r) => r.status === 'skipped').length;
   const failed = results.filter((r) => r.status === 'failed').length;
 
-  logger.info('Bulk pattern approval complete', { userId, actionType, created, skipped, failed });
+  logger.info('Bulk pattern approval complete', {
+    userId,
+    actionType,
+    created,
+    updated,
+    skipped,
+    failed,
+  });
 
-  res.json({ created, skipped, failed, total: uniqueIds.length, results });
+  res.json({ created, updated, skipped, failed, total: uniqueIds.length, results });
 });
 
 /**
@@ -665,20 +767,11 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
   }
 
   // Delete any rules associated with this pattern (by sourcePatternId or sender email/domain)
-  const ruleDeleteClauses: Record<string, unknown>[] = [
-    { sourcePatternId: pattern._id },
-  ];
-  if (pattern.condition?.senderEmail) {
-    ruleDeleteClauses.push({ 'conditions.senderEmail': pattern.condition.senderEmail });
-  }
-  if (pattern.condition?.senderDomain) {
-    ruleDeleteClauses.push({ 'conditions.senderDomain': pattern.condition.senderDomain });
-  }
-  const deleteResult = await Rule.deleteMany({ userId, $or: ruleDeleteClauses });
-  if (deleteResult.deletedCount > 0) {
+  const rulesDeleted = await deleteRulesForPattern(userId, pattern);
+  if (rulesDeleted > 0) {
     logger.info('Deleted rules on pattern rejection', {
       patternId: pattern._id,
-      deletedCount: deleteResult.deletedCount,
+      deletedCount: rulesDeleted,
       userId,
     });
   }
@@ -703,7 +796,7 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
       confidence: pattern.confidence,
       condition: pattern.condition,
       suggestedAction: pattern.suggestedAction,
-      rulesDeleted: deleteResult.deletedCount,
+      rulesDeleted,
     },
   });
 
@@ -711,9 +804,58 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/patterns/:id/unapprove
+ *
+ * Undo an approval: the pattern returns to 'suggested' and the rule it created
+ * is deleted, so nothing keeps acting on that sender. The pattern itself is
+ * kept (with its evidence), so it can be approved again later.
+ */
+patternsRouter.post('/:id/unapprove', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+
+  const pattern = await Pattern.findOne({ _id: req.params.id, userId });
+  if (!pattern) {
+    throw new NotFoundError('Pattern not found');
+  }
+
+  if (pattern.status !== 'approved') {
+    throw new ConflictError(`Only approved patterns can be unapproved (current status: ${pattern.status})`);
+  }
+
+  const rulesDeleted = await deleteRulesForPattern(userId, pattern);
+
+  pattern.status = 'suggested';
+  pattern.approvedAt = undefined;
+  await pattern.save();
+
+  await AuditLog.create({
+    userId,
+    mailboxId: pattern.mailboxId,
+    action: 'pattern_unapproved',
+    targetType: 'pattern',
+    targetId: pattern._id.toString(),
+    details: {
+      patternType: pattern.patternType,
+      condition: pattern.condition,
+      suggestedAction: pattern.suggestedAction,
+      rulesDeleted,
+    },
+  });
+
+  logger.info('Pattern unapproved', { patternId: pattern._id, userId, rulesDeleted });
+
+  res.json({ pattern, rulesDeleted });
+});
+
+/**
  * POST /api/patterns/:id/customize
  *
- * Customize a pattern's suggested action and approve it.
+ * Set a pattern's action and approve it.
+ *
+ * Also accepts an already-approved pattern, which is how the user changes their
+ * mind about what an active rule does: the existing rule is deleted and a fresh
+ * one is created from the new action, so the rule can never disagree with the
+ * pattern it came from.
  */
 patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
   const userId = getUserId(req);
@@ -723,8 +865,9 @@ patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
     throw new NotFoundError('Pattern not found');
   }
 
-  if (pattern.status !== 'detected' && pattern.status !== 'suggested') {
-    throw new ConflictError(`Pattern is already ${pattern.status}`);
+  const wasApproved = pattern.status === 'approved';
+  if (pattern.status !== 'detected' && pattern.status !== 'suggested' && !wasApproved) {
+    throw new ConflictError(`Pattern is ${pattern.status} and cannot be changed`);
   }
 
   const { suggestedAction } = req.body as {
@@ -755,6 +898,10 @@ patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
     ...(suggestedAction.category ? { category: suggestedAction.category } : {}),
   };
 
+  // Re-targeting an already-approved pattern: the old rule is replaced outright
+  // rather than edited, so a stale action can never survive the change.
+  const rulesDeleted = wasApproved ? await deleteRulesForPattern(userId, pattern) : 0;
+
   pattern.status = 'approved';
   pattern.approvedAt = new Date();
   await pattern.save();
@@ -772,6 +919,7 @@ patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
       suggestedAction: pattern.suggestedAction,
       customized: true,
       originalAction,
+      ...(wasApproved ? { retargeted: true, rulesDeleted } : {}),
     },
   });
 

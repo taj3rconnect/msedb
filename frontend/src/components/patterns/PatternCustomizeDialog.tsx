@@ -75,14 +75,19 @@ export function PatternCustomizeDialog({
 
   const sender = pattern?.condition.senderEmail ?? pattern?.condition.senderDomain ?? 'Unknown';
   const confidence = pattern ? Math.round(pattern.confidence * 100) / 100 : 0;
+  // An approved pattern already has a live rule, so the copy has to promise a
+  // replacement rather than a first approval.
+  const isApproved = pattern?.status === 'approved';
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right">
         <SheetHeader>
-          <SheetTitle>Customize Pattern Action</SheetTitle>
+          <SheetTitle>{isApproved ? 'Change Rule Action' : 'Customize Pattern Action'}</SheetTitle>
           <SheetDescription>
-            Modify the suggested action before approving this pattern.
+            {isApproved
+              ? 'Pick a different action. The existing rule for this sender is deleted and rebuilt on your choice.'
+              : 'Modify the suggested action before approving this pattern.'}
           </SheetDescription>
         </SheetHeader>
 
@@ -155,7 +160,9 @@ export function PatternCustomizeDialog({
             Cancel
           </Button>
           <Button onClick={handleConfirm} disabled={isSubmitting || !pattern}>
-            {isSubmitting ? 'Approving...' : 'Approve with Changes'}
+            {isSubmitting
+              ? isApproved ? 'Replacing rule...' : 'Approving...'
+              : isApproved ? 'Replace the rule' : 'Approve with Changes'}
           </Button>
         </SheetFooter>
       </SheetContent>

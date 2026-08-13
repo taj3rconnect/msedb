@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertCircle, Loader2, Trash2, MailOpen, BellOff } from 'lucide-react';
 import {
@@ -123,16 +123,43 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
     const confidenceFloor = parseThreshold(minConfidence);
     const observedFloor = parseThreshold(minObserved);
 
+    // Every status is listed — the per-row Outcome column says what the chosen
+    // action will do to each one, so approved senders can be re-targeted here too.
     return all
       .filter((p) => filters.patternType === 'all' || p.patternType === filters.patternType)
-      // Only detected/suggested patterns can be approved into a new rule.
-      .filter((p) => p.status === 'detected' || p.status === 'suggested')
-      .filter((p) => !p.hasRule)
       .filter((p) => actedRate(p) >= actedFloor)
       .filter((p) => p.confidence >= confidenceFloor)
       .filter((p) => p.sampleSize >= observedFloor)
       .sort((a, b) => b.confidence - a.confidence);
   }, [data, filters.patternType, minActed, minConfidence, minObserved]);
+
+  /** What clicking Apply will do to this row, given the currently chosen action. */
+  const outcomeFor = useCallback(
+    (p: Pattern): { label: string; muted: boolean } => {
+      if (p.status === 'approved') {
+        return p.suggestedAction.actionType === action
+          ? { label: 'No change', muted: true }
+          : { label: 'Rule replaced', muted: false };
+      }
+      if (p.status === 'rejected' || p.status === 'expired') {
+        return { label: 'Re-approved', muted: false };
+      }
+      return { label: 'New rule', muted: false };
+    },
+    [action],
+  );
+
+  // Rows that would do nothing are worth calling out before the click, not after.
+  const noChangeCount = useMemo(
+    () => matches.filter((p) => selected.has(p._id) && outcomeFor(p).muted).length,
+    [matches, selected, outcomeFor],
+  );
+
+  // Silencing an approved sender leaves its rule in place but inert — say so.
+  const approvedSelectedCount = useMemo(
+    () => matches.filter((p) => selected.has(p._id) && p.status === 'approved').length,
+    [matches, selected],
+  );
 
   // Selection is always scoped to what is currently visible.
   const visibleSelectedIds = useMemo(
@@ -200,20 +227,25 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
       {
         onSuccess: (result) => {
           const verb = action === 'delete' ? 'Delete' : 'Mark as read';
-          if (result.created > 0) {
-            toast.success(`Created ${result.created} ${verb} rule${result.created === 1 ? '' : 's'}`, {
-              description:
-                result.skipped || result.failed
-                  ? `${result.skipped} skipped, ${result.failed} failed`
-                  : undefined,
+          const touched = result.created + result.updated;
+          const detail = [
+            result.created ? `${result.created} created` : null,
+            result.updated ? `${result.updated} replaced` : null,
+            result.skipped ? `${result.skipped} skipped` : null,
+            result.failed ? `${result.failed} failed` : null,
+          ]
+            .filter(Boolean)
+            .join(', ');
+
+          if (touched > 0) {
+            toast.success(`${touched} ${verb} rule${touched === 1 ? '' : 's'} applied`, {
+              description: detail,
             });
           } else {
-            toast.error('No rules were created', {
-              description: `${result.skipped} skipped, ${result.failed} failed`,
-            });
+            toast.error('No rules changed', { description: detail });
           }
           setSelected(new Set());
-          if (result.created > 0 && result.failed === 0) onOpenChange(false);
+          if (touched > 0 && result.failed === 0) onOpenChange(false);
         },
         onError: (err: unknown) => {
           toast.error('Bulk rule creation failed', {
@@ -230,7 +262,8 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
         <SheetHeader>
           <SheetTitle>Bulk Rule</SheetTitle>
           <SheetDescription>
-            Applies to patterns matching the page&apos;s current filters: {filters.summary}
+            Applies to patterns matching the page&apos;s current filters: {filters.summary}. Approved
+            senders are included — picking an action rebuilds their rule.
           </SheetDescription>
         </SheetHeader>
 
@@ -308,6 +341,8 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
                 <tr className="border-b text-xs text-muted-foreground">
                   <th className="w-8 py-2" />
                   <th className="py-2 text-left font-medium">Sender</th>
+                  <th className="py-2 text-left font-medium">Status</th>
+                  <th className="py-2 text-left font-medium">Outcome</th>
                   <th className="py-2 text-right font-medium">% acted</th>
                   <th className="py-2 text-right font-medium">% conf</th>
                   <th className="py-2 text-right font-medium">Observed</th>
@@ -316,13 +351,14 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
               <tbody>
                 {matches.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                    <td colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                       No patterns meet these thresholds. Lower a threshold or widen the page filters.
                     </td>
                   </tr>
                 ) : (
                   matches.map((p) => {
                     const rate = actedRate(p);
+                    const outcome = outcomeFor(p);
                     return (
                       <tr key={p._id} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="py-2 align-middle">
@@ -340,6 +376,18 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
                             You {ACTION_VERB[p.suggestedAction.actionType] ?? p.suggestedAction.actionType}{' '}
                             {p.sampleSize - p.exceptionCount} of {p.sampleSize}
                           </div>
+                        </td>
+                        <td className="py-2 pr-2 align-middle">
+                          <span className="text-xs capitalize text-muted-foreground">
+                            {p.status}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-2 align-middle">
+                          <span
+                            className={`text-xs ${outcome.muted ? 'text-muted-foreground/60' : 'font-medium'}`}
+                          >
+                            {outcome.label}
+                          </span>
                         </td>
                         <td className="py-2 text-right align-middle tabular-nums">{rate.toFixed(0)}</td>
                         <td className="py-2 text-right align-middle tabular-nums">
@@ -363,7 +411,7 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
 
         <SheetFooter className="gap-3 border-t">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Create rules that</span>
+            <span className="text-sm text-muted-foreground">Make these rules</span>
             <Button
               type="button"
               size="sm"
@@ -397,9 +445,15 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
             <Button
               onClick={handleCreate}
               disabled={visibleSelectedIds.length === 0 || bulkMutation.isPending}
+              title={
+                noChangeCount
+                  ? `${noChangeCount} selected pattern${noChangeCount === 1 ? ' is' : 's are'} already set to this action and will be left alone`
+                  : undefined
+              }
             >
               {bulkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create {visibleSelectedIds.length} rule{visibleSelectedIds.length === 1 ? '' : 's'}
+              Apply to {visibleSelectedIds.length} pattern{visibleSelectedIds.length === 1 ? '' : 's'}
+              {noChangeCount > 0 && ` (${noChangeCount} unchanged)`}
             </Button>
           </div>
         </SheetFooter>
@@ -420,6 +474,13 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
                     detecting them, so they never appear as a suggestion again. Existing rules are
                     not deleted — they simply stop firing. Reversible in Settings → Whitelist.
                   </p>
+                  {approvedSelectedCount > 0 && (
+                    <p className="text-muted-foreground">
+                      {approvedSelectedCount} of these {approvedSelectedCount === 1 ? 'is' : 'are'}{' '}
+                      approved with a live rule. Those rules stay in place but stop acting while the
+                      sender is silenced — use <strong>Unapprove</strong> on the card to remove them.
+                    </p>
+                  )}
                   <div className="flex items-center gap-2">
                     <span className="text-sm">Silence the</span>
                     <Button

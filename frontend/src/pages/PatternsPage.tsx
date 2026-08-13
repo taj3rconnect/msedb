@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { toast } from 'sonner';
 import { AlertCircle, Brain, Sparkles, Layers } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -12,11 +13,13 @@ import {
   usePatterns,
   useApprovePattern,
   useRejectPattern,
+  useUnapprovePattern,
   useCustomizePattern,
   useTriggerAnalysis,
 } from '@/hooks/usePatterns';
 import { useUiStore } from '@/stores/uiStore';
 import type { Pattern, PatternSuggestedAction } from '@/api/patterns';
+import type { QuickAction } from '@/components/patterns/PatternCard';
 
 /**
  * Patterns page showing card-based pattern suggestions with confidence
@@ -61,8 +64,13 @@ export function PatternsPage() {
   // Mutation hooks
   const approveMutation = useApprovePattern();
   const rejectMutation = useRejectPattern();
+  const unapproveMutation = useUnapprovePattern();
   const customizeMutation = useCustomizePattern();
   const triggerMutation = useTriggerAnalysis();
+
+  // Which approved card currently has a request in flight — so only that card's
+  // buttons go into the pending state, not every card on the page.
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   // Filter by pattern type client-side (API doesn't support patternType filter)
   const filteredPatterns = data?.patterns.filter(
@@ -105,6 +113,52 @@ export function PatternsPage() {
       rejectMutation.mutate(id);
     },
     [rejectMutation],
+  );
+
+  const handleUnapprove = useCallback(
+    (id: string) => {
+      setUpdatingId(id);
+      unapproveMutation.mutate(id, {
+        onSuccess: (result) => {
+          toast.success('Approval undone', {
+            description:
+              result.rulesDeleted > 0
+                ? `${result.rulesDeleted} rule${result.rulesDeleted === 1 ? '' : 's'} deleted. The pattern is back in Suggested.`
+                : 'The pattern is back in Suggested.',
+          });
+        },
+        onError: (err: unknown) => {
+          toast.error('Could not unapprove this pattern', {
+            description: err instanceof Error ? err.message : String(err),
+          });
+        },
+        onSettled: () => setUpdatingId(null),
+      });
+    },
+    [unapproveMutation],
+  );
+
+  const handleRetarget = useCallback(
+    (id: string, actionType: QuickAction) => {
+      setUpdatingId(id);
+      customizeMutation.mutate(
+        { patternId: id, action: { actionType } },
+        {
+          onSuccess: () => {
+            toast.success(
+              `Rule changed to ${actionType === 'delete' ? 'Delete' : 'Mark as read'}`,
+            );
+          },
+          onError: (err: unknown) => {
+            toast.error('Could not change this rule', {
+              description: err instanceof Error ? err.message : String(err),
+            });
+          },
+          onSettled: () => setUpdatingId(null),
+        },
+      );
+    },
+    [customizeMutation],
   );
 
   const handleOpenCustomize = useCallback(
@@ -231,8 +285,11 @@ export function PatternsPage() {
                 onReject={handleReject}
                 onCustomize={handleOpenCustomize}
                 onPreview={handlePreview}
+                onRetarget={handleRetarget}
+                onUnapprove={handleUnapprove}
                 isApproving={approveMutation.isPending}
                 isRejecting={rejectMutation.isPending}
+                isUpdating={updatingId === pattern._id}
               />
             ))}
           </div>

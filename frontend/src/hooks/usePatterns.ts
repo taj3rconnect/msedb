@@ -7,6 +7,7 @@ import {
   bulkSuppressPatterns,
   approvePattern,
   rejectPattern,
+  unapprovePattern,
   customizePattern,
   triggerAnalysis,
 } from '@/api/patterns';
@@ -135,8 +136,25 @@ export function useRejectPattern() {
 }
 
 /**
- * Mutation hook to customize a pattern's action and approve it.
- * Invalidates patterns and dashboard stats on success.
+ * Mutation hook to undo an approval — the pattern returns to Suggested and its
+ * rule is deleted. Invalidates patterns, rules, and dashboard stats.
+ */
+export function useUnapprovePattern() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (patternId: string) => unapprovePattern(patternId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['patterns'] });
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] });
+    },
+  });
+}
+
+/**
+ * Mutation hook to set a pattern's action and approve it (also used to
+ * re-target an already-approved pattern).
+ * Invalidates patterns, rules, and dashboard stats on success.
  */
 export function useCustomizePattern() {
   const queryClient = useQueryClient();
@@ -150,6 +168,7 @@ export function useCustomizePattern() {
     }) => customizePattern(patternId, action),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['patterns'] });
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] });
     },
   });

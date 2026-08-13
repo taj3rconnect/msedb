@@ -135,20 +135,24 @@ export async function suggestSenders(q: string, mailboxId?: string): Promise<Sen
 export type BulkRuleAction = 'delete' | 'markRead';
 
 export interface BulkApproveResult {
+  /** Patterns that gained a rule they did not have. */
   created: number;
+  /** Already-approved patterns whose rule was rebuilt on the new action. */
+  updated: number;
   skipped: number;
   failed: number;
   total: number;
   results: Array<{
     patternId: string;
-    status: 'created' | 'skipped' | 'failed';
+    status: 'created' | 'updated' | 'skipped' | 'failed';
     ruleId?: string;
     reason?: string;
   }>;
 }
 
 /**
- * Approve many patterns at once with one action, creating a rule for each.
+ * Apply one action to many patterns at once, whatever state each is in —
+ * creating rules for un-approved ones and rebuilding the rule for approved ones.
  * Only ever called from an explicit user click in the bulk-rule drawer.
  */
 export async function bulkApprovePatterns(
@@ -207,7 +211,21 @@ export async function rejectPattern(patternId: string): Promise<Pattern> {
 }
 
 /**
- * Customize a pattern's action and approve it.
+ * Undo an approval: the pattern returns to Suggested and the rule it created is
+ * deleted, so nothing keeps acting on that sender.
+ */
+export async function unapprovePattern(
+  patternId: string,
+): Promise<{ pattern: Pattern; rulesDeleted: number }> {
+  return apiFetch<{ pattern: Pattern; rulesDeleted: number }>(
+    `/patterns/${patternId}/unapprove`,
+    { method: 'POST' },
+  );
+}
+
+/**
+ * Set a pattern's action and approve it. Also accepts an already-approved
+ * pattern, in which case its rule is rebuilt on the new action.
  */
 export async function customizePattern(
   patternId: string,
