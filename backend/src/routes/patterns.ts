@@ -26,6 +26,10 @@ patternsRouter.use(requireAuth);
 // Valid action types for customization
 const VALID_ACTION_TYPES = ['delete', 'move', 'archive', 'markRead', 'flag', 'categorize'] as const;
 
+// Upper bound on a single bulk-approve request — keeps one click from queuing
+// an unbounded number of Graph-backed rule creations.
+const BULK_APPROVE_MAX = 500;
+
 /**
  * GET /api/patterns
  *
@@ -194,6 +198,177 @@ patternsRouter.post('/analyze', async (req: Request, res: Response) => {
     message: 'Pattern analysis queued',
     jobId: job.id,
   });
+});
+
+/**
+ * GET /api/patterns/suggest
+ *
+ * Typeahead suggestions for the patterns search box. Returns distinct sender
+ * emails and domains matching the query, aggregated in the database.
+ * Query params: q (required, >= 1 char), mailboxId (optional), limit (default 10, max 25)
+ */
+patternsRouter.get('/suggest', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const { q, mailboxId } = req.query;
+
+  if (!q || typeof q !== 'string' || !q.trim()) {
+    res.json({ suggestions: [] });
+    return;
+  }
+
+  const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 25);
+  const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const searchRegex = new RegExp(escaped, 'i');
+
+  const match: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
+  if (mailboxId && typeof mailboxId === 'string') {
+    match.mailboxId = new Types.ObjectId(mailboxId);
+  }
+  match.$or = [
+    { 'condition.senderEmail': searchRegex },
+    { 'condition.senderDomain': searchRegex },
+  ];
+
+  // Aggregate distinct sender values in the DB — never fetch-then-dedupe in app code.
+  const rows = await Pattern.aggregate<{ _id: { value: string; type: string }; count: number }>([
+    { $match: match },
+    {
+      $project: {
+        values: {
+          $filter: {
+            input: [
+              { value: '$condition.senderEmail', type: 'email' },
+              { value: '$condition.senderDomain', type: 'domain' },
+            ],
+            as: 'v',
+            cond: {
+              $and: [
+                { $ne: ['$$v.value', null] },
+                { $ne: ['$$v.value', ''] },
+                { $regexMatch: { input: { $ifNull: ['$$v.value', ''] }, regex: searchRegex } },
+              ],
+            },
+          },
+        },
+      },
+    },
+    { $unwind: '$values' },
+    { $group: { _id: { value: '$values.value', type: '$values.type' }, count: { $sum: 1 } } },
+    { $sort: { count: -1, '_id.value': 1 } },
+    { $limit: limit },
+  ]);
+
+  res.json({
+    suggestions: rows.map((r) => ({
+      value: r._id.value,
+      type: r._id.type as 'email' | 'domain',
+      count: r.count,
+    })),
+  });
+});
+
+/**
+ * POST /api/patterns/bulk-approve
+ *
+ * Approve many patterns at once with a single chosen action, converting each
+ * to a rule. Body: { patternIds: string[], actionType: 'delete' | 'markRead' }
+ *
+ * Never runs implicitly — the frontend only calls this on an explicit click,
+ * preserving the "no rule without user approval" contract.
+ */
+patternsRouter.post('/bulk-approve', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const { patternIds, actionType } = req.body as {
+    patternIds?: unknown;
+    actionType?: unknown;
+  };
+
+  if (!Array.isArray(patternIds) || patternIds.length === 0) {
+    throw new ValidationError('patternIds must be a non-empty array');
+  }
+  if (patternIds.length > BULK_APPROVE_MAX) {
+    throw new ValidationError(`Cannot process more than ${BULK_APPROVE_MAX} patterns in one request`);
+  }
+  if (!patternIds.every((id): id is string => typeof id === 'string' && Types.ObjectId.isValid(id))) {
+    throw new ValidationError('patternIds must all be valid pattern ids');
+  }
+  if (actionType !== 'delete' && actionType !== 'markRead') {
+    throw new ValidationError("actionType must be 'delete' or 'markRead'");
+  }
+
+  const uniqueIds = [...new Set(patternIds)];
+  const patterns = await Pattern.find({ _id: { $in: uniqueIds }, userId });
+  const found = new Set(patterns.map((p) => p._id.toString()));
+
+  const results: Array<{
+    patternId: string;
+    status: 'created' | 'skipped' | 'failed';
+    ruleId?: string;
+    reason?: string;
+  }> = uniqueIds
+    .filter((id) => !found.has(id))
+    .map((id) => ({ patternId: id, status: 'skipped' as const, reason: 'Pattern not found' }));
+
+  for (const pattern of patterns) {
+    const patternId = pattern._id.toString();
+
+    if (pattern.status !== 'detected' && pattern.status !== 'suggested') {
+      results.push({ patternId, status: 'skipped', reason: `Pattern is already ${pattern.status}` });
+      continue;
+    }
+
+    try {
+      const originalAction = {
+        actionType: pattern.suggestedAction.actionType,
+        toFolder: pattern.suggestedAction.toFolder,
+        category: pattern.suggestedAction.category,
+      };
+
+      // Bulk actions are always terminal (delete / markRead) — no folder or category carries over.
+      pattern.suggestedAction = { actionType };
+      pattern.status = 'approved';
+      pattern.approvedAt = new Date();
+      await pattern.save();
+
+      await AuditLog.create({
+        userId,
+        mailboxId: pattern.mailboxId,
+        action: 'pattern_approved',
+        targetType: 'pattern',
+        targetId: patternId,
+        details: {
+          patternType: pattern.patternType,
+          confidence: pattern.confidence,
+          condition: pattern.condition,
+          suggestedAction: pattern.suggestedAction,
+          bulk: true,
+          originalAction,
+        },
+      });
+
+      const rule = await convertPatternToRule(pattern._id, new Types.ObjectId(userId));
+      results.push({ patternId, status: 'created', ruleId: rule._id?.toString() });
+    } catch (err) {
+      // One bad pattern must not abort the batch — record it and keep going.
+      logger.warn('Bulk pattern approval failed for one pattern', {
+        patternId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      results.push({
+        patternId,
+        status: 'failed',
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  const created = results.filter((r) => r.status === 'created').length;
+  const skipped = results.filter((r) => r.status === 'skipped').length;
+  const failed = results.filter((r) => r.status === 'failed').length;
+
+  logger.info('Bulk pattern approval complete', { userId, actionType, created, skipped, failed });
+
+  res.json({ created, skipped, failed, total: uniqueIds.length, results });
 });
 
 /**

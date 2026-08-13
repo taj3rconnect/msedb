@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { AlertCircle, Brain, Sparkles } from 'lucide-react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { AlertCircle, Brain, Sparkles, Layers } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -7,6 +7,7 @@ import { PatternCard } from '@/components/patterns/PatternCard';
 import { PatternFilters } from '@/components/patterns/PatternFilters';
 import { PatternCustomizeDialog } from '@/components/patterns/PatternCustomizeDialog';
 import { PatternPreviewDialog } from '@/components/patterns/PatternPreviewDialog';
+import { BulkRuleDrawer } from '@/components/patterns/BulkRuleDrawer';
 import {
   usePatterns,
   useApprovePattern,
@@ -46,6 +47,9 @@ export function PatternsPage() {
 
   // Preview dialog state
   const [previewTarget, setPreviewTarget] = useState<Pattern | null>(null);
+
+  // Bulk rule drawer state
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   // Build query params — status, hasRule, search are server-side; patternType is client-side
   const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
@@ -129,6 +133,24 @@ export function PatternsPage() {
     [filteredPatterns],
   );
 
+  // Filters handed to the bulk drawer — identical to what this page is showing,
+  // so a bulk action can never reach a pattern the user has filtered out.
+  const bulkFilters = useMemo(() => {
+    const parts: string[] = [];
+    if (statusFilter !== 'all') parts.push(`status ${statusFilter}`);
+    if (typeFilter !== 'all') parts.push(`type ${typeFilter}`);
+    if (ruleFilter !== 'all') parts.push(ruleFilter === 'has-rule' ? 'has rule' : 'no rule');
+    if (searchDebounced) parts.push(`search "${searchDebounced}"`);
+    return {
+      mailboxId: selectedMailboxId,
+      status: statusParam,
+      hasRule: hasRuleParam,
+      search: searchDebounced || undefined,
+      patternType: typeFilter,
+      summary: parts.length ? parts.join(', ') : 'no filters (all patterns)',
+    };
+  }, [statusFilter, typeFilter, ruleFilter, searchDebounced, selectedMailboxId, statusParam, hasRuleParam]);
+
   const handleAnalyze = useCallback(() => {
     triggerMutation.mutate(selectedMailboxId ?? undefined);
   }, [triggerMutation, selectedMailboxId]);
@@ -138,13 +160,19 @@ export function PatternsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Patterns</h1>
-        <Button
-          onClick={handleAnalyze}
-          disabled={triggerMutation.isPending}
-        >
-          <Sparkles className="h-4 w-4 mr-2" />
-          {triggerMutation.isPending ? 'Analyzing...' : 'Analyze Now'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setBulkOpen(true)}>
+            <Layers className="h-4 w-4 mr-2" />
+            Bulk Rule
+          </Button>
+          <Button
+            onClick={handleAnalyze}
+            disabled={triggerMutation.isPending}
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            {triggerMutation.isPending ? 'Analyzing...' : 'Analyze Now'}
+          </Button>
+        </div>
       </div>
 
       {/* Filters + count */}
@@ -154,6 +182,7 @@ export function PatternsPage() {
           patternType={typeFilter}
           ruleFilter={ruleFilter}
           search={searchInput}
+          mailboxId={selectedMailboxId}
           onStatusChange={handleStatusChange}
           onPatternTypeChange={handleTypeChange}
           onRuleFilterChange={handleRuleFilterChange}
@@ -251,6 +280,9 @@ export function PatternsPage() {
         open={previewTarget !== null}
         onOpenChange={(open) => { if (!open) setPreviewTarget(null); }}
       />
+
+      {/* Bulk rule drawer */}
+      <BulkRuleDrawer open={bulkOpen} onOpenChange={setBulkOpen} filters={bulkFilters} />
     </div>
   );
 }

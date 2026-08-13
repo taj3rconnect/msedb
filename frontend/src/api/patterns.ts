@@ -77,6 +77,90 @@ export async function fetchPatterns(params?: {
   return apiFetch<PatternsResponse>(`/patterns${qs ? `?${qs}` : ''}`);
 }
 
+/** Max pages walked by fetchAllPatterns — guards against an unbounded loop. */
+const ALL_PATTERNS_PAGE_LIMIT = 100;
+const ALL_PATTERNS_MAX_PAGES = 20;
+
+/**
+ * Fetch every pattern matching the given filters by walking the paginated
+ * endpoint. Used by the bulk-rule drawer, which must operate on the whole
+ * filtered result set rather than the page currently on screen.
+ *
+ * Caps at ALL_PATTERNS_MAX_PAGES pages; `truncated` reports when the cap was hit.
+ */
+export async function fetchAllPatterns(params?: {
+  mailboxId?: string;
+  status?: string;
+  hasRule?: boolean;
+  search?: string;
+}): Promise<{ patterns: Pattern[]; total: number; truncated: boolean }> {
+  const collected: Pattern[] = [];
+  let page = 1;
+  let total = 0;
+
+  for (; page <= ALL_PATTERNS_MAX_PAGES; page++) {
+    const res = await fetchPatterns({ ...params, page, limit: ALL_PATTERNS_PAGE_LIMIT });
+    total = res.pagination.total;
+    collected.push(...res.patterns);
+    if (page >= res.pagination.totalPages || res.patterns.length === 0) {
+      return { patterns: collected, total, truncated: false };
+    }
+  }
+
+  return { patterns: collected, total, truncated: true };
+}
+
+// --- Typeahead ---
+
+export interface SenderSuggestion {
+  value: string;
+  type: 'email' | 'domain';
+  count: number;
+}
+
+/**
+ * Typeahead suggestions for sender email / domain, matched in the database.
+ */
+export async function suggestSenders(q: string, mailboxId?: string): Promise<SenderSuggestion[]> {
+  const searchParams = new URLSearchParams({ q });
+  if (mailboxId) searchParams.set('mailboxId', mailboxId);
+  const data = await apiFetch<{ suggestions: SenderSuggestion[] }>(
+    `/patterns/suggest?${searchParams.toString()}`,
+  );
+  return data.suggestions;
+}
+
+// --- Bulk rule creation ---
+
+export type BulkRuleAction = 'delete' | 'markRead';
+
+export interface BulkApproveResult {
+  created: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  results: Array<{
+    patternId: string;
+    status: 'created' | 'skipped' | 'failed';
+    ruleId?: string;
+    reason?: string;
+  }>;
+}
+
+/**
+ * Approve many patterns at once with one action, creating a rule for each.
+ * Only ever called from an explicit user click in the bulk-rule drawer.
+ */
+export async function bulkApprovePatterns(
+  patternIds: string[],
+  actionType: BulkRuleAction,
+): Promise<BulkApproveResult> {
+  return apiFetch<BulkApproveResult>('/patterns/bulk-approve', {
+    method: 'POST',
+    body: JSON.stringify({ patternIds, actionType }),
+  });
+}
+
 /**
  * Approve a pattern suggestion.
  */
