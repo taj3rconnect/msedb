@@ -1,0 +1,2 @@
+date,run_id,branch,sha,dims,evaluated,total,passed,failed,score,max_scored,pct,coverage_pct
+2026-08-13,20260813T2130Z,audit/2026-08-13,53f9910,app db ui arch security reliability perf tests,136,151,78,58,148,295,50.2,90.1
