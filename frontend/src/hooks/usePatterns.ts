@@ -4,6 +4,7 @@ import {
   fetchAllPatterns,
   suggestSenders,
   bulkApprovePatterns,
+  bulkSuppressPatterns,
   approvePattern,
   rejectPattern,
   customizePattern,
@@ -14,6 +15,7 @@ import type {
   PatternSuggestedAction,
   BulkRuleAction,
   SenderSuggestion,
+  SuppressScope,
 } from '@/api/patterns';
 
 /**
@@ -80,6 +82,23 @@ export function useBulkApprovePatterns() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['patterns'] });
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] });
+    },
+  });
+}
+
+/**
+ * Mutation hook to permanently suppress the senders behind many patterns.
+ * Invalidates patterns, mailboxes (whitelist changed), and dashboard stats.
+ */
+export function useBulkSuppressPatterns() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ patternIds, scope }: { patternIds: string[]; scope: SuppressScope }) =>
+      bulkSuppressPatterns(patternIds, scope),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['patterns'] });
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'stats'] });
     },
   });

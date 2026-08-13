@@ -161,6 +161,33 @@ export async function bulkApprovePatterns(
   });
 }
 
+// --- Permanent suppression ---
+
+export type SuppressScope = 'sender' | 'domain';
+
+export interface SuppressResult {
+  suppressed: number;
+  values: string[];
+  patternsRejected: number;
+  mailboxesUpdated: number;
+  skipped: Array<{ patternId: string; reason: string }>;
+}
+
+/**
+ * Permanently silence the senders behind these patterns — they are added to the
+ * mailbox whitelist, so pattern analysis never suggests a rule for them again.
+ * Existing rules are not deleted; they simply stop firing.
+ */
+export async function bulkSuppressPatterns(
+  patternIds: string[],
+  scope: SuppressScope = 'sender',
+): Promise<SuppressResult> {
+  return apiFetch<SuppressResult>('/patterns/bulk-suppress', {
+    method: 'POST',
+    body: JSON.stringify({ patternIds, scope }),
+  });
+}
+
 /**
  * Approve a pattern suggestion.
  */

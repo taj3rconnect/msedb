@@ -1,6 +1,16 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { AlertCircle, Loader2, Trash2, MailOpen } from 'lucide-react';
+import { AlertCircle, Loader2, Trash2, MailOpen, BellOff } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Sheet,
   SheetContent,
@@ -14,8 +24,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAllPatterns, useBulkApprovePatterns } from '@/hooks/usePatterns';
-import type { BulkRuleAction, Pattern } from '@/api/patterns';
+import { useAllPatterns, useBulkApprovePatterns, useBulkSuppressPatterns } from '@/hooks/usePatterns';
+import type { BulkRuleAction, Pattern, SuppressScope } from '@/api/patterns';
 
 /** Filters currently applied on the patterns page — the drawer never widens them. */
 export interface BulkRuleFilters {
@@ -90,6 +100,8 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
   const [minObserved, setMinObserved] = useState(String(DEFAULT_MIN_OBSERVED));
   const [action, setAction] = useState<BulkRuleAction>('delete');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [suppressOpen, setSuppressOpen] = useState(false);
+  const [suppressScope, setSuppressScope] = useState<SuppressScope>('sender');
 
   // Fetches only once the user has opened the drawer — never on page load.
   const { data, isLoading, isError } = useAllPatterns(
@@ -103,6 +115,7 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
   );
 
   const bulkMutation = useBulkApprovePatterns();
+  const suppressMutation = useBulkSuppressPatterns();
 
   const matches = useMemo(() => {
     const all = data?.patterns ?? [];
@@ -139,6 +152,45 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
       else next.add(id);
       return next;
     });
+  }
+
+  // The exact values that will be silenced — shown in the confirm dialog so the
+  // user sees what they are committing to, not just a count.
+  const suppressTargets = useMemo(() => {
+    const values = matches
+      .filter((p) => selected.has(p._id))
+      .map((p) => {
+        const email = p.condition.senderEmail;
+        const domain = p.condition.senderDomain;
+        return suppressScope === 'domain'
+          ? (domain ?? email?.split('@')[1])
+          : (email ?? domain);
+      })
+      .filter((v): v is string => Boolean(v))
+      .map((v) => v.toLowerCase());
+    return [...new Set(values)];
+  }, [matches, selected, suppressScope]);
+
+  function handleSuppress() {
+    if (visibleSelectedIds.length === 0) return;
+    suppressMutation.mutate(
+      { patternIds: visibleSelectedIds, scope: suppressScope },
+      {
+        onSuccess: (result) => {
+          toast.success(
+            `Silenced ${result.suppressed} ${suppressScope === 'domain' ? 'domain' : 'sender'}${result.suppressed === 1 ? '' : 's'}`,
+            { description: 'No new patterns will be suggested for them. Undo in Settings → Whitelist.' },
+          );
+          setSelected(new Set());
+          setSuppressOpen(false);
+        },
+        onError: (err: unknown) => {
+          toast.error('Could not silence these senders', {
+            description: err instanceof Error ? err.message : String(err),
+          });
+        },
+      },
+    );
   }
 
   function handleCreate() {
@@ -331,14 +383,80 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
               Mark as read
             </Button>
           </div>
-          <Button
-            onClick={handleCreate}
-            disabled={visibleSelectedIds.length === 0 || bulkMutation.isPending}
-          >
-            {bulkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create {visibleSelectedIds.length} rule{visibleSelectedIds.length === 1 ? '' : 's'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setSuppressOpen(true)}
+              disabled={visibleSelectedIds.length === 0 || suppressMutation.isPending}
+              title="Never suggest a rule for these senders again"
+            >
+              {suppressMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <BellOff className="mr-1 h-4 w-4" />
+              Never suggest
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={visibleSelectedIds.length === 0 || bulkMutation.isPending}
+            >
+              {bulkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Create {visibleSelectedIds.length} rule{visibleSelectedIds.length === 1 ? '' : 's'}
+            </Button>
+          </div>
         </SheetFooter>
+
+        {/* Confirm permanent suppression */}
+        <AlertDialog open={suppressOpen} onOpenChange={setSuppressOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Never suggest rules for {suppressTargets.length}{' '}
+                {suppressScope === 'domain' ? 'domain' : 'sender'}
+                {suppressTargets.length === 1 ? '' : 's'}?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-3">
+                  <p>
+                    These are added to this mailbox&apos;s whitelist. Pattern analysis will stop
+                    detecting them, so they never appear as a suggestion again. Existing rules are
+                    not deleted — they simply stop firing. Reversible in Settings → Whitelist.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">Silence the</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={suppressScope === 'sender' ? 'default' : 'outline'}
+                      onClick={() => setSuppressScope('sender')}
+                    >
+                      exact address
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={suppressScope === 'domain' ? 'default' : 'outline'}
+                      onClick={() => setSuppressScope('domain')}
+                    >
+                      whole domain
+                    </Button>
+                  </div>
+                  <ul className="max-h-40 overflow-y-auto rounded-md border p-2 text-sm">
+                    {suppressTargets.map((v) => (
+                      <li key={v} className="truncate py-0.5">
+                        {v}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleSuppress} disabled={suppressMutation.isPending}>
+                Never suggest these
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SheetContent>
     </Sheet>
   );
