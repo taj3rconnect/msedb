@@ -372,6 +372,129 @@ patternsRouter.post('/bulk-approve', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/patterns/bulk-suppress
+ *
+ * Permanently silence the senders behind the given patterns: add each one to
+ * its mailbox's whitelist and mark the pattern rejected, so pattern analysis
+ * never suggests a rule for that sender again.
+ *
+ * Body: { patternIds: string[], scope?: 'sender' | 'domain' }
+ *   scope 'sender' (default) whitelists the exact address;
+ *   scope 'domain' whitelists the whole sending domain.
+ *
+ * Non-destructive: existing rules are left untouched. They become inert on
+ * their own because ruleEngine already refuses to act on whitelisted senders,
+ * so nothing the user built is deleted behind their back.
+ */
+patternsRouter.post('/bulk-suppress', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const { patternIds, scope = 'sender' } = req.body as {
+    patternIds?: unknown;
+    scope?: unknown;
+  };
+
+  if (!Array.isArray(patternIds) || patternIds.length === 0) {
+    throw new ValidationError('patternIds must be a non-empty array');
+  }
+  if (patternIds.length > BULK_APPROVE_MAX) {
+    throw new ValidationError(`Cannot process more than ${BULK_APPROVE_MAX} patterns in one request`);
+  }
+  if (!patternIds.every((id): id is string => typeof id === 'string' && Types.ObjectId.isValid(id))) {
+    throw new ValidationError('patternIds must all be valid pattern ids');
+  }
+  if (scope !== 'sender' && scope !== 'domain') {
+    throw new ValidationError("scope must be 'sender' or 'domain'");
+  }
+
+  const uniqueIds = [...new Set(patternIds)];
+  const patterns = await Pattern.find({ _id: { $in: uniqueIds }, userId });
+
+  // Group the values to whitelist by mailbox so each mailbox is written once,
+  // rather than once per pattern.
+  const byMailbox = new Map<string, { senders: Set<string>; domains: Set<string> }>();
+  const suppressedValues: string[] = [];
+  const skipped: Array<{ patternId: string; reason: string }> = [];
+
+  for (const pattern of patterns) {
+    const email = pattern.condition?.senderEmail?.trim();
+    const domain = pattern.condition?.senderDomain?.trim();
+    const value = scope === 'domain' ? (domain ?? email?.split('@')[1]) : (email ?? domain);
+
+    if (!value) {
+      skipped.push({ patternId: pattern._id.toString(), reason: 'Pattern has no sender to suppress' });
+      continue;
+    }
+
+    const key = pattern.mailboxId.toString();
+    if (!byMailbox.has(key)) byMailbox.set(key, { senders: new Set(), domains: new Set() });
+    const bucket = byMailbox.get(key)!;
+    // A value is a domain entry when we're in domain scope or it isn't an address.
+    if (scope === 'domain' || !value.includes('@')) bucket.domains.add(value.toLowerCase());
+    else bucket.senders.add(value.toLowerCase());
+    suppressedValues.push(value.toLowerCase());
+  }
+
+  // Apply the whitelist additions — $addToSet keeps this idempotent.
+  let mailboxesUpdated = 0;
+  for (const [mailboxId, { senders, domains }] of byMailbox) {
+    const addToSet: Record<string, unknown> = {};
+    if (senders.size) addToSet['settings.whitelistedSenders'] = { $each: [...senders] };
+    if (domains.size) addToSet['settings.whitelistedDomains'] = { $each: [...domains] };
+    if (!Object.keys(addToSet).length) continue;
+
+    const result = await Mailbox.updateOne({ _id: mailboxId, userId }, { $addToSet: addToSet });
+    if (result.matchedCount > 0) mailboxesUpdated++;
+
+    await AuditLog.create({
+      userId,
+      mailboxId,
+      action: 'whitelist_updated',
+      targetType: 'mailbox',
+      targetId: mailboxId,
+      details: {
+        source: 'pattern_bulk_suppress',
+        addedSenders: [...senders],
+        addedDomains: [...domains],
+      },
+    });
+  }
+
+  // Mark the patterns rejected so they leave the suggestion queue immediately.
+  // The whitelist — not this status — is what keeps them from coming back.
+  const rejectableIds = patterns
+    .filter((p) => p.status === 'detected' || p.status === 'suggested')
+    .map((p) => p._id);
+
+  const updateResult = await Pattern.updateMany(
+    { _id: { $in: rejectableIds }, userId },
+    {
+      $set: {
+        status: 'rejected',
+        rejectedAt: new Date(),
+        // Far-future: suppression is permanent, and the whitelist is the real gate.
+        rejectionCooldownUntil: new Date('9999-12-31T00:00:00.000Z'),
+      },
+    },
+  );
+
+  logger.info('Bulk pattern suppression complete', {
+    userId,
+    scope,
+    suppressed: suppressedValues.length,
+    mailboxesUpdated,
+    patternsRejected: updateResult.modifiedCount,
+  });
+
+  res.json({
+    suppressed: suppressedValues.length,
+    values: [...new Set(suppressedValues)],
+    patternsRejected: updateResult.modifiedCount,
+    mailboxesUpdated,
+    skipped,
+  });
+});
+
+/**
  * GET /api/patterns/:id/messages
  *
  * Fetch the 5 most recent messages matching this pattern's sender from Graph API.
