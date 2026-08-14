@@ -78,10 +78,10 @@ docker compose down -v
 ### Docker Images (auto-pulled)
 | Image | Service | Notes |
 |-------|---------|-------|
-| mongo:7 | msedb-mongo | Shared with JTCRM on port 27020 |
-| redis:7-alpine | msedb-redis | Port 6382 |
-| node:20-alpine (Dockerfile) | msedb-backend | Express.js + TypeScript |
-| node:20-alpine (Dockerfile) | msedb-frontend | Next.js served by nginx |
+| mongo:8.2 | msedb-mongo | Shared with JTCRM on port 27020 |
+| redis:8-alpine | msedb-redis | Port 6382 |
+| node:22-alpine (Dockerfile) | msedb-backend | Express.js + TypeScript |
+| node:22-alpine (Dockerfile) | msedb-frontend | Vite + React served by nginx |
 | cloudflare/cloudflared | msedb-tunnel | |
 
 ### External Dependency
