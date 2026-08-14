@@ -84,11 +84,11 @@ function ReportRow({ row, isTotals }: { row: MailboxCounts; isTotals?: boolean }
           row.email
         )}
       </TableCell>
-      <TableCell className="text-center"><CellValue value={row.deleted} color={COLUMN_COLORS.deleted} /></TableCell>
-      <TableCell className="text-center"><CellValue value={row.movedAndRead} color={COLUMN_COLORS.movedAndRead} /></TableCell>
-      <TableCell className="text-center"><CellValue value={row.movedOnly} color={COLUMN_COLORS.movedOnly} /></TableCell>
-      <TableCell className="text-center"><CellValue value={row.markedRead} color={COLUMN_COLORS.markedRead} /></TableCell>
-      <TableCell className="text-center font-bold">{total === 0 ? <span className="text-muted-foreground/50">0</span> : fmt(total)}</TableCell>
+      <TableCell className="text-right"><CellValue value={row.deleted} color={COLUMN_COLORS.deleted} /></TableCell>
+      <TableCell className="text-right"><CellValue value={row.movedAndRead} color={COLUMN_COLORS.movedAndRead} /></TableCell>
+      <TableCell className="text-right"><CellValue value={row.movedOnly} color={COLUMN_COLORS.movedOnly} /></TableCell>
+      <TableCell className="text-right"><CellValue value={row.markedRead} color={COLUMN_COLORS.markedRead} /></TableCell>
+      <TableCell className="text-right font-bold">{total === 0 ? <span className="text-muted-foreground/50">0</span> : fmt(total)}</TableCell>
     </TableRow>
   );
 }
@@ -172,11 +172,11 @@ export function ReportsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Mailbox</TableHead>
-                    <TableHead className="text-center"><ColorDot color={DOT_COLORS.deleted} />Deleted</TableHead>
-                    <TableHead className="text-center"><ColorDot color={DOT_COLORS.movedAndRead} />Moved & Read</TableHead>
-                    <TableHead className="text-center"><ColorDot color={DOT_COLORS.movedOnly} />Moved Only</TableHead>
-                    <TableHead className="text-center"><ColorDot color={DOT_COLORS.markedRead} />Mark Read</TableHead>
-                    <TableHead className="text-center">Total</TableHead>
+                    <TableHead className="text-right"><ColorDot color={DOT_COLORS.deleted} />Deleted</TableHead>
+                    <TableHead className="text-right"><ColorDot color={DOT_COLORS.movedAndRead} />Moved & Read</TableHead>
+                    <TableHead className="text-right"><ColorDot color={DOT_COLORS.movedOnly} />Moved Only</TableHead>
+                    <TableHead className="text-right"><ColorDot color={DOT_COLORS.markedRead} />Mark Read</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

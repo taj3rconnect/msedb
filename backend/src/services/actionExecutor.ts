@@ -7,6 +7,28 @@ import { AuditLog } from '../models/AuditLog.js';
 import logger from '../config/logger.js';
 
 /**
+ * Read the NEW message id out of a Graph `/move` response body.
+ *
+ * Graph returns the moved message resource (with its new folder-scoped `id`).
+ * Returns null when the body carries no usable id, in which case the caller
+ * keeps the id it already had.
+ */
+async function readMovedMessageId(response: unknown): Promise<string | null> {
+  const json = (response as { json?: () => Promise<unknown> } | null)?.json;
+  if (typeof json !== 'function') return null;
+  try {
+    const data = (await json.call(response)) as { id?: unknown } | null;
+    const id = data?.id;
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  } catch (error) {
+    logger.warn('Could not read new message id from Graph move response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
  * Execute a list of rule actions against a message via Microsoft Graph API.
  *
  * SAFETY: Delete actions are NEVER permanent. All deletes are routed through
@@ -53,6 +75,17 @@ export async function executeActions(params: {
   const executedActions: string[] = [];
   let thrownError: unknown;
 
+  // Graph message ids are FOLDER-SCOPED: a move/archive assigns the message a
+  // NEW id and returns the moved resource in the response body. Subsequent
+  // actions in the same rule must target that new id, or they 404 against the
+  // stale pre-move id and the rest of the approved actions are silently skipped.
+  let currentMessageId = messageId;
+
+  const adoptMovedMessageId = async (response: unknown): Promise<void> => {
+    const newId = await readMovedMessageId(response);
+    if (newId) currentMessageId = newId;
+  };
+
   try {
     for (const action of sortedActions) {
       try {
@@ -60,14 +93,15 @@ export async function executeActions(params: {
           case 'delete': {
             if (skipStaging) {
               // Direct delete — skip staging for user-initiated quick actions
-              await graphFetch(
-                `${userPath}/messages/${messageId}/move`,
+              const moved = await graphFetch(
+                `${userPath}/messages/${currentMessageId}/move`,
                 accessToken,
                 {
                   method: 'POST',
                   body: JSON.stringify({ destinationId: 'deleteditems' }),
                 },
               );
+              await adoptMovedMessageId(moved);
               executedActions.push('delete (direct)');
             } else {
               // Route through staging folder for webhook-triggered automation
@@ -75,19 +109,20 @@ export async function executeActions(params: {
                 mailboxEmail,
                 accessToken,
               );
-              await graphFetch(
-                `${userPath}/messages/${messageId}/move`,
+              const moved = await graphFetch(
+                `${userPath}/messages/${currentMessageId}/move`,
                 accessToken,
                 {
                   method: 'POST',
                   body: JSON.stringify({ destinationId: stagingFolderId }),
                 },
               );
+              await adoptMovedMessageId(moved);
               await createStagedEmail({
                 userId,
                 mailboxId,
                 ruleId,
-                messageId,
+                messageId: currentMessageId,
                 originalFolder,
                 actions: [{ actionType: 'delete' }],
               });
@@ -104,21 +139,22 @@ export async function executeActions(params: {
               });
               break;
             }
-            await graphFetch(
-              `${userPath}/messages/${messageId}/move`,
+            const moved = await graphFetch(
+              `${userPath}/messages/${currentMessageId}/move`,
               accessToken,
               {
                 method: 'POST',
                 body: JSON.stringify({ destinationId: action.toFolder }),
               },
             );
+            await adoptMovedMessageId(moved);
             executedActions.push(`move to ${action.toFolder}`);
             break;
           }
 
           case 'markRead': {
             await graphFetch(
-              `${userPath}/messages/${messageId}`,
+              `${userPath}/messages/${currentMessageId}`,
               accessToken,
               {
                 method: 'PATCH',
@@ -143,7 +179,7 @@ export async function executeActions(params: {
               break;
             }
             await graphFetch(
-              `${userPath}/messages/${messageId}`,
+              `${userPath}/messages/${currentMessageId}`,
               accessToken,
               {
                 method: 'PATCH',
@@ -155,21 +191,22 @@ export async function executeActions(params: {
           }
 
           case 'archive': {
-            await graphFetch(
-              `${userPath}/messages/${messageId}/move`,
+            const moved = await graphFetch(
+              `${userPath}/messages/${currentMessageId}/move`,
               accessToken,
               {
                 method: 'POST',
                 body: JSON.stringify({ destinationId: 'archive' }),
               },
             );
+            await adoptMovedMessageId(moved);
             executedActions.push('archive');
             break;
           }
 
           case 'flag': {
             await graphFetch(
-              `${userPath}/messages/${messageId}`,
+              `${userPath}/messages/${currentMessageId}`,
               accessToken,
               {
                 method: 'PATCH',
@@ -194,7 +231,7 @@ export async function executeActions(params: {
               break;
             }
             await graphFetch(
-              `${userPath}/messages/${messageId}/forward`,
+              `${userPath}/messages/${currentMessageId}/forward`,
               accessToken,
               {
                 method: 'POST',

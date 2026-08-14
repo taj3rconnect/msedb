@@ -3,6 +3,7 @@ import { getUserId } from '../../auth/middleware.js';
 import { Rule } from '../../models/Rule.js';
 import { Mailbox } from '../../models/Mailbox.js';
 import { AuditLog } from '../../models/AuditLog.js';
+import { StagedEmail } from '../../models/StagedEmail.js';
 import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
 import { syncRuleToGraph, deleteGraphRule } from '../../services/graphRuleSync.js';
 import logger from '../../config/logger.js';
@@ -338,6 +339,13 @@ crudRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
         }
       }
 
+      // Retire (never delete) staged emails still pointing at this rule, so the
+      // deleted rule leaves no dangling StagedEmail.ruleId reference.
+      await StagedEmail.updateMany(
+        { ruleId: rule._id, status: 'staged' },
+        { $set: { status: 'expired' } }
+      );
+
       await Rule.deleteOne({ _id: rule._id });
 
       await AuditLog.create({
@@ -351,8 +359,12 @@ crudRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
       });
 
       deleted++;
-    } catch {
+    } catch (err) {
       failed++;
+      logger.warn('Failed to delete rule by sender', {
+        ruleId: rule._id?.toString(),
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -405,6 +417,13 @@ crudRouter.delete('/:id', async (req: Request, res: Response) => {
       });
     }
   }
+
+  // Retire (never delete) staged emails still pointing at this rule, so the
+  // deleted rule leaves no dangling StagedEmail.ruleId reference.
+  await StagedEmail.updateMany(
+    { ruleId: rule._id, status: 'staged' },
+    { $set: { status: 'expired' } }
+  );
 
   await Rule.deleteOne({ _id: rule._id });
 

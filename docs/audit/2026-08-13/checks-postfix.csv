@@ -1,0 +1,152 @@
+check_id,dim,status,score,max,note
+GIT-001,app,PASS,2,2,main present; develop unused by design (EXCEPTION GIT-001)
+DOC-001,app,PASS,1,1,README.md present
+DOC-002,app,PASS,1,1,CLAUDE.md present
+DOC-003,app,PASS,1,1,MEMORY.md present
+DOC-004,app,PASS,1,1,AGENTS.md present (thin pointer per spec)
+DOC-005,app,PASS,2,2,DEPLOY.md present; runner+watchdog+rollback documented
+DOC-006,app,PASS,1,1,design.md present
+DOC-007,app,FAIL,0,3,backup.md exists but no data backup ever run and restore never verified
+DOC-008,app,PASS,1,1,stack.md present and lockfile-derived
+DOC-009,app,PASS,2,2,RUNBOOK.md stale vs actual stack (APP-07)
+DOC-010,app,PASS,1,1,data.md present and thorough
+DOC-011,app,PASS,1,1,CLAUDE.md is command-rich with pointers
+STG-001,app,PASS,1,1,EXCEPTION -- accepted deviation, no staging tier
+STG-002,app,PASS,1,1,EXCEPTION -- accepted deviation, no staging tier
+STG-003,app,PASS,1,1,EXCEPTION -- accepted deviation, no staging tier
+SEC-001,app,PASS,3,3,.env* ignored and untracked; .env.example placeholders only
+SEC-002,app,FAIL,0,5,CRITICAL committed key material still tracked in a PUBLIC repo (APP-01)
+SEC-003,app,PASS,2,2,settings.local.json untracked; cert/key globs in .gitignore going forward
+CI-001,app,FAIL,0,3,ci.yml gates backend only; frontend build never runs in CI (APP-02)
+LINT-001,app,FAIL,0,2,no eslint config anywhere; frontend lint script references uninstalled eslint (APP-03)
+SKL-001,app,PASS,1,1,.claude/ agents/ commands/ docs/ adr/ wireframes/ all present
+AGT-001,app,PASS,2,2,deploy-prod.md present; delegates to /tprod
+AGT-002,app,PASS,5,5,git-triggered runner (deploy.yml + self-hosted runner + deploy-live.sh) confirmed real
+AGT-003,app,PASS,3,3,deploy-live.sh installs/refreshes watchdog cron every deploy
+APP-001,app,FAIL,0,3,SYSINFO page/route entirely absent (APP-04)
+APP-002,app,FAIL,0,2,Responsive toggle absent from avatar menu (APP-05)
+APP-003,app,PASS,2,2,health endpoint functional with real Mongo/Redis checks; route-name deviation noted not failed
+APP-005,app,FAIL,0,2,tables built on npm ag-grid not vendored prdgrid (APP-06)
+APP-006,app,PASS,1,1,own favicon.svg + Logo.tsx present, not framework default
+CDR-001,app,PASS,1,1,TS-only confirmed; Mongoose is EXCEPTION DB-PRISMA-000
+CDR-002,app,NOT_EVALUATED,,1,advisory -- no exhaustive DRY scan run by the app dim (arch dim covered it)
+CDR-003,app,FAIL,0,2,no migration framework; change log has only a bootstrap row
+OPS-001,app,PASS,1,1,dev/build/test script verbs present; container names match convention
+ENV-001,app,PASS,3,3,EXCEPTION -- no staging tier, no outbound side-effect surface to contain
+OBS-001,app,PASS,1,1,winston structured logging present; health output sanitized
+PRT-001,app,NOT_EVALUATED,,1,no vault access from this agent
+VLT-001,app,NOT_EVALUATED,,1,no vault access from this agent
+NST-001,app,PASS,1,1,single CLAUDE.md at root; nothing to prune
+DB-PK-001,db,NOT_EVALUATED,,1,N/A -- MongoDB has no PK DDL concept; implicit _id
+DB-FK-001,db,NOT_EVALUATED,,1,N/A -- MongoDB has no enforced FK constraints
+DB-FK-002,db,PASS,2,2,uncleaned StagedEmail.ruleId reference on rule delete (DB-04)
+DB-FK-004,db,NOT_EVALUATED,,5,live orphan count unreachable -- ssh prohibited by HALT LIST; last known-good 2026-08-08 zero orphans
+DB-IDX-001,db,NOT_EVALUATED,,2,unused-index stats require live $indexStats -- ssh prohibited by HALT LIST
+DB-IDX-002,db,PASS,2,2,redundant index Mailbox {userId:1} vs {userId:1,email:1} (DB-06)
+DB-IDX-003,db,NOT_EVALUATED,,2,invalid/failed-build index detection requires live catalog -- ssh prohibited
+DB-ORPH-001,db,FAIL,0,2,calendarsyncmaps (+ settings) present in last live snapshot with zero code refs (DB-01)
+DB-STAB-002,db,NOT_EVALUATED,,2,storage-engine health requires live server status -- ssh prohibited
+DB-STAB-003,db,PASS,2,2,all 12 models declare timestamps:true
+DB-STAB-004,db,FAIL,0,5,no verified data backup ever run (duplicate of DOC-007 -- see disclosure)
+DB-STAB-005,db,PASS,2,2,data.md change log missing a row for today's AuditLog enum change (DB-03)
+DB-STAB-006,db,NOT_EVALUATED,,5,operational health requires a live session -- ssh prohibited
+DB-DDL-001,db,PASS,2,2,docs/msedb-ddl.md exists and is dated 2026-08-08; staleness vs live NOT evaluable
+DB-TTL-001,db,PASS,2,2,every high-volume collection carries a TTL index in its model
+DB-AUDIT-001,db,PASS,3,3,AuditLog model + 22 call sites across 10 files
+DB-PRISMA-000,db,EXCEPTION,,0,accepted deviation -- MongoDB via Mongoose; Prisma rule targets SQL
+DB-MIGRATION-001,db,FAIL,0,3,no migration framework exists (DB-05)
+DB-ORPH-REF-001,db,PASS,2,2,full-account delete cascades all 8 userId-scoped collections plus User
+UI-01,ui,PASS,2,2,numeric columns center-aligned in ReportsPage and DuplicatesPanel
+UI-02,ui,FAIL,0,3,no shared progress popup; 24 of 25 loading states bypass LoadingSpinner
+UI-03,ui,PASS,3,3,signature delete has no confirmation dialog
+UI-04,ui,PASS,2,2,signature delete icon button has no accessible name
+UI-05,ui,FAIL,0,2,all dropdowns are static Select; no typeahead primitive anywhere
+UI-06,ui,FAIL,0,1,no /sysinfo route (same root cause as APP-001)
+UI-07,ui,FAIL,0,1,no Responsive toggle in avatar menu (same root cause as APP-002)
+UI-08,ui,PASS,1,1,health served at /api/health not /api/v1/health -- additive alias resolves dim disagreement
+UI-09,ui,PASS,5,5,core UX contract holds -- no rule created without explicit approve click
+UI-10,ui,PASS,2,2,no OS alert()/confirm()/prompt() anywhere in frontend/src
+UI-11,ui,PASS,2,2,no $ sign in value formatters
+UI-12,ui,PASS,1,1,own logo + favicon present
+UI-13,ui,PASS,2,2,RuleEditDialog inputs correctly labeled via htmlFor (spot-check)
+UI-14,ui,PASS,3,3,ReportsPage has loading/error/empty coverage via Skeleton + EmptyState
+UI-15,ui,PASS,3,3,BulkRuleDrawer has full state coverage + destructive-action confirm
+UI-16,ui,NOT_EVALUATED,,3,live spot-check not run -- no browser used this pass
+UI-17,ui,NOT_EVALUATED,,2,color contrast needs a rendered page
+ARCH-BASELINE-01,arch,PASS,2,2,backend vitest: 9 files / 68 tests green
+ARCH-BASELINE-02,arch,PASS,2,2,backend tsc --noEmit clean
+ARCH-BASELINE-03,arch,PASS,2,2,frontend tsc -b clean
+ARCH-BASELINE-04,arch,FAIL,0,2,ORCHESTRATOR OVERRIDE -- not a sandbox issue; frontend has no eslint dep and no config (duplicate of LINT-001)
+ARCH-DEPTH-01,arch,PASS,1,1,RuleActionsDialog.tsx 919 lines deep/leave-whole
+ARCH-DEPTH-02,arch,PASS,1,1,sidebar.tsx exempt -- vendored shadcn/ui
+ARCH-DEPTH-03,arch,PASS,1,1,InboxPage.tsx 952 lines deep/leave-whole; prior split executed
+ARCH-DEPTH-04,arch,PASS,1,1,events.ts 660 lines deep/leave-whole
+ARCH-DEPTH-05,arch,FAIL,0,2,patterns.ts 940 lines shallow -- business logic in route handlers (ARCH-02)
+ARCH-DUP-01,arch,PASS,3,3,CID inline-image logic duplicated verbatim in two files (ARCH-01)
+ARCH-DUP-02,arch,FAIL,0,2,sender/domain matching triplicated in ruleEngine.ts (ARCH-03)
+ARCH-DUP-03,arch,FAIL,0,2,mailbox ownership check duplicated 31x (ARCH-06)
+ARCH-TYPE-01,arch,PASS,1,1,as any escape in events.ts:476 (ARCH-05)
+ARCH-TYPE-02,arch,PASS,2,2,unvalidated external webhook payload crosses trust boundary (ARCH-04)
+ARCH-ERR-01,arch,PASS,1,1,swallowed catch in mailbox/actions.ts contradicts its own comment (ARCH-07)
+ARCH-ERR-02,arch,PASS,1,1,swallowed catch in rules/crud.ts loses per-rule failure reason (ARCH-08)
+ARCH-ERR-03,arch,PASS,1,1,globalErrorHandler centralizes error mapping -- no per-route reimplementation
+ARCH-QUEUE-01,arch,PASS,2,2,all 13 queues share one defaultJobOptions and one logging block
+ARCH-QUEUE-02,arch,PASS,1,1,concurrency overrides carry explicit rationale comments
+ARCH-LAYER-01,arch,PASS,1,1,patternBulkPlan.ts / ruleConverter.ts confirm route-calls-service pattern exists
+SEC-CHK-01,security,FAIL,0,5,ORCHESTRATOR OVERRIDE -- lens scoped to .env only and missed tracked key material; git ls-files confirms 3 credential files (duplicate of SEC-002)
+SEC-CHK-02,security,PASS,3,3,all routers apply requireAuth except documented health/webhooks/track
+SEC-CHK-03,security,PASS,3,3,events.ts resolves Mailbox by id without userId scope in 3 handlers (SEC-02)
+SEC-CHK-04,security,PASS,3,3,webhooks validates Graph validationToken handshake and clientState before enqueue
+SEC-CHK-05,security,PASS,3,3,subscriptionId used in Mongoose filter unsanitized (SEC-01)
+SEC-CHK-06,security,PASS,2,2,tracking pixel id is an Express path param; no injection vector found
+SEC-CHK-07,security,PASS,2,2,CSRF covers all non-GET routes; exemptions match documented public routes only
+SEC-CHK-08,security,PASS,2,2,CORS uses explicit origin allowlist not wildcard
+SEC-CHK-09,security,PASS,2,2,session cookie httpOnly + sameSite=lax + secure-in-prod; JWT server-verified
+SEC-CHK-10,security,PASS,3,3,Graph tokens encrypted at rest AES-256-GCM; legacy plaintext re-encrypts on write
+SEC-CHK-11,security,PASS,2,2,config fails closed in production on missing/short secrets
+SEC-CHK-12,security,PASS,2,2,rate limiters match documented 20/min auth and 100/min api
+SEC-CHK-13,security,PASS,2,2,/webhooks and /track are unauthenticated DB-touching and unthrottled (SEC-06)
+SEC-CHK-14,security,PASS,1,1,/api/health branches on cookie presence not a verified JWT (SEC-05)
+SEC-CHK-15,security,FAIL,0,3,npm audit: 8 high backend + 4 high frontend prod dependency advisories (SEC-03)
+SEC-CHK-16,security,PASS,1,1,Calendars.ReadWrite requested with zero calendar code (SEC-07)
+SEC-CHK-17,security,FAIL,0,2,Mongo has no --auth in compose; Redis passwordless; both bound to all interfaces (SEC-04)
+SEC-CHK-18,security,PASS,1,1,helmet() applied for HTTP security headers
+REL-CHECK-01,reliability,PASS,3,3,/api/health pings live Mongo readyState and Redis PING and gates on both
+REL-CHECK-02,reliability,PASS,3,3,health never surfaces Qdrant/Ollama despite Qdrant being a hard dependency (REL-03)
+REL-CHECK-03,reliability,PASS,3,3,graphFetch sets a 30s AbortController timeout on every Graph call
+REL-CHECK-04,reliability,PASS,3,3,graphFetch honors Retry-After on 429 capped at 30s
+REL-CHECK-05,reliability,PASS,2,2,BullMQ defaultJobOptions: attempts 3 exponential backoff bounded retention
+REL-CHECK-06,reliability,PASS,5,5,processChangeNotification swallows all errors -- webhook-events retry contract is dead code (REL-01)
+REL-CHECK-07,reliability,PASS,3,3,three Ollama fetch calls have no timeout -- can hang the single embedding worker forever (REL-02)
+REL-CHECK-08,reliability,PASS,3,3,SIGTERM/SIGINT close workers then queues then Mongo then Redis in order
+REL-CHECK-09,reliability,PASS,2,2,no unhandledRejection/uncaughtException handler anywhere in backend/src (REL-05)
+REL-CHECK-10,reliability,PASS,2,2,stagingProcessor treats Graph 404 as terminal and 429 as retry-next-run
+REL-CHECK-11,reliability,PASS,2,2,stagingProcessor batches via Promise.allSettled so one failure cannot block the batch
+REL-CHECK-12,reliability,PASS,2,2,actionExecutor writes AuditLog and rule stats in a finally block even on partial failure
+REL-CHECK-13,reliability,PASS,2,2,actionExecutor reuses a stale pre-move messageId for later actions (REL-04)
+REL-CHECK-14,reliability,PASS,2,2,subscription sync isolates per-mailbox failures and self-heals a 404-on-renew
+REL-CHECK-15,reliability,PASS,2,2,lifecycle events trigger immediate delta-sync so a token gap is not silently blind
+REL-CHECK-16,reliability,PASS,2,2,job retention bounded -- no unbounded Redis growth
+REL-CHECK-17,reliability,PASS,1,1,hourly embeddingReconcile backfills embeddings that exhausted retries
+REL-CHECK-18,reliability,PASS,3,3,connectDatabase retries Mongo 10x with exponential backoff before exiting
+REL-CHECK-19,reliability,PASS,2,2,delta-sync and token-refresh isolate per-mailbox failures in a try/catch loop
+REL-CHECK-20,reliability,NOT_EVALUATED,,2,Qdrant client internal timeout defaults not verified -- requires reading installed package internals
+PERF-01,perf,FAIL,0,3,rule Run Now filters all unread emails client-side instead of Graph $filter
+PERF-02,perf,PASS,1,1,unbounded WebhookSubscription + Mailbox load on admin health
+PERF-03,perf,PASS,2,2,unbounded EmailEvent load on admin bulk prefetch (same site as DB-02)
+PERF-FRONTEND-CACHE,perf,PASS,1,1,React Query staleTime configured app-level (30s default)
+PERF-PAGINATION,perf,PASS,2,2,frontend list pages respect 50-100 item limits
+PERF-LODASH,perf,PASS,1,1,no full lodash imports; bundle-efficient
+PERF-MEMOIZATION,perf,PASS,2,2,useCallback/useMemo used appropriately in hot-path components
+TEST-01,tests,FAIL,0,5,deltaService untested -- core incremental sync
+TEST-02,tests,FAIL,0,5,graphClient untested -- all Graph calls route through it
+TEST-03,tests,FAIL,0,5,webhooks route untested -- public endpoint
+TEST-04,tests,FAIL,0,3,auth login/callback untested -- entry point
+TEST-05,tests,FAIL,0,3,csrf middleware untested -- security control
+TEST-06,tests,FAIL,0,2,errorHandler untested
+TEST-07,tests,FAIL,0,2,rateLimiter untested
+TEST-08,tests,FAIL,0,5,frontend untested -- 153 source files 0 tests
+TEST-09,tests,FAIL,0,2,requireAuth has only 1 test case
+TEST-10,tests,FAIL,0,3,11 of 12 job processors untested
+BACKEND-SUITE,tests,PASS,3,3,68 tests passing in 9 files; verified independently by the orchestrator
+FRONTEND-SUITE,tests,NOT_EVALUATED,,3,no test script configured; no test infrastructure

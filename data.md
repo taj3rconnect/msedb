@@ -85,6 +85,7 @@ row.
 | Date | Change | Migration/ref | Why |
 |---|---|---|---|
 | 2026-08-08 | Log created (no historical entries reconstructed) | `/tappaudit --fix` | Per-App Standard DOC-010 |
+| 2026-08-13 | Added `pattern_unapproved` to `AuditLog.action` enum | `b17a29d` | Unapprove action for approved patterns needed an audit action value |
 
 _No schema change has been made by an audit run. `/tdbaudit` on 2026-08-08 was
 read-only — see the audit notes below._

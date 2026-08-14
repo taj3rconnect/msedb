@@ -152,6 +152,40 @@ describe('executeActions', () => {
     expect(forwardCall).toBeUndefined();
   });
 
+  it('uses the post-move message id for actions that follow a move', async () => {
+    // Graph assigns a NEW folder-scoped id on move and returns the moved
+    // resource. Subsequent actions must target that new id, not the stale one.
+    mockGraphFetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        String(path).includes('/move')
+          ? { ok: true, json: async () => ({ id: 'msg-1-after-move' }) }
+          : { ok: true },
+      ),
+    );
+
+    try {
+      await executeActions({
+        ...baseParams,
+        actions: [
+          { actionType: 'move', toFolder: 'folder-abc', order: 1 },
+          { actionType: 'markRead', order: 2 },
+        ],
+      });
+
+      const calls = mockGraphFetch.mock.calls;
+      expect(calls.length).toBe(2);
+      expect(String(calls[0][0])).toContain('/messages/msg-1/move');
+
+      const markReadPath = String(calls[1][0]);
+      expect(markReadPath).toContain('/messages/msg-1-after-move');
+      expect(markReadPath).not.toContain('/messages/msg-1?');
+      expect(markReadPath.endsWith('/messages/msg-1')).toBe(false);
+      expect(JSON.parse(calls[1][2].body)).toHaveProperty('isRead', true);
+    } finally {
+      mockGraphFetch.mockImplementation(() => Promise.resolve({ ok: true }));
+    }
+  });
+
   it('creates audit log after execution', async () => {
     await executeActions({
       ...baseParams,
