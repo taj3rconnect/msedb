@@ -10,6 +10,7 @@ import {
   Eye,
   Trash2,
   MailOpen,
+  Archive,
   Undo2,
   Loader2,
 } from 'lucide-react';
@@ -32,6 +33,40 @@ import type { Pattern, PatternSuggestedAction } from '@/api/patterns';
 /** The two actions offered as one-click changes on an approved card. */
 export type QuickAction = 'delete' | 'markRead';
 
+/** The three actions offered as hover icons in the card header. */
+export type QuickRuleAction = 'delete' | 'markRead' | 'archive';
+
+/**
+ * Hover icons, in the order they appear. Each one approves the pattern with
+ * that action in a single click — for an already-approved card it re-targets
+ * the live rule instead.
+ */
+const QUICK_RULES: ReadonlyArray<{
+  actionType: QuickRuleAction;
+  Icon: typeof Trash2;
+  label: string;
+  effect: string;
+}> = [
+  {
+    actionType: 'delete',
+    Icon: Trash2,
+    label: 'Delete',
+    effect: 'goes straight to Deleted Items',
+  },
+  {
+    actionType: 'markRead',
+    Icon: MailOpen,
+    label: 'Mark as read',
+    effect: 'stays in the Inbox but arrives already read',
+  },
+  {
+    actionType: 'archive',
+    Icon: Archive,
+    label: 'Archive',
+    effect: 'is filed into Archive, out of the Inbox but not deleted',
+  },
+];
+
 interface PatternCardProps {
   pattern: Pattern;
   onApprove: (id: string) => void;
@@ -42,6 +77,11 @@ interface PatternCardProps {
   onRetarget?: (id: string, actionType: QuickAction) => void;
   /** Undo an approval: pattern returns to Suggested and its rule is deleted. */
   onUnapprove?: (id: string) => void;
+  /**
+   * One-click rule from the hover icons: approves the pattern with this action,
+   * or re-targets the live rule when the pattern is already approved.
+   */
+  onQuickRule?: (id: string, actionType: QuickRuleAction) => void;
   isApproving?: boolean;
   isRejecting?: boolean;
   /** True while this card's own retarget/unapprove request is in flight. */
@@ -175,6 +215,7 @@ export function PatternCard({
   onPreview,
   onRetarget,
   onUnapprove,
+  onQuickRule,
   isApproving = false,
   isRejecting = false,
   isUpdating = false,
@@ -203,9 +244,14 @@ export function PatternCard({
       )
     : null;
 
+  // The hover icons are only meaningful where an action can still be chosen:
+  // a suggestion to approve, or a live rule to re-target.
+  const showQuickRules = onQuickRule !== undefined && (canAct || isApproved);
+  const quickRulesBusy = isUpdating || isApproving || isRejecting;
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <Card className="group">
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className={typeConfig.className} data-tip={typeConfig.tip}>
             {typeConfig.label}
@@ -260,6 +306,51 @@ export function PatternCard({
             </Badge>
           )}
         </div>
+
+        {/* One-click rule icons — hidden until the card is hovered or one of them
+            takes keyboard focus. pointer-events are off while invisible so they
+            can never be clicked by accident, but they stay in the tab order. */}
+        {showQuickRules && (
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto">
+            {QUICK_RULES.map(({ actionType, Icon, label, effect }) => {
+              const isCurrent = isApproved && currentAction === actionType;
+              const sender =
+                pattern.condition.senderEmail ?? pattern.condition.senderDomain ?? 'this sender';
+              return (
+                <span
+                  key={actionType}
+                  className="inline-flex"
+                  data-tip={
+                    isCurrent
+                      ? `Already set to ${label} — this is what the live rule does today.`
+                      : isApproved
+                        ? `Switch this rule to ${label} in one click: future mail from ${sender} ${effect}.\n` +
+                          'The current rule is deleted and rebuilt. Applied straight away, with an Undo in the confirmation toast.'
+                        : `Create a ${label} rule in one click: future mail from ${sender} ${effect}.\n` +
+                          'Approves this pattern with that action instead of the proposed one. Mail already in your mailbox is untouched, and the toast gives you an Undo.'
+                  }
+                >
+                  <Button
+                    size="icon"
+                    variant={isCurrent ? 'default' : 'ghost'}
+                    className="h-7 w-7"
+                    aria-label={
+                      isCurrent
+                        ? `${label} — already the live action`
+                        : isApproved
+                          ? `Change this rule to ${label}`
+                          : `Create a ${label} rule for this pattern`
+                    }
+                    disabled={quickRulesBusy || isCurrent}
+                    onClick={() => onQuickRule?.(pattern._id, actionType)}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
+              );
+            })}
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">

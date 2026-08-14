@@ -19,7 +19,14 @@ import {
 } from '@/hooks/usePatterns';
 import { useUiStore } from '@/stores/uiStore';
 import type { Pattern, PatternSuggestedAction } from '@/api/patterns';
-import type { QuickAction } from '@/components/patterns/PatternCard';
+import type { QuickAction, QuickRuleAction } from '@/components/patterns/PatternCard';
+
+/** Labels for the one-click hover icons, for toast copy. */
+const QUICK_RULE_LABEL: Record<QuickRuleAction, string> = {
+  delete: 'Delete',
+  markRead: 'Mark as read',
+  archive: 'Archive',
+};
 
 /**
  * Patterns page showing card-based pattern suggestions with confidence
@@ -159,6 +166,64 @@ export function PatternsPage() {
       );
     },
     [customizeMutation],
+  );
+
+  /**
+   * One-click rule from a card's hover icons. The customize endpoint sets the
+   * action and approves in a single request, so this both creates a rule for a
+   * suggestion and re-targets an already-approved one.
+   *
+   * Undo has to differ between those two cases: a pattern that was only a
+   * suggestion is unapproved (rule deleted, back to Suggested), while one that
+   * was already approved is customized back to the action it had before —
+   * unapproving that one would throw away a rule the user never asked to lose.
+   */
+  const handleQuickRule = useCallback(
+    (id: string, actionType: QuickRuleAction) => {
+      const pattern = filteredPatterns.find((p) => p._id === id);
+      if (!pattern) return;
+
+      const wasApproved = pattern.status === 'approved';
+      const previousAction = pattern.suggestedAction;
+      const label = QUICK_RULE_LABEL[actionType];
+      const sender =
+        pattern.condition.senderEmail ?? pattern.condition.senderDomain ?? 'this sender';
+
+      setUpdatingId(id);
+      customizeMutation.mutate(
+        { patternId: id, action: { actionType } },
+        {
+          onSuccess: () => {
+            toast.success(
+              wasApproved
+                ? `Rule changed to ${label} for ${sender}`
+                : `${label} rule created for ${sender}`,
+              {
+                description:
+                  'It acts on mail arriving from now on — emails already in your mailbox are untouched.',
+                action: {
+                  label: 'Undo',
+                  onClick: () => {
+                    if (wasApproved) {
+                      customizeMutation.mutate({ patternId: id, action: previousAction });
+                    } else {
+                      unapproveMutation.mutate(id);
+                    }
+                  },
+                },
+              },
+            );
+          },
+          onError: (err: unknown) => {
+            toast.error(`Could not create the ${label} rule`, {
+              description: err instanceof Error ? err.message : String(err),
+            });
+          },
+          onSettled: () => setUpdatingId(null),
+        },
+      );
+    },
+    [filteredPatterns, customizeMutation, unapproveMutation],
   );
 
   const handleOpenCustomize = useCallback(
@@ -306,6 +371,7 @@ export function PatternsPage() {
                 onPreview={handlePreview}
                 onRetarget={handleRetarget}
                 onUnapprove={handleUnapprove}
+                onQuickRule={handleQuickRule}
                 isApproving={approveMutation.isPending}
                 isRejecting={rejectMutation.isPending}
                 isUpdating={updatingId === pattern._id}
