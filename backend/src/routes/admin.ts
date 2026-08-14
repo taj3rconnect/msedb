@@ -197,10 +197,12 @@ adminRouter.get('/health', async (_req: Request, res: Response) => {
       .select(
         'subscriptionId status expiresAt lastNotificationAt errorCount mailboxId userId',
       )
+      .limit(1000)
       .lean(),
     Mailbox.find()
       .populate('userId', 'email displayName')
       .select('email isConnected encryptedTokens.expiresAt userId lastSyncAt')
+      .limit(1000)
       .lean(),
   ]);
 
@@ -402,11 +404,23 @@ adminRouter.post('/prefetch-unread-bodies', async (req: Request, res: Response) 
   const mailboxes = await Mailbox.find({}, { _id: 1, email: 1 }).lean();
   const mailboxEmailMap = new Map(mailboxes.map((m) => [String(m._id), m.email]));
 
-  // Find all unread arrived events (not deleted)
+  // Find a bounded batch of unread arrived events (not deleted).
+  // The collection holds hundreds of thousands of docs — never load it all.
+  const PREFETCH_BATCH_LIMIT = 1000;
   const events = await EmailEvent.find(
     { eventType: 'arrived', isRead: false, isDeleted: false },
     { mailboxId: 1, messageId: 1 },
-  ).lean();
+  )
+    .limit(PREFETCH_BATCH_LIMIT)
+    .lean();
+
+  // Batch the cache-existence checks into a single Redis round trip instead of
+  // one awaited EXISTS per document.
+  const existsPipeline = redis.pipeline();
+  for (const ev of events) {
+    existsPipeline.exists(bodyCacheKey(String(ev.mailboxId), ev.messageId));
+  }
+  const existsResults = await existsPipeline.exec();
 
   let queued = 0;
   let skipped = 0;
@@ -418,8 +432,10 @@ adminRouter.post('/prefetch-unread-bodies', async (req: Request, res: Response) 
     const mailboxEmail = mailboxEmailMap.get(mailboxId);
     if (!mailboxEmail) { skipped++; continue; }
 
-    const cacheKey = bodyCacheKey(mailboxId, messageId);
-    if (await redis.exists(cacheKey)) { skipped++; continue; }
+    // A failed EXISTS probe is treated as "not cached" so the body still gets
+    // fetched — never silently drop the message.
+    const [existsErr, exists] = existsResults?.[i] ?? [null, 0];
+    if (!existsErr && exists) { skipped++; continue; }
 
     await queues['body-prefetch'].add('prefetch-body', {
       mailboxId,
@@ -434,14 +450,27 @@ adminRouter.post('/prefetch-unread-bodies', async (req: Request, res: Response) 
     queued++;
   }
 
+  // A full batch means more unread events are almost certainly waiting — the
+  // caller can re-invoke to drain the backlog.
+  const truncated = events.length === PREFETCH_BATCH_LIMIT;
+
   logger.info('Bulk body prefetch queued', {
     requestedBy: getUserId(req),
-    total: events.length,
+    processed: events.length,
     queued,
     skipped,
+    limit: PREFETCH_BATCH_LIMIT,
+    truncated,
   });
 
-  res.json({ queued, skipped, total: events.length });
+  res.json({
+    queued,
+    skipped,
+    processed: events.length,
+    total: events.length,
+    limit: PREFETCH_BATCH_LIMIT,
+    truncated,
+  });
 });
 
 export default adminRouter;
