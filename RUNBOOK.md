@@ -106,7 +106,7 @@ vitest               # Testing
 
 | Property | Value |
 |----------|-------|
-| Engine | MongoDB 7 |
+| Engine | MongoDB 8.2 |
 | Host (from backend container) | `msedb-mongo` (container name, shared) |
 | Host (from DGX host) | `localhost` |
 | Port | 27020 (host, shared with JTCRM) / 27017 (internal) |
