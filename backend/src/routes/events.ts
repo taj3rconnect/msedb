@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
 import { requireAuth, getUserId } from '../auth/middleware.js';
-import { EmailEvent } from '../models/EmailEvent.js';
+import { EmailEvent, type IEmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { getFolderName } from '../services/folderCache.js';
 import { getRedisClient } from '../config/redis.js';
@@ -11,6 +11,24 @@ import { parsePagination } from '../utils/pagination.js';
 import { AppError, ValidationError } from '../middleware/errorHandler.js';
 import { generateOllamaCompletion } from '../services/ollamaClient.js';
 import { config } from '../config/index.js';
+
+/**
+ * Shape of the lean daily-summary event projection.
+ *
+ * Mongoose's dotted `.select('metadata.isNewsletter')` is not reflected in the
+ * inferred `.lean()` type, so the projected subset is declared explicitly.
+ */
+type DailySummaryEvent = Pick<
+  IEmailEvent,
+  | 'sender'
+  | 'subject'
+  | 'importance'
+  | 'isRead'
+  | 'categories'
+  | 'hasAttachments'
+  | 'receivedAt'
+  | 'timestamp'
+> & { metadata?: { isNewsletter?: boolean } };
 
 const eventsRouter = Router();
 
@@ -103,7 +121,7 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
 
     // Determine which mailboxes to resolve folder IDs for
     const mailboxesToResolve = mailboxId && typeof mailboxId === 'string'
-      ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
+      ? await Mailbox.find({ _id: mailboxId, userId }).select('email').lean()
       : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
 
     const redis = getRedisClient();
@@ -400,7 +418,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
 
   // Filter to inbox folder only (same logic as GET /events with folder=inbox)
   const mailboxesToResolve = mailboxId && typeof mailboxId === 'string'
-    ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
+    ? await Mailbox.find({ _id: mailboxId, userId }).select('email').lean()
     : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
 
   const redis = getRedisClient();
@@ -435,7 +453,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
       .sort({ receivedAt: -1 })
       .limit(200)
       .select('sender subject importance isRead categories metadata.isNewsletter hasAttachments receivedAt')
-      .lean(),
+      .lean<DailySummaryEvent[]>(),
     EmailEvent.aggregate([
       { $match: aggFilterExclDeleted },
       { $group: { _id: '$isRead', count: { $sum: 1 } } },
@@ -473,7 +491,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
       : (e.sender?.email || 'Unknown');
     const subject = e.subject || '(no subject)';
     const importance = e.importance || 'normal';
-    const isNewsletter = (e as any).metadata?.isNewsletter ? 'yes' : 'no';
+    const isNewsletter = e.metadata?.isNewsletter ? 'yes' : 'no';
     const isRead = e.isRead ? 'read' : 'unread';
     const attachments = e.hasAttachments ? 'has attachments' : '';
     const categories = e.categories?.length ? `categories: ${e.categories.join(', ')}` : '';
@@ -543,7 +561,7 @@ eventsRouter.get('/summarize-today/csv', async (req: Request, res: Response) => 
 
   // Filter to inbox folder only
   const csvMailboxes = mailboxId && typeof mailboxId === 'string'
-    ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
+    ? await Mailbox.find({ _id: mailboxId, userId }).select('email').lean()
     : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
   const csvRedis = getRedisClient();
   const csvInboxFolders: string[] = ['Inbox'];
