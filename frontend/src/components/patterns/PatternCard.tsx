@@ -10,6 +10,7 @@ import {
   Eye,
   Trash2,
   MailOpen,
+  Archive,
   Undo2,
   Loader2,
 } from 'lucide-react';
@@ -32,6 +33,40 @@ import type { Pattern, PatternSuggestedAction } from '@/api/patterns';
 /** The two actions offered as one-click changes on an approved card. */
 export type QuickAction = 'delete' | 'markRead';
 
+/** The three actions offered as hover icons in the card header. */
+export type QuickRuleAction = 'delete' | 'markRead' | 'archive';
+
+/**
+ * Hover icons, in the order they appear. Each one approves the pattern with
+ * that action in a single click — for an already-approved card it re-targets
+ * the live rule instead.
+ */
+const QUICK_RULES: ReadonlyArray<{
+  actionType: QuickRuleAction;
+  Icon: typeof Trash2;
+  label: string;
+  effect: string;
+}> = [
+  {
+    actionType: 'delete',
+    Icon: Trash2,
+    label: 'Delete',
+    effect: 'goes straight to Deleted Items',
+  },
+  {
+    actionType: 'markRead',
+    Icon: MailOpen,
+    label: 'Mark as read',
+    effect: 'stays in the Inbox but arrives already read',
+  },
+  {
+    actionType: 'archive',
+    Icon: Archive,
+    label: 'Archive',
+    effect: 'is filed into Archive, out of the Inbox but not deleted',
+  },
+];
+
 interface PatternCardProps {
   pattern: Pattern;
   onApprove: (id: string) => void;
@@ -42,6 +77,11 @@ interface PatternCardProps {
   onRetarget?: (id: string, actionType: QuickAction) => void;
   /** Undo an approval: pattern returns to Suggested and its rule is deleted. */
   onUnapprove?: (id: string) => void;
+  /**
+   * One-click rule from the hover icons: approves the pattern with this action,
+   * or re-targets the live rule when the pattern is already approved.
+   */
+  onQuickRule?: (id: string, actionType: QuickRuleAction) => void;
   isApproving?: boolean;
   isRejecting?: boolean;
   /** True while this card's own retarget/unapprove request is in flight. */
@@ -51,16 +91,58 @@ interface PatternCardProps {
 }
 
 const PATTERN_TYPE_CONFIG = {
-  sender: { label: 'Sender Pattern', className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' },
-  'folder-routing': { label: 'Folder Routing', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
+  sender: {
+    label: 'Sender Pattern',
+    className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+    tip:
+      'Sender pattern — detected from how you repeatedly treat mail from one address or domain.\n' +
+      'The rule it proposes matches on the sender alone, so it applies to every future email from them regardless of subject or content.',
+  },
+  'folder-routing': {
+    label: 'Folder Routing',
+    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+    tip:
+      'Folder routing — detected from you moving this sender’s mail into the same folder again and again.\n' +
+      'The rule it proposes files future mail there automatically, on arrival, instead of leaving it in the Inbox for you to move.',
+  },
 } as const;
 
 const STATUS_CONFIG = {
-  detected: { label: 'Detected', className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200' },
-  suggested: { label: 'Suggested', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  approved: { label: 'Approved', className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
-  rejected: { label: 'Rejected', className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' },
-  expired: { label: 'Expired', className: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400' },
+  detected: {
+    label: 'Detected',
+    className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+    tip:
+      'Detected — the behaviour has been spotted but has not yet cleared the confidence bar to be put forward as a suggestion.\n' +
+      'You can still approve it now if you already know you want it.',
+  },
+  suggested: {
+    label: 'Suggested',
+    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+    tip:
+      'Suggested — confident enough to recommend, and waiting on your decision.\n' +
+      'Nothing is happening to your mailbox while it sits here. It only starts acting once you approve it.',
+  },
+  approved: {
+    label: 'Approved',
+    className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+    tip:
+      'Approved — you accepted this pattern and a mailbox rule was created from it.\n' +
+      'It now acts on matching mail as it arrives. Use Unapprove below to stop it and delete the rule.',
+  },
+  rejected: {
+    label: 'Rejected',
+    className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+    tip:
+      'Rejected — you dismissed this suggestion, so it is in a cooldown period and will not be re-suggested until that expires.\n' +
+      'Nothing in your mailbox was changed. Approving it now overrides the rejection.',
+  },
+  expired: {
+    label: 'Expired',
+    className: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+    tip:
+      'Expired — the behaviour stopped recurring, so the suggestion aged out without a decision.\n' +
+      'It is kept for reference. If the sender starts behaving the same way again, a fresh pattern will be raised.',
+  },
 } as const;
 
 const ACTION_LABEL: Record<PatternSuggestedAction['actionType'], string> = {
@@ -133,6 +215,7 @@ export function PatternCard({
   onPreview,
   onRetarget,
   onUnapprove,
+  onQuickRule,
   isApproving = false,
   isRejecting = false,
   isUpdating = false,
@@ -161,24 +244,29 @@ export function PatternCard({
       )
     : null;
 
+  // The hover icons are only meaningful where an action can still be chosen:
+  // a suggestion to approve, or a live rule to re-target.
+  const showQuickRules = onQuickRule !== undefined && (canAct || isApproved);
+  const quickRulesBusy = isUpdating || isApproving || isRejecting;
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <Card className="group">
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="outline" className={typeConfig.className}>
+          <Badge variant="outline" className={typeConfig.className} data-tip={typeConfig.tip}>
             {typeConfig.label}
           </Badge>
-          <Badge variant="outline" className={statusConfig.className}>
+          <Badge variant="outline" className={statusConfig.className} data-tip={statusConfig.tip}>
             {statusConfig.label}
           </Badge>
           {/* Action pill — what this pattern's rule does. Filled once it is live,
               outlined while it is still only a proposal. */}
           <Badge
             variant="outline"
-            title={
+            data-tip={
               isApproved
-                ? `Approved — this rule does: ${actionLabel}`
-                : `Proposed action: ${actionLabel}`
+                ? `Live action: ${actionLabel}.\nThis is what the approved rule does to every matching email as it arrives. Change it with the buttons at the bottom of this card.`
+                : `Proposed action: ${actionLabel}.\nThis is what the rule would do if you approve it. Nothing happens to your mail until then — use Customize to propose a different action instead.`
             }
             className={
               isApproved
@@ -196,17 +284,73 @@ export function PatternCard({
                 navigate(`/rules${email ? `?search=${encodeURIComponent(email)}` : ''}`);
               }}
               className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-800 hover:bg-green-200 dark:hover:bg-green-800 transition-colors cursor-pointer"
+              data-tip={
+                'Rule Active — a live rule is backing this pattern and acts on mail from this sender as it arrives.\n' +
+                'Click to open the Rules page filtered to this sender, where you can see how often it has fired, edit it, or delete it.'
+              }
             >
               Rule Active
               <ExternalLink className="h-3 w-3" />
             </button>
           )}
           {pattern.status === 'approved' && pattern.hasRule === false && (
-            <Badge variant="outline" className="bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            <Badge
+              variant="outline"
+              className="bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+              data-tip={
+                'No Rule — this pattern is approved, but no live rule is backing it, so nothing is acting on the mail.\n' +
+                'Either the rule was deleted from the Rules page, or creating it failed at approval time (approving never fails just because rule creation did). Use Customize to rebuild it.'
+              }
+            >
               No Rule
             </Badge>
           )}
         </div>
+
+        {/* One-click rule icons — hidden until the card is hovered or one of them
+            takes keyboard focus. pointer-events are off while invisible so they
+            can never be clicked by accident, but they stay in the tab order. */}
+        {showQuickRules && (
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto">
+            {QUICK_RULES.map(({ actionType, Icon, label, effect }) => {
+              const isCurrent = isApproved && currentAction === actionType;
+              const sender =
+                pattern.condition.senderEmail ?? pattern.condition.senderDomain ?? 'this sender';
+              return (
+                <span
+                  key={actionType}
+                  className="inline-flex"
+                  data-tip={
+                    isCurrent
+                      ? `Already set to ${label} — this is what the live rule does today.`
+                      : isApproved
+                        ? `Switch this rule to ${label} in one click: future mail from ${sender} ${effect}.\n` +
+                          'The current rule is deleted and rebuilt. Applied straight away, with an Undo in the confirmation toast.'
+                        : `Create a ${label} rule in one click: future mail from ${sender} ${effect}.\n` +
+                          'Approves this pattern with that action instead of the proposed one. Mail already in your mailbox is untouched, and the toast gives you an Undo.'
+                  }
+                >
+                  <Button
+                    size="icon"
+                    variant={isCurrent ? 'default' : 'ghost'}
+                    className="h-7 w-7"
+                    aria-label={
+                      isCurrent
+                        ? `${label} — already the live action`
+                        : isApproved
+                          ? `Change this rule to ${label}`
+                          : `Create a ${label} rule for this pattern`
+                    }
+                    disabled={quickRulesBusy || isCurrent}
+                    onClick={() => onQuickRule?.(pattern._id, actionType)}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </Button>
+                </span>
+              );
+            })}
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-3">
@@ -214,7 +358,13 @@ export function PatternCard({
         <p className="text-sm font-medium">{description}</p>
 
         {/* Confidence bar */}
-        <div className="space-y-1">
+        <div
+          className="space-y-1"
+          data-tip={
+            `${confidence}% confidence — how consistently you applied this action, weighted by how many emails were observed and how recent they are.\n` +
+            'Green is 95% and above, yellow 85–94%, orange below 85%. Below roughly 85% the pattern is usually still worth a look, but expect exceptions.'
+          }
+        >
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{confidence}% confidence</span>
           </div>
@@ -228,10 +378,16 @@ export function PatternCard({
 
         {/* Stats row */}
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>{pattern.sampleSize} emails observed</span>
-          <span>{pattern.exceptionCount} exceptions</span>
+          <span data-tip={`${pattern.sampleSize} emails from this sender have been observed. The larger this number, the more the confidence score can be trusted — a 100% rate over 4 emails means far less than 95% over 200.`}>
+            {pattern.sampleSize} emails observed
+          </span>
+          <span data-tip={`${pattern.exceptionCount} of those ${pattern.sampleSize} emails you handled differently. Exceptions are the mail a rule would get wrong, so a high count here is the main reason to reject rather than approve.`}>
+            {pattern.exceptionCount} exceptions
+          </span>
           {earliestEvidence && (
-            <span>Since {formatRelativeTime(earliestEvidence.timestamp)}</span>
+            <span data-tip={`The oldest observation behind this pattern is from ${new Date(earliestEvidence.timestamp).toLocaleString()}. A pattern held over a long window is more durable than the same rate compressed into a couple of days.`}>
+              Since {formatRelativeTime(earliestEvidence.timestamp)}
+            </span>
           )}
         </div>
 
@@ -249,6 +405,12 @@ export function PatternCard({
               type="button"
               onClick={() => setShowEvidence(!showEvidence)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              data-tip={
+                showEvidence
+                  ? 'Collapse the evidence list.'
+                  : `Show the ${pattern.evidence.length} individual actions this pattern was built from — what you did to each email and when.\n` +
+                    'This is the raw basis for the confidence score. Worth opening when the score looks higher than your gut says it should be.'
+              }
             >
               {showEvidence ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
               {showEvidence ? 'Hide' : 'Show'} evidence ({pattern.evidence.length})
@@ -275,40 +437,70 @@ export function PatternCard({
       {/* Action buttons — suggestion state */}
       {canAct && (
         <CardFooter className="flex gap-2 pt-0">
-          <Button
-            size="sm"
-            onClick={() => onApprove(pattern._id)}
-            disabled={isApproving || isRejecting}
-            className="bg-green-600 hover:bg-green-700 text-white"
+          <span
+            className="inline-flex"
+            data-tip={
+              `Approve — accept this pattern and create a rule that will ${actionLabel.toLowerCase()} future mail from ${pattern.condition.senderEmail ?? pattern.condition.senderDomain ?? 'this sender'}.\n` +
+              'The rule acts on mail as it arrives from now on. Emails already sitting in your mailbox are left exactly as they are — approving never runs a sweep over old mail.\n' +
+              'Reversible at any time with Unapprove, which deletes the rule again.'
+            }
           >
-            <Check className="h-4 w-4 mr-1" />
-            Approve
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onReject(pattern._id)}
-            disabled={isApproving || isRejecting}
-            className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+            <Button
+              size="sm"
+              onClick={() => onApprove(pattern._id)}
+              disabled={isApproving || isRejecting}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              <Check className="h-4 w-4 mr-1" />
+              Approve
+            </Button>
+          </span>
+          <span
+            className="inline-flex"
+            data-tip={
+              'Reject — dismiss this suggestion and put the sender in a cooldown (30 days by default, changeable in Settings) so it is not suggested again.\n' +
+              'If any rule already exists for this sender it is deleted too, so nothing keeps acting on their mail.\n' +
+              'The pattern itself is kept, and approving it later overrides the rejection.'
+            }
           >
-            <X className="h-4 w-4 mr-1" />
-            Reject
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onCustomize(pattern._id)}
-            disabled={isApproving || isRejecting}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onReject(pattern._id)}
+              disabled={isApproving || isRejecting}
+              className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Reject
+            </Button>
+          </span>
+          <span
+            className="inline-flex"
+            data-tip={
+              `Customize — approve this pattern but with a different action than the proposed ${actionLabel}.\n` +
+              'Opens a dialog where you pick delete, move to a folder, archive, mark as read, flag or categorize, then approve in one step. Use it when the sender is right but the action is not.'
+            }
           >
-            <Settings2 className="h-4 w-4 mr-1" />
-            Customize
-          </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onCustomize(pattern._id)}
+              disabled={isApproving || isRejecting}
+            >
+              <Settings2 className="h-4 w-4 mr-1" />
+              Customize
+            </Button>
+          </span>
           {onPreview && (
             <Button
               size="sm"
               variant="ghost"
               onClick={() => onPreview(pattern._id)}
-              title="Preview recent emails"
+              aria-label="Preview recent emails"
+              data-tip={
+                'Preview — see the most recent emails this pattern matched before you decide.\n' +
+                'Read-only: opening the preview changes nothing and marks nothing as read. This is the fastest way to check whether the exceptions are mail you would have wanted to keep.'
+              }
               className="ml-auto"
             >
               <Eye className="h-4 w-4" />
@@ -322,62 +514,104 @@ export function PatternCard({
         <CardFooter className="flex flex-wrap items-center gap-2 pt-0">
           {onRetarget && (
             <>
-              <span className="text-xs text-muted-foreground">Rule does:</span>
-              <Button
-                size="sm"
-                variant={currentAction === 'delete' ? 'default' : 'outline'}
-                onClick={() => currentAction !== 'delete' && setPendingRetarget('delete')}
-                disabled={isUpdating || currentAction === 'delete'}
-                title={currentAction === 'delete' ? 'Already deleting' : 'Change this rule to Delete'}
+              <span
+                className="text-xs text-muted-foreground"
+                data-tip={`This pattern is approved and its live rule currently does: ${actionLabel}. The buttons beside this switch it to something else — the old rule is deleted and a new one built.`}
               >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-              <Button
-                size="sm"
-                variant={currentAction === 'markRead' ? 'default' : 'outline'}
-                onClick={() => currentAction !== 'markRead' && setPendingRetarget('markRead')}
-                disabled={isUpdating || currentAction === 'markRead'}
-                title={currentAction === 'markRead' ? 'Already marking read' : 'Change this rule to Mark as read'}
+                Rule does:
+              </span>
+              <span
+                className="inline-flex"
+                data-tip={
+                  currentAction === 'delete'
+                    ? 'Already set to Delete — this is what the live rule does today, so there is nothing to change.'
+                    : `Switch this rule to Delete: future mail from this sender goes straight to Deleted Items instead of being ${ACTION_LABEL[currentAction]?.toLowerCase() ?? currentAction}.\n` +
+                      'You get a confirmation first. The current rule is deleted and rebuilt, so its execution count restarts; mail already handled is not touched.'
+                }
               >
-                <MailOpen className="h-4 w-4 mr-1" />
-                Mark read
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onCustomize(pattern._id)}
-                disabled={isUpdating}
-                title="Pick another action (move, archive, flag, categorize)"
+                <Button
+                  size="sm"
+                  variant={currentAction === 'delete' ? 'default' : 'outline'}
+                  onClick={() => currentAction !== 'delete' && setPendingRetarget('delete')}
+                  disabled={isUpdating || currentAction === 'delete'}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+              </span>
+              <span
+                className="inline-flex"
+                data-tip={
+                  currentAction === 'markRead'
+                    ? 'Already set to Mark as read — this is what the live rule does today, so there is nothing to change.'
+                    : 'Switch this rule to Mark as read: future mail from this sender stays in the Inbox but arrives already read, so it never adds to your unread count.\n' +
+                      'The gentlest option — nothing is deleted or moved. You get a confirmation first, and the rule is rebuilt so its execution count restarts.'
+                }
               >
-                <Settings2 className="h-4 w-4 mr-1" />
-                Other
-              </Button>
+                <Button
+                  size="sm"
+                  variant={currentAction === 'markRead' ? 'default' : 'outline'}
+                  onClick={() => currentAction !== 'markRead' && setPendingRetarget('markRead')}
+                  disabled={isUpdating || currentAction === 'markRead'}
+                >
+                  <MailOpen className="h-4 w-4 mr-1" />
+                  Mark read
+                </Button>
+              </span>
+              <span
+                className="inline-flex"
+                data-tip={
+                  'Other — pick an action beyond the two one-click options: move to a folder, archive, flag, or categorize.\n' +
+                  'Opens the same dialog as Customize, pre-filled with what this rule does today.'
+                }
+              >
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onCustomize(pattern._id)}
+                  disabled={isUpdating}
+                >
+                  <Settings2 className="h-4 w-4 mr-1" />
+                  Other
+                </Button>
+              </span>
             </>
           )}
           {onUnapprove && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setUnapproveOpen(true)}
-              disabled={isUpdating}
-              className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
-              title="Undo the approval and delete this rule"
+            <span
+              className="inline-flex"
+              data-tip={
+                'Unapprove — undo the approval and delete the live rule, so nothing keeps acting on this sender.\n' +
+                'The pattern itself is kept and goes back to Suggested, so you can approve it again whenever you like. Mail the rule already handled stays as it is.\n' +
+                'Use this rather than Reject if you may want the suggestion back — Reject also starts a 30-day cooldown.'
+              }
             >
-              {isUpdating ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Undo2 className="h-4 w-4 mr-1" />
-              )}
-              Unapprove
-            </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setUnapproveOpen(true)}
+                disabled={isUpdating}
+                className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+              >
+                {isUpdating ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Undo2 className="h-4 w-4 mr-1" />
+                )}
+                Unapprove
+              </Button>
+            </span>
           )}
           {onPreview && (
             <Button
               size="sm"
               variant="ghost"
               onClick={() => onPreview(pattern._id)}
-              title="Preview recent emails"
+              aria-label="Preview recent emails"
+              data-tip={
+                'Preview — see the most recent emails this rule is acting on.\n' +
+                'Read-only: opening the preview changes nothing and marks nothing as read.'
+              }
               className="ml-auto"
             >
               <Eye className="h-4 w-4" />

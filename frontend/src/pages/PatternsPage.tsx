@@ -19,7 +19,14 @@ import {
 } from '@/hooks/usePatterns';
 import { useUiStore } from '@/stores/uiStore';
 import type { Pattern, PatternSuggestedAction } from '@/api/patterns';
-import type { QuickAction } from '@/components/patterns/PatternCard';
+import type { QuickAction, QuickRuleAction } from '@/components/patterns/PatternCard';
+
+/** Labels for the one-click hover icons, for toast copy. */
+const QUICK_RULE_LABEL: Record<QuickRuleAction, string> = {
+  delete: 'Delete',
+  markRead: 'Mark as read',
+  archive: 'Archive',
+};
 
 /**
  * Patterns page showing card-based pattern suggestions with confidence
@@ -161,6 +168,64 @@ export function PatternsPage() {
     [customizeMutation],
   );
 
+  /**
+   * One-click rule from a card's hover icons. The customize endpoint sets the
+   * action and approves in a single request, so this both creates a rule for a
+   * suggestion and re-targets an already-approved one.
+   *
+   * Undo has to differ between those two cases: a pattern that was only a
+   * suggestion is unapproved (rule deleted, back to Suggested), while one that
+   * was already approved is customized back to the action it had before —
+   * unapproving that one would throw away a rule the user never asked to lose.
+   */
+  const handleQuickRule = useCallback(
+    (id: string, actionType: QuickRuleAction) => {
+      const pattern = filteredPatterns.find((p) => p._id === id);
+      if (!pattern) return;
+
+      const wasApproved = pattern.status === 'approved';
+      const previousAction = pattern.suggestedAction;
+      const label = QUICK_RULE_LABEL[actionType];
+      const sender =
+        pattern.condition.senderEmail ?? pattern.condition.senderDomain ?? 'this sender';
+
+      setUpdatingId(id);
+      customizeMutation.mutate(
+        { patternId: id, action: { actionType } },
+        {
+          onSuccess: () => {
+            toast.success(
+              wasApproved
+                ? `Rule changed to ${label} for ${sender}`
+                : `${label} rule created for ${sender}`,
+              {
+                description:
+                  'It acts on mail arriving from now on — emails already in your mailbox are untouched.',
+                action: {
+                  label: 'Undo',
+                  onClick: () => {
+                    if (wasApproved) {
+                      customizeMutation.mutate({ patternId: id, action: previousAction });
+                    } else {
+                      unapproveMutation.mutate(id);
+                    }
+                  },
+                },
+              },
+            );
+          },
+          onError: (err: unknown) => {
+            toast.error(`Could not create the ${label} rule`, {
+              description: err instanceof Error ? err.message : String(err),
+            });
+          },
+          onSettled: () => setUpdatingId(null),
+        },
+      );
+    },
+    [filteredPatterns, customizeMutation, unapproveMutation],
+  );
+
   const handleOpenCustomize = useCallback(
     (id: string) => {
       const pattern = filteredPatterns.find((p) => p._id === id);
@@ -215,17 +280,36 @@ export function PatternsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Patterns</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setBulkOpen(true)}>
+          <Button
+            variant="outline"
+            onClick={() => setBulkOpen(true)}
+            data-tip={
+              'Bulk Rule — handle many patterns in one pass.\n' +
+              'Opens a drawer listing every pattern that matches the filters currently set on this page, which you then narrow further by % acted on, confidence and emails observed. You pick one action for the whole selection and see, per row, whether it creates a new rule, replaces an existing one, or changes nothing.\n' +
+              'Nothing is created until you click Apply.'
+            }
+          >
             <Layers className="h-4 w-4 mr-2" />
             Bulk Rule
           </Button>
-          <Button
-            onClick={handleAnalyze}
-            disabled={triggerMutation.isPending}
+          <span
+            className="inline-flex"
+            data-tip={
+              triggerMutation.isPending
+                ? 'Analysis is running. New suggestions appear on this page as soon as it finishes — you can keep working in the meantime.'
+                : 'Analyze Now — run pattern detection immediately instead of waiting for the scheduled job.\n' +
+                  'Re-reads the recent email activity recorded for the selected mailbox and looks for senders you treat the same way over and over. Existing patterns get updated confidence; new ones appear as Suggested.\n' +
+                  'It only proposes. No mailbox rule is ever created without your explicit approval.'
+            }
           >
-            <Sparkles className="h-4 w-4 mr-2" />
-            {triggerMutation.isPending ? 'Analyzing...' : 'Analyze Now'}
-          </Button>
+            <Button
+              onClick={handleAnalyze}
+              disabled={triggerMutation.isPending}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              {triggerMutation.isPending ? 'Analyzing...' : 'Analyze Now'}
+            </Button>
+          </span>
         </div>
       </div>
 
@@ -287,6 +371,7 @@ export function PatternsPage() {
                 onPreview={handlePreview}
                 onRetarget={handleRetarget}
                 onUnapprove={handleUnapprove}
+                onQuickRule={handleQuickRule}
                 isApproving={approveMutation.isPending}
                 isRejecting={rejectMutation.isPending}
                 isUpdating={updatingId === pattern._id}
@@ -297,25 +382,46 @@ export function PatternsPage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-4 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1}
+              <span
+                className="inline-flex"
+                data-tip={
+                  page <= 1
+                    ? 'You are on the first page — there is nothing before this.'
+                    : `Go back to page ${page - 1}. Your filters and search stay applied.`
+                }
               >
-                Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  Previous
+                </Button>
+              </span>
+              <span
+                className="text-sm text-muted-foreground"
+                data-tip={`Showing page ${page} of ${totalPages}. Patterns are sorted by confidence, so the strongest candidates are on page 1.`}
+              >
                 Page {page} of {totalPages}
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
+              <span
+                className="inline-flex"
+                data-tip={
+                  page >= totalPages
+                    ? 'You are on the last page — no more patterns match these filters.'
+                    : `Go on to page ${page + 1}. Your filters and search stay applied.`
+                }
               >
-                Next
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Next
+                </Button>
+              </span>
             </div>
           )}
         </>
