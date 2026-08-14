@@ -9,7 +9,7 @@ import { closeAllWorkers, closeAllQueues } from './jobs/queues.js';
 import { syncSubscriptionsOnStartup } from './services/subscriptionService.js';
 import { initializeTunnelConfig } from './services/tunnelService.js';
 import { configureSecurityMiddleware } from './middleware/security.js';
-import { createAuthLimiter, createApiLimiter } from './middleware/rateLimiter.js';
+import { createAuthLimiter, createApiLimiter, createWebhookLimiter, createTrackingLimiter } from './middleware/rateLimiter.js';
 import { globalErrorHandler } from './middleware/errorHandler.js';
 import { issueCsrfToken, validateCsrf } from './middleware/csrf.js';
 import healthRouter from './routes/health.js';
@@ -49,14 +49,8 @@ configureSecurityMiddleware(app);
 // Cookie parser (must be before auth routes that read cookies)
 app.use(cookieParser());
 
-// Mount health endpoint (no rate limiting)
+// Mount health endpoint (no rate limiting -- watchdog probes it every minute)
 app.use(healthRouter);
-
-// Mount webhook endpoint (no rate limiting -- Microsoft controls the rate)
-app.use(webhooksRouter);
-
-// Mount tracking pixel endpoint (public, no auth — loaded by email clients)
-app.use('/track', trackingRouter);
 
 // Startup sequence: connect database, verify Redis, apply rate limiters, initialize schedulers, then listen
 async function startServer(): Promise<void> {
@@ -75,6 +69,11 @@ async function startServer(): Promise<void> {
     // 3. Apply rate limiters (Redis must be ready before creating limiters)
     app.use('/auth', createAuthLimiter());
     app.use('/api', createApiLimiter());
+
+    // 3a. Mount webhook + tracking endpoints behind their own generous,
+    // fail-open limiters (no auth -- Microsoft/email clients call these directly).
+    app.use(createWebhookLimiter(), webhooksRouter);
+    app.use('/track', createTrackingLimiter(), trackingRouter);
 
     // 3b. CSRF token endpoint (issues token) and validation middleware
     app.get('/auth/csrf-token', issueCsrfToken);
