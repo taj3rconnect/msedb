@@ -351,8 +351,12 @@ crudRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
       });
 
       deleted++;
-    } catch {
+    } catch (err) {
       failed++;
+      logger.warn('Failed to delete rule by sender', {
+        ruleId: rule._id?.toString(),
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
