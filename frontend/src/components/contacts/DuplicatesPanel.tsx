@@ -466,7 +466,7 @@ export function DuplicatesPanel({ open, onOpenChange, contacts, mailboxId, onDel
                         <TableHead>Email</TableHead>
                         <TableHead className="hidden md:table-cell">Company</TableHead>
                         <TableHead className="hidden lg:table-cell">Phone</TableHead>
-                        <TableHead className="w-20 text-center">Fields</TableHead>
+                        <TableHead className="w-20 text-right">Fields</TableHead>
                         <TableHead className="w-20">Match</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -535,7 +535,7 @@ export function DuplicatesPanel({ open, onOpenChange, contacts, mailboxId, onDel
                               <TableCell className="hidden lg:table-cell text-sm text-muted-foreground truncate">
                                 {contact.mobilePhone || contact.businessPhones?.[0] || '—'}
                               </TableCell>
-                              <TableCell className="text-center">
+                              <TableCell className="text-right">
                                 <Badge variant={isKeeper ? 'default' : 'secondary'} className="text-xs">
                                   {score}
                                 </Badge>
