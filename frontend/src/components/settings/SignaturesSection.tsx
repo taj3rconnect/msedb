@@ -103,6 +103,7 @@ function MailboxSignatures({ mailbox }: MailboxSignaturesProps) {
                 size="icon"
                 className="h-8 w-8 shrink-0"
                 title={sig.isDefault ? 'Default signature' : 'Set as default'}
+                aria-label={sig.isDefault ? 'Default signature' : 'Set as default'}
                 onClick={() => setDefault(sig.id)}
               >
                 {sig.isDefault ? (
@@ -117,6 +118,7 @@ function MailboxSignatures({ mailbox }: MailboxSignaturesProps) {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                    aria-label={`Delete signature "${sig.name}"`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
