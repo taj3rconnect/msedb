@@ -83,7 +83,14 @@ export function PatternFilters({
   return (
     <div className="flex flex-wrap items-center gap-3">
       {/* Search with sender typeahead */}
-      <div className="relative" ref={containerRef}>
+      <div
+        className="relative"
+        ref={containerRef}
+        data-tip={
+          'Search patterns by sender address, domain or subject text. Type-ahead suggests senders you already have patterns for, with how many each has.\n' +
+          'Runs server-side across every page of results, so it finds patterns that are not on the page you are looking at.'
+        }
+      >
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
         <Input
           value={search}
@@ -135,7 +142,13 @@ export function PatternFilters({
       </div>
 
       <Select value={status} onValueChange={onStatusChange}>
-        <SelectTrigger className="w-[160px]">
+        <SelectTrigger
+          className="w-[160px]"
+          data-tip={
+            'Filter by where each pattern stands: Detected (spotted, not yet put forward), Suggested (waiting on your decision), Approved (a rule is live), Rejected (dismissed, in cooldown).\n' +
+            'This filter is also what the Bulk Rule drawer operates on, so narrowing here narrows a bulk action too.'
+          }
+        >
           <SelectValue placeholder="All Statuses" />
         </SelectTrigger>
         <SelectContent>
@@ -148,7 +161,13 @@ export function PatternFilters({
       </Select>
 
       <Select value={patternType} onValueChange={onPatternTypeChange}>
-        <SelectTrigger className="w-[170px]">
+        <SelectTrigger
+          className="w-[170px]"
+          data-tip={
+            'Filter by how the pattern was detected. Sender = you treat mail from one address or domain the same way every time. Folder Routing = you keep moving their mail into the same folder.\n' +
+            'Applied to the patterns already loaded, so the total count above does not change.'
+          }
+        >
           <SelectValue placeholder="All Types" />
         </SelectTrigger>
         <SelectContent>
@@ -159,7 +178,13 @@ export function PatternFilters({
       </Select>
 
       <Select value={ruleFilter} onValueChange={onRuleFilterChange}>
-        <SelectTrigger className="w-[150px]">
+        <SelectTrigger
+          className="w-[150px]"
+          data-tip={
+            'Filter by whether a live rule is actually backing the pattern.\n' +
+            'Has Rule = something is acting on this sender right now. No Rule = nothing is, including approved patterns whose rule was deleted or failed to create — which is the fastest way to find those.'
+          }
+        >
           <SelectValue placeholder="All Rules" />
         </SelectTrigger>
         <SelectContent>

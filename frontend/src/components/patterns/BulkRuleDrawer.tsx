@@ -269,7 +269,14 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
 
         {/* Thresholds */}
         <div className="grid grid-cols-1 gap-3 px-4 sm:grid-cols-3">
-          <div className="space-y-1.5">
+          <div
+            className="space-y-1.5"
+            data-tip={
+              'Minimum share of a sender’s observed emails on which you actually took the action, as a percentage.\n' +
+              'At 90 a sender you handled 9 out of 10 times qualifies; one you handled 8 of 10 does not. This is the threshold that keeps senders you treat inconsistently out of a bulk rule.\n' +
+              'Clear the box to drop the threshold entirely.'
+            }
+          >
             <Label htmlFor="bulk-min-acted" className="text-xs">
               Min % emails acted on
             </Label>
@@ -283,7 +290,13 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
               className="h-9 text-right tabular-nums"
             />
           </div>
-          <div className="space-y-1.5">
+          <div
+            className="space-y-1.5"
+            data-tip={
+              'Minimum confidence score a pattern must carry to be listed, as a percentage.\n' +
+              'Confidence blends how consistent the behaviour is with how much of it was seen and how recent it is — so it is stricter than acted-% alone. 85 is a safe floor; below about 70 expect exceptions.'
+            }
+          >
             <Label htmlFor="bulk-min-confidence" className="text-xs">
               Min % confidence
             </Label>
@@ -297,7 +310,13 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
               className="h-9 text-right tabular-nums"
             />
           </div>
-          <div className="space-y-1.5">
+          <div
+            className="space-y-1.5"
+            data-tip={
+              'Minimum number of emails seen from a sender before they can appear here.\n' +
+              'This is the guard against small-sample flukes: 100% acted-on over 3 emails is not evidence of a habit. At 10 a sender needs a real history before a bulk rule can touch them.'
+            }
+          >
             <Label htmlFor="bulk-min-observed" className="text-xs">
               Min emails observed
             </Label>
@@ -314,10 +333,25 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
 
         {/* Select all + count */}
         <div className="flex items-center justify-between gap-3 border-y px-4 py-2">
-          <Button variant="outline" size="sm" onClick={toggleAll} disabled={matches.length === 0}>
-            {allVisibleSelected ? 'Unselect all' : 'Select all'}
-          </Button>
-          <span className="text-sm text-muted-foreground tabular-nums">
+          <span
+            className="inline-flex"
+            data-tip={
+              matches.length === 0
+                ? 'Nothing to select — no pattern meets these thresholds. Lower one of the three numbers above, or widen the filters on the patterns page.'
+                : allVisibleSelected
+                  ? `Clear the selection — all ${matches.length} listed patterns are currently ticked.`
+                  : `Tick all ${matches.length} patterns in this list.\n` +
+                    'Selection can only ever cover what is listed here, so a pattern excluded by the thresholds or the page filters can never be caught by a bulk action.'
+            }
+          >
+            <Button variant="outline" size="sm" onClick={toggleAll} disabled={matches.length === 0}>
+              {allVisibleSelected ? 'Unselect all' : 'Select all'}
+            </Button>
+          </span>
+          <span
+            className="text-sm text-muted-foreground tabular-nums"
+            data-tip={`${visibleSelectedIds.length} of the ${matches.length} listed patterns are ticked. Only these are affected when you click Apply — the Outcome column says what happens to each one.`}
+          >
             {visibleSelectedIds.length} of {matches.length} selected
           </span>
         </div>
@@ -369,7 +403,7 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
                           />
                         </td>
                         <td className="py-2 pr-2 align-middle">
-                          <div className="truncate max-w-[260px]" title={senderLabel(p)}>
+                          <div className="truncate max-w-[260px]" data-tip={senderLabel(p)}>
                             {senderLabel(p)}
                           </div>
                           <div className="text-xs text-muted-foreground">
@@ -411,12 +445,21 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
 
         <SheetFooter className="gap-3 border-t">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Make these rules</span>
+            <span
+              className="text-sm text-muted-foreground"
+              data-tip="Pick the one action every selected pattern's rule will perform. Changing it re-computes the Outcome column, so you can see what it does to each row before applying."
+            >
+              Make these rules
+            </span>
             <Button
               type="button"
               size="sm"
               variant={action === 'delete' ? 'default' : 'outline'}
               onClick={() => setAction('delete')}
+              data-tip={
+                'Delete — future mail from every selected sender goes straight to Deleted Items.\n' +
+                'The most aggressive option here. Mail already in your mailbox is untouched; only new arrivals are affected.'
+              }
             >
               <Trash2 className="mr-1 h-4 w-4" />
               Delete
@@ -426,35 +469,57 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
               size="sm"
               variant={action === 'markRead' ? 'default' : 'outline'}
               onClick={() => setAction('markRead')}
+              data-tip={
+                'Mark as read — future mail from every selected sender stays in the Inbox but arrives already read.\n' +
+                'Nothing is deleted or moved, so this is the safe choice when you are applying a rule to many senders at once.'
+              }
             >
               <MailOpen className="mr-1 h-4 w-4" />
               Mark as read
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setSuppressOpen(true)}
-              disabled={visibleSelectedIds.length === 0 || suppressMutation.isPending}
-              title="Never suggest a rule for these senders again"
-            >
-              {suppressMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <BellOff className="mr-1 h-4 w-4" />
-              Never suggest
-            </Button>
-            <Button
-              onClick={handleCreate}
-              disabled={visibleSelectedIds.length === 0 || bulkMutation.isPending}
-              title={
-                noChangeCount
-                  ? `${noChangeCount} selected pattern${noChangeCount === 1 ? ' is' : 's are'} already set to this action and will be left alone`
-                  : undefined
+            <span
+              className="inline-flex"
+              data-tip={
+                visibleSelectedIds.length === 0
+                  ? 'Tick some patterns first — this acts on the selection.'
+                  : `Never suggest — add the ${visibleSelectedIds.length} selected sender${visibleSelectedIds.length === 1 ? '' : 's'} to this mailbox’s whitelist so pattern analysis stops looking at them entirely.\n` +
+                    'No rule is created. Existing rules are not deleted but stop firing while the sender is silenced.\n' +
+                    'You confirm on the next screen, where you also choose the exact address or the whole domain. Reversible in Settings → Whitelist.'
               }
             >
-              {bulkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Apply to {visibleSelectedIds.length} pattern{visibleSelectedIds.length === 1 ? '' : 's'}
-              {noChangeCount > 0 && ` (${noChangeCount} unchanged)`}
-            </Button>
+              <Button
+                variant="outline"
+                onClick={() => setSuppressOpen(true)}
+                disabled={visibleSelectedIds.length === 0 || suppressMutation.isPending}
+              >
+                {suppressMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <BellOff className="mr-1 h-4 w-4" />
+                Never suggest
+              </Button>
+            </span>
+            <span
+              className="inline-flex"
+              data-tip={
+                visibleSelectedIds.length === 0
+                  ? 'Tick some patterns first — nothing is selected, so there is nothing to apply.'
+                  : `Create or replace rules for the ${visibleSelectedIds.length} selected pattern${visibleSelectedIds.length === 1 ? '' : 's'}, all doing ${action === 'delete' ? 'Delete' : 'Mark as read'}.\n` +
+                    'Per the Outcome column: unapproved patterns get a new rule, already-approved ones have their rule deleted and rebuilt, rejected or expired ones are re-approved and their cooldown cleared.' +
+                    (noChangeCount
+                      ? `\n${noChangeCount} of your selection ${noChangeCount === 1 ? 'is' : 'are'} already set to this action and will be left alone.`
+                      : '')
+              }
+            >
+              <Button
+                onClick={handleCreate}
+                disabled={visibleSelectedIds.length === 0 || bulkMutation.isPending}
+              >
+                {bulkMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Apply to {visibleSelectedIds.length} pattern{visibleSelectedIds.length === 1 ? '' : 's'}
+                {noChangeCount > 0 && ` (${noChangeCount} unchanged)`}
+              </Button>
+            </span>
           </div>
         </SheetFooter>
 
@@ -488,6 +553,7 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
                       size="sm"
                       variant={suppressScope === 'sender' ? 'default' : 'outline'}
                       onClick={() => setSuppressScope('sender')}
+                      data-tip="Silence only these exact addresses. Other people at the same company still get analysed as normal. The narrower, safer choice."
                     >
                       exact address
                     </Button>
@@ -496,6 +562,10 @@ export function BulkRuleDrawer({ open, onOpenChange, filters }: BulkRuleDrawerPr
                       size="sm"
                       variant={suppressScope === 'domain' ? 'default' : 'outline'}
                       onClick={() => setSuppressScope('domain')}
+                      data-tip={
+                        'Silence every address at these domains, including senders you have never seen yet.\n' +
+                        'Far broader than it looks — silencing a domain you also get real mail from means no pattern will ever be suggested for that colleague or client.'
+                      }
                     >
                       whole domain
                     </Button>

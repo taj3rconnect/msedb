@@ -123,6 +123,72 @@
     }
 }
 
+/* ── Cursor tooltip (see components/ui/cursor-tip.tsx) ─────────────────────
+   Anchored to the POINTER, not to the element, and drawn above it: the
+   translate(-50%, -100%) means the coordinate written by JS is the tip's
+   bottom-centre, so the box always grows upward away from the cursor.
+   Never below — that is where the native `title` tooltip sits, covering
+   whatever control is next in the layout.
+
+   The z-index clears every overlay in the app (radix dialog/sheet/popover
+   sit at 50, sonner toasts at 999999) so the explanation is readable even
+   over the Bulk Rule drawer. pointer-events: none keeps it from ever
+   swallowing the click it is describing. */
+.cursor-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+  max-width: min(24rem, calc(100vw - 1rem));
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  padding: 0.4rem 0.625rem;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  line-height: 1.1rem;
+  text-align: left;
+  background: var(--foreground);
+  color: var(--background);
+  box-shadow: 0 10px 30px -8px rgb(0 0 0 / 0.45), 0 2px 6px -2px rgb(0 0 0 / 0.3);
+  animation: cursor-tip-in 90ms ease-out;
+}
+
+/* Points down at the pointer; JS keeps it under the cursor when the box has
+   been clamped against a viewport edge. */
+.cursor-tip::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: var(--cursor-tip-arrow-x, 50%);
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  border-radius: 1px;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* Too little room above the pointer (top of the viewport, or a very tall tip):
+   the box is pinned to the top edge and stepped sideways to clear the cursor,
+   never dropped below it. The downward arrow would be lying, so it is dropped. */
+.cursor-tip--beside::after {
+  display: none;
+}
+
+@keyframes cursor-tip-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 3px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-tip {
+    animation: none;
+  }
+}
+
 /* AG Grid: row actions column — hidden until row hover */
 .row-actions-cell {
   visibility: hidden;
