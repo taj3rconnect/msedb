@@ -3,6 +3,7 @@ import { graphFetch } from '../../services/graphClient.js';
 import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
 import { getRedisClient } from '../../config/redis.js';
 import logger from '../../config/logger.js';
+import { inlineCidImages } from '../../services/messageBody.js';
 
 export const BODY_CACHE_TTL = 4 * 60 * 60; // 4 hours
 export const BODY_CACHE_PREFIX = 'email-body';
@@ -46,18 +47,7 @@ export async function processBodyPrefetch(job: Job): Promise<void> {
       const attData = (await attRes.json()) as {
         value: { contentId?: string; contentType?: string; contentBytes?: string; isInline?: boolean }[];
       };
-      if (attData.value?.length) {
-        let html = body.content;
-        for (const att of attData.value) {
-          if (att.contentId && att.contentBytes && att.contentType?.startsWith('image/')) {
-            const cid = att.contentId.replace(/^<|>$/g, '');
-            const dataUri = `data:${att.contentType};base64,${att.contentBytes}`;
-            html = html.split(`cid:${cid}`).join(dataUri);
-            html = html.split(`cid:<${cid}>`).join(dataUri);
-          }
-        }
-        body.content = html;
-      }
+      inlineCidImages(body, attData.value);
     } catch { /* non-fatal — cache body as-is */ }
   }
 
