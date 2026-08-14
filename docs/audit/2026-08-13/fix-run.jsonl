@@ -1,0 +1,28 @@
+{"id":"REL-01","lane":"webhooks","verdict":"PASS","attempts":1,"verifier":"vitest src/services/__tests__/eventCollector.test.ts","judge":null}
+{"id":"SEC-01","lane":"webhooks","verdict":"PASS","attempts":1,"verifier":"vitest src/routes/__tests__/webhooks-validation.test.ts","judge":null}
+{"id":"ARCH-04","lane":"webhooks","verdict":"PASS","attempts":1,"verifier":"vitest src/routes/__tests__/webhooks-validation.test.ts","judge":null}
+{"id":"SEC-02","lane":"routes-core","verdict":"PASS","attempts":1,"verifier":"grep -c 'Mailbox.find({ _id: mailboxId })' == 0","judge":null}
+{"id":"ARCH-05","lane":"routes-core","verdict":"PASS","attempts":1,"verifier":"grep -c 'as any' events.ts == 0","judge":null}
+{"id":"DB-02","lane":"routes-core","verdict":"PASS","attempts":1,"verifier":"admin.ts .limit() present","judge":null}
+{"id":"PERF-03","lane":"routes-core","verdict":"PASS","attempts":1,"verifier":"admin.ts .limit() present","judge":null}
+{"id":"PERF-02","lane":"routes-core","verdict":"PASS","attempts":1,"verifier":"admin.ts health .limit() present","judge":null}
+{"id":"REL-03","lane":"routes-core","verdict":"PASS","attempts":1,"verifier":"vitest src/routes/__tests__/health.test.ts","judge":null}
+{"id":"SEC-05","lane":"routes-core","verdict":"PASS","attempts":1,"verifier":"grep -c jwt.verify health.ts >= 1","judge":null}
+{"id":"UI-08","lane":"routes-core","verdict":"PASS","attempts":1,"verifier":"/api/v1/health alias registered","judge":null}
+{"id":"REL-04","lane":"services","verdict":"PASS","attempts":1,"verifier":"vitest src/services/__tests__/actionExecutor.test.ts","judge":null}
+{"id":"REL-02","lane":"services","verdict":"PASS","attempts":1,"verifier":"vitest src/services/__tests__/ollamaClient.test.ts","judge":null}
+{"id":"SEC-07","lane":"services","verdict":"PASS","attempts":1,"verifier":"grep -c Calendars.ReadWrite == 0","judge":null}
+{"id":"ARCH-07","lane":"errors","verdict":"PASS","attempts":1,"verifier":"logger. inside catch in mailbox/actions.ts","judge":null}
+{"id":"ARCH-08","lane":"errors","verdict":"PASS","attempts":2,"verifier":"logger. inside catch in rules/crud.ts","judge":null}
+{"id":"DB-04","lane":"errors","verdict":"PASS","attempts":1,"verifier":"vitest src/routes/__tests__/rules-delete-staged-cleanup.test.ts (negative control run)","judge":null}
+{"id":"ARCH-01","lane":"dedup","verdict":"PASS","attempts":2,"verifier":"vitest src/services/__tests__/messageBody.test.ts","judge":null}
+{"id":"UI-01","lane":"frontend","verdict":"PASS","attempts":1,"verifier":"tsc -b exit 0 + numeric cols text-right","judge":null}
+{"id":"UI-03","lane":"frontend","verdict":"PASS","attempts":1,"verifier":"AlertDialog wraps signature delete","judge":null}
+{"id":"UI-04","lane":"frontend","verdict":"PASS","attempts":1,"verifier":"aria-label on icon-only buttons","judge":null}
+{"id":"REL-05","lane":"server","verdict":"PASS","attempts":1,"verifier":"grep -c unhandledRejection server.ts >= 1","judge":null}
+{"id":"SEC-06","lane":"server","verdict":"PASS","attempts":1,"verifier":"webhook+tracking limiters mounted, fail-open","judge":null}
+{"id":"DB-06","lane":"server","verdict":"PASS","attempts":1,"verifier":"redundant standalone userId index removed","judge":null}
+{"id":"DB-03","lane":"docs","verdict":"PASS","attempts":1,"verifier":"grep -q pattern_unapproved data.md","judge":null}
+{"id":"APP-07","lane":"docs","verdict":"PASS","attempts":2,"verifier":"zero stale stack facts in RUNBOOK.md","judge":null}
+{"id":"APP-08","lane":"docs","verdict":"PASS","attempts":1,"verifier":"stale watchdog claims removed","judge":null}
+{"id":"APP-01","lane":null,"verdict":"DEFERRED","attempts":0,"verifier":"git ls-files credential paths == empty","judge":null}

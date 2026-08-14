@@ -37,7 +37,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `git ls-files -- 'certs/*.key' '.cloudflared/*.pem' '.cloudflared/*.json'` — currently lists 3 files (exit-1 assertion fails); passes on empty output.
 **Eligible for --fix:** **no** — committed credentials are rotation-first and never auto-fixed.
 
-### REL-01 · HIGH · reliability · impact H / effort L · status: OPEN
+### REL-01 · HIGH · reliability · impact H / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/services/eventCollector.ts:140-148`
 **Claim:** `processChangeNotification()` wraps its whole body in a try/catch that only logs and returns — never rethrows. `processWebhookEvent()` (`jobs/processors/webhookEvents.ts:33`) just awaits it, so every `webhook-events` job reports "completed" to BullMQ no matter what failed.
 **Why it matters:** `queues.ts:25-30` configures `attempts: 3` with backoff precisely so transient failures retry. That retry path is **dead code** for the app's primary mail-ingestion route: a transient Graph 5xx or DB blip silently drops the notification, with no dead-letter, no `/api/health` signal, no operator trace.
@@ -45,7 +45,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && npx vitest run src/services/__tests__/eventCollector.test.ts` — file absent now; passes once the test asserts the promise rejects on a non-404 Graph error.
 **Eligible for --fix:** yes
 
-### REL-03 · HIGH · reliability · impact H / effort L · status: OPEN
+### REL-03 · HIGH · reliability · impact H / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/routes/health.ts:36-129`
 **Claim:** `/api/health` gates healthy/degraded on MongoDB and Redis only. It never calls `checkOllamaHealth()` (`ollamaClient.ts:156`) or `getCollectionInfo()` (`qdrantClient.ts:187`) — both already written, exported, and unused.
 **Why it matters:** CLAUDE.md states `/api/health` plus the watchdog are the **only** safety net in this one-environment app. A health endpoint reporting "healthy" while Qdrant (a documented hard dependency per `RUNBOOK.md:76`) or Ollama is down actively hides the failure class REL-02 describes.
@@ -53,7 +53,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && npx vitest run src/routes/__tests__/health.test.ts` — fails now (route emits no such fields); passes once it reports qdrant + ollama status.
 **Eligible for --fix:** yes
 
-### REL-02 · HIGH · reliability · impact H / effort L · status: OPEN
+### REL-02 · HIGH · reliability · impact H / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/services/ollamaClient.ts:20-37`, `:83-101`, `:128-151`
 **Claim:** `generateEmbedding`, `parseSearchQuery`, and `generateOllamaCompletion` call `fetch()` with **no `AbortSignal`/timeout** — while `checkOllamaHealth` at `:160` correctly passes `AbortSignal.timeout(3000)`.
 **Why it matters:** `generateEmbedding` runs inside the `email-embedding` processor, whose queue has no concurrency override and so defaults to 1. A hung Ollama (GPU busy, model swap) blocks that single worker **forever** — never times out, never fails, never frees the slot — and nothing surfaces it.
@@ -61,7 +61,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && npx vitest run src/services/__tests__/ollamaClient.test.ts` — fails now; passes once a never-resolving fetch is asserted to reject within a bounded wait.
 **Eligible for --fix:** yes
 
-### ARCH-01 · HIGH · arch · impact H / effort L · status: OPEN
+### ARCH-01 · HIGH · arch · impact H / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/routes/mailbox/messages.ts:62-88` and `backend/src/jobs/processors/bodyPrefetch.ts:38-61`
 **Claim:** CID inline-image substitution (rewriting `cid:` refs to `data:` URIs) is implemented twice near-verbatim; the prefetch file's own comment admits it ("same logic as the live route").
 **Why it matters:** The two paths can silently diverge — a user sees an inlined image on a cache miss (live path) and a broken one on a hit (cached path written by the other implementation).
@@ -69,7 +69,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build && yarn test` must stay green, plus the shared helper exists in exactly one file.
 **Eligible for --fix:** yes
 
-### DB-02 · HIGH · db · impact H / effort L · status: OPEN  *(dedup: also found as PERF-03)*
+### DB-02 · HIGH · db · impact H / effort L · status: FIXED (eff701b)  *(dedup: also found as PERF-03)*
 **Where:** `backend/src/routes/admin.ts:406-434` (`POST /api/admin/prefetch-unread-bodies`)
 **Claim:** `EmailEvent.find({eventType:'arrived', isRead:false, isDeleted:false})` has no `.limit()`, no `.lean()`, no batching — loading every match (~493k docs / 408 MB at last live audit) into memory, then looping with an `await redis.exists` **per document** inside one HTTP handler.
 **Why it matters:** Memory and wall-clock scale with the entire backlog rather than the action's scope; the request can OOM or time out the backend as the collection grows. Violates the standing "filter/paginate in the DATABASE" rule.
@@ -77,7 +77,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build` green and the `.limit(` present on that call.
 **Eligible for --fix:** yes
 
-### UI-03 · HIGH · ui · impact M / effort L · status: OPEN
+### UI-03 · HIGH · ui · impact M / effort L · status: FIXED (eff701b)
 **Where:** `frontend/src/components/settings/SignaturesSection.tsx:103-110`
 **Claim:** The trash-icon button calls `remove(sig.id)` immediately with no confirmation — the only destructive control in the app skipping the `AlertDialog` pattern used by `RuleCard.tsx:311-343`, `PatternCard.tsx:421-445`, and `BulkRuleDrawer.tsx:462-520`.
 **Why it matters:** One misclick loses a configured signature with no undo prompt, against the "never lose stored data" posture.
@@ -93,7 +93,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `grep -c "working-directory: frontend" .github/workflows/ci.yml` → 0 now, ≥1 when fixed, plus a green CI run.
 **Eligible for --fix:** **no** — CI configuration is on the ENGINE never-auto-fix list. Resolve: apply manually, then re-run `/taudit app`.
 
-### SEC-02 · MEDIUM *(downgraded from HIGH)* · security · impact M / effort L · status: OPEN
+### SEC-02 · MEDIUM *(downgraded from HIGH)* · security · impact M / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/routes/events.ts:106, 403, 546`
 **Claim:** Three handlers resolve `Mailbox.find({ _id: mailboxId })` from a raw query/body param with **no `userId` scope**, unlike every other mailbox lookup in the codebase (`rules/execute.ts:40` does it correctly).
 **Why it matters:** An authorization-boundary inconsistency. **Verified blast radius is contained** — the `EmailEvent` filter is `userId`-scoped at `:38/:392/:535`, so a foreign `mailboxId` returns zero events, not another tenant's mail. What does leak is another user's mailbox `email`, used to build Redis folder-cache keys. It is one refactor away from becoming a real cross-tenant leak.
@@ -101,7 +101,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build && yarn test` green with zero occurrences of `Mailbox.find({ _id: mailboxId })` in `events.ts`.
 **Eligible for --fix:** yes
 
-### SEC-01 · MEDIUM *(downgraded from HIGH)* · security · impact M / effort L · status: OPEN  *(dedup: ARCH-04 is the fuller remedy)*
+### SEC-01 · MEDIUM *(downgraded from HIGH)* · security · impact M / effort L · status: FIXED (eff701b)  *(dedup: ARCH-04 is the fuller remedy)*
 **Where:** `backend/src/routes/webhooks.ts:47-49`
 **Claim:** Public unauthenticated `POST /webhooks/graph` passes attacker-controlled `notification.subscriptionId` into `WebhookSubscription.findOne({subscriptionId})` with no type check, so `{"$ne":null}` is accepted as a query operator.
 **Why it matters:** A real NoSQL operator-injection primitive on an unauthenticated route. **Verified not exploitable as written** — the attacker can select an arbitrary subscription, but `sub.clientState !== notification.clientState` at `:58` still gates forgery and they cannot supply the secret. It is a defense-in-depth failure that becomes exploitable the moment that gate is refactored.
@@ -109,7 +109,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build && yarn test` green with the type guard present.
 **Eligible for --fix:** yes
 
-### ARCH-07 · LOW · arch · impact L / effort L · status: OPEN
+### ARCH-07 · LOW · arch · impact L / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/routes/mailbox/actions.ts:130-134`
 **Claim:** `catch { // Non-critical, log and continue }` — the comment promises a log the code never makes; the error is discarded with zero trace.
 **Why it matters:** Contradicts "fail loud, never swallow" in the same breath as its own comment. If `bulkWrite` starts failing, read-state sync to `EmailEvent` stops silently.
@@ -117,7 +117,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build` green and a `logger.` call inside that catch.
 **Eligible for --fix:** yes
 
-### ARCH-08 · LOW · arch · impact L / effort L · status: OPEN
+### ARCH-08 · LOW · arch · impact L / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/routes/rules/crud.ts:354-356`
 **Claim:** `catch { failed++; }` in the per-rule delete loop discards the error; the caller learns "N failed" with no reason.
 **Why it matters:** Graph 403 vs Mongo timeout vs already-deleted are indistinguishable in a bulk path where the operator most needs the reason.
@@ -125,7 +125,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build` green and a `logger.` call in that catch.
 **Eligible for --fix:** yes
 
-### ARCH-05 · LOW · arch · impact L / effort L · status: OPEN
+### ARCH-05 · LOW · arch · impact L / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/routes/events.ts:476`
 **Claim:** `(e as any).metadata?.isNewsletter` — the only `as any` in non-test backend source; the field **is** projected at `:434` but Mongoose's dotted `.select()` isn't reflected in the `.lean()` inferred type.
 **Why it matters:** Defeats `strict: true` for exactly the field it reads.
@@ -133,7 +133,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build` green with `grep -c "as any" backend/src/routes/events.ts` → 0.
 **Eligible for --fix:** yes
 
-### SEC-05 · LOW · security · impact L / effort L · status: OPEN
+### SEC-05 · LOW · security · impact L / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/routes/health.ts:99-106`
 **Claim:** Extended diagnostics (mongoHost, queue/subscription/token counts) are gated on `!!req.cookies?.msedb_session || !!req.headers.authorization` — presence, never a verified JWT.
 **Why it matters:** Any client can set `Cookie: msedb_session=x` to unlock deployment reconnaissance. No secrets or per-user data, but free profiling.
@@ -141,7 +141,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build && yarn test` green with `jwt.verify` present in `health.ts`.
 **Eligible for --fix:** yes
 
-### SEC-07 · LOW · security · impact L / effort L · status: OPEN
+### SEC-07 · LOW · security · impact L / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/auth/msalClient.ts:17-26` (`GRAPH_SCOPES`)
 **Claim:** `Calendars.ReadWrite` is still requested; a repo-wide case-insensitive grep for "calendar" outside `msalClient.ts` and tests returns zero matches. Open since the 2026-07-06 architecture review (S2).
 **Why it matters:** Over-broad consent beyond the documented `Mail.Read`/`Mail.ReadWrite`/`MailboxSettings.ReadWrite` — every mailbox connected since has granted unused calendar **write** access, widening token-compromise blast radius for zero benefit.
@@ -149,7 +149,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build && yarn test` green with zero `Calendars.ReadWrite` in `msalClient.ts`.
 **Eligible for --fix:** yes — but it changes the OAuth consent contract; confirm before applying.
 
-### DB-06 · LOW · db · impact L / effort L · status: OPEN
+### DB-06 · LOW · db · impact L / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/models/Mailbox.ts:88-89`
 **Claim:** `index({userId:1, email:1}, {unique:true})` is immediately followed by `index({userId:1})` — a strict prefix of the first, already served by MongoDB's prefix rule.
 **Why it matters:** Write amplification and storage for zero query benefit.
@@ -157,7 +157,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build` green with the redundant line gone.
 **Eligible for --fix:** yes — **code change only.** Dropping the *existing live* index is a DB mutation requiring `--db-apply`; this finding does not do that.
 
-### UI-01 · MEDIUM · ui · impact M / effort L · status: OPEN
+### UI-01 · MEDIUM · ui · impact M / effort L · status: FIXED (eff701b)
 **Where:** `frontend/src/pages/ReportsPage.tsx:87-91,175-179`; `frontend/src/components/contacts/DuplicatesPanel.tsx:469,488,538`
 **Claim:** Numeric columns (report counts, contact "Fields" score) use `text-center` on both `TableHead` and `TableCell`, violating the binding rule "all numbers, data AND headers, are right aligned. Always."
 **Why it matters:** Harder to scan, and the exact anti-pattern the ui dim's eval contract targets.
@@ -165,7 +165,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd frontend && npx tsc -b` green; numeric columns carry `text-right`.
 **Eligible for --fix:** yes
 
-### UI-04 · MEDIUM · ui · impact L / effort L · status: OPEN
+### UI-04 · MEDIUM · ui · impact L / effort L · status: FIXED (eff701b)
 **Where:** `frontend/src/components/settings/SignaturesSection.tsx:103-110`
 **Claim:** The icon-only `<Trash2>` delete button has no `aria-label`, no `title`, no visible text — screen readers announce an unnamed "button". Its Star/StarOff sibling at `:90-102` at least has a `title`.
 **Why it matters:** Accessibility is on the never-simplify-away list; a control with zero accessible name is unusable via assistive tech.
@@ -173,7 +173,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd frontend && npx tsc -b` green with `aria-label` on that button.
 **Eligible for --fix:** yes
 
-### REL-05 · MEDIUM · reliability · impact M / effort L · status: OPEN
+### REL-05 · MEDIUM · reliability · impact M / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/server.ts` (no `unhandledRejection`/`uncaughtException` handler anywhere in `backend/src`)
 **Claim:** Only SIGTERM/SIGINT are handled (`:186-187`).
 **Why it matters:** Node terminates on an unhandled rejection by default. With no handler, a prod crash leaves no diagnostic beyond "container restarted", and in-flight BullMQ jobs bypass the graceful-shutdown path.
@@ -181,7 +181,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build` green with the handler present in `server.ts`.
 **Eligible for --fix:** yes
 
-### DB-03 · MEDIUM · db · impact M / effort L · status: OPEN
+### DB-03 · MEDIUM · db · impact M / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/models/AuditLog.ts:12`, `data.md` (## DB change log)
 **Claim:** Commit `b17a29d` (today) added the `pattern_unapproved` enum value to `AuditLog.action` — a real shape change, since Mongoose validates enum membership at write time. `data.md`'s change log has one row, dated 2026-08-08, and doesn't mention it.
 **Why it matters:** With no migration framework (DB-05), `data.md` is the **only** record of DB change. An unlogged change is invisible to any future audit.
@@ -189,7 +189,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `grep -q "pattern_unapproved" data.md`
 **Eligible for --fix:** yes — but it edits a hand-written doc; attended runs show the diff first.
 
-### APP-07 · LOW · app · impact L / effort L · status: OPEN
+### APP-07 · LOW · app · impact L / effort L · status: FIXED (eff701b)
 **Where:** `RUNBOOK.md:1-51`, `:78-85`
 **Claim:** Stale and contradicts the real stack — calls the frontend "Next.js" (actual: Vite + React) and lists `mongo:7`, `redis:7-alpine`, `node:20-alpine` (actual per `docker-compose.yml`/`.nvmrc`: `mongo:8.2`, `redis:8-alpine`, Node 24).
 **Why it matters:** `RUNBOOK.md` is the designated first read for `/tbug`, log-analyzer, and docker-debugger — wrong facts send incident diagnosis down the wrong path.
@@ -197,7 +197,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `grep -c "Next.js" RUNBOOK.md` → 0 and `grep -c "mongo:7" RUNBOOK.md` → 0.
 **Eligible for --fix:** yes — hand-written doc; show diff first.
 
-### APP-08 · LOW · app · impact L / effort L · status: OPEN
+### APP-08 · LOW · app · impact L / effort L · status: FIXED (eff701b)
 **Where:** `.claude/agents/deploy-prod.md:33-34`, `tools/watchdog.sh:14-16`
 **Claim:** Both claim the prod watchdog is "not installed yet", but `tools/deploy-live.sh:81-90` installs/refreshes its cron entry on every deploy, and `DEPLOY.md` documents it as live.
 **Why it matters:** The `deploy-prod` agent's whole job is accurate deploy-state reporting; it carries an instruction contradicting the working mechanism.
@@ -205,7 +205,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `grep -c "no prod watchdog installed yet" .claude/agents/deploy-prod.md` → 0 and `grep -c "NOT INSTALLED YET" tools/watchdog.sh` → 0.
 **Eligible for --fix:** yes — hand-written files; show diff first.
 
-### UI-08 · LOW · ui · impact L / effort L · status: OPEN  *(dims disagree — see note)*
+### UI-08 · LOW · ui · impact L / effort L · status: FIXED (eff701b)  *(dims disagree — see note)*
 **Where:** `backend/src/routes/health.ts:36`
 **Claim:** The standard health path is `/api/v1/health`; this app serves only `/api/health`.
 **Why it matters:** Breaks the convention other Per-App-Standard tooling expects.
@@ -242,7 +242,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build && yarn test` green; occurrence count strictly decreases from 31.
 **Eligible for --fix:** yes — but 31 sites exceeds a bounded lane; do it incrementally, one subrouter per change.
 
-### ARCH-04 · MEDIUM · arch · impact M / effort M · status: OPEN  *(root cause shared with SEC-01)*
+### ARCH-04 · MEDIUM · arch · impact M / effort M · status: FIXED (eff701b)  *(root cause shared with SEC-01)*
 **Where:** `backend/src/routes/webhooks.ts:42-106`, `backend/src/jobs/processors/webhookEvents.ts:16-25`
 **Claim:** The public Graph webhook payload is enqueued and later consumed via an unchecked `job.data as {...}` cast — no runtime schema validation before the fields build Mongo queries.
 **Why it matters:** The one route accepting unauthenticated external input by design has no validation boundary.
@@ -250,7 +250,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && npx vitest run src/routes/__tests__/webhooks-validation.test.ts` — absent now; passes once schema + test exist.
 **Eligible for --fix:** yes
 
-### REL-04 · MEDIUM · reliability · impact M / effort M · status: OPEN
+### REL-04 · MEDIUM · reliability · impact M / effort M · status: FIXED (eff701b)
 **Where:** `backend/src/services/actionExecutor.ts:57-231`
 **Claim:** `executeActions()` reuses the original `messageId` for every Graph call in the loop, but Graph message IDs are **folder-scoped and change on move**. Any action ordered after a `move`/`delete`/`archive` uses a stale ID.
 **Why it matters:** The stale call 404s; the catch at `:220-230` reads that as "user moved/deleted it", logs a *warning*, and `break`s — recording the rule as executed with only the pre-move actions. **A multi-action rule the user approved quietly does less than approved**, and both the audit log and logs describe it as benign rather than MSEDB's own ordering bug.
@@ -258,7 +258,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && npx vitest run src/services/__tests__/actionExecutor.test.ts` — 7 tests green plus a new case asserting the post-move id is used.
 **Eligible for --fix:** yes
 
-### DB-04 · MEDIUM · db · impact M / effort M · status: OPEN
+### DB-04 · MEDIUM · db · impact M / effort M · status: FIXED (eff701b)
 **Where:** `backend/src/routes/rules/crud.ts:341`, `:409`; `backend/src/models/StagedEmail.ts:12`
 **Claim:** Both rule-delete paths call `Rule.deleteOne` with no cleanup of `StagedEmail` docs whose required `ruleId` still points at the deleted rule.
 **Why it matters:** Execution doesn't break today (`stagingProcessor` reads the staged item's own embedded actions), but every delete-with-pending-staged-email creates a stale reference; any future `.populate()` silently yields null. Last live orphan check (2026-08-08) was clean — nothing prevents new ones.
@@ -266,7 +266,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && yarn build && yarn test` green plus a test asserting no staged email retains a deleted `ruleId`.
 **Eligible for --fix:** yes
 
-### SEC-06 · MEDIUM · security · impact M / effort L · status: OPEN
+### SEC-06 · MEDIUM · security · impact M / effort L · status: FIXED (eff701b)
 **Where:** `backend/src/server.ts:52-59` vs limiters at `:76-77`
 **Claim:** `healthRouter`, `webhooksRouter`, `trackingRouter` mount **before** the rate limiters, and neither `/webhooks` nor `/track` is ever brought under any limiter — though each request does at least one Mongo read/write.
 **Why it matters:** An attacker can drive unlimited Mongo writes via `/track/open/:id.png` (any UUID, no validation it maps to a real tracked email) or unlimited enqueue attempts via `/webhooks/graph`. The documented posture (20/min auth, 100/min api) doesn't mention these have no ceiling at all.
@@ -298,7 +298,7 @@ severity is indistinguishable from a fabricated one.
 **Verifier:** `cd backend && npx vitest run src/services/__tests__/ruleEngine.test.ts` green plus a test asserting `$filter` is sent.
 **Eligible for --fix:** **no** — changes Graph query semantics on a live-mail path; needs a deliberate design pass.
 
-### PERF-02 · LOW · perf · impact L / effort M · status: OPEN
+### PERF-02 · LOW · perf · impact L / effort M · status: FIXED (eff701b)
 **Where:** `backend/src/routes/admin.ts:194-204`
 **Claim:** The admin health endpoint loads all `WebhookSubscription` and `Mailbox` documents with no limit.
 **Why it matters:** Memory/latency spikes as those collections grow.
@@ -491,3 +491,42 @@ Three defects are scored under two dims each because the check IDs are independe
 `SEC-002`/`SEC-CHK-01` (committed credentials), `DOC-007`/`DB-STAB-004` (unverified backup), and
 `LINT-001`/`ARCH-BASELINE-04` (no linter). This depresses `pct` slightly versus a fully deduped scoring.
 Recorded rather than silently adjusted.
+
+---
+
+## New findings surfaced DURING the fix run (2026-08-14)
+
+These were not in the detection pass. Each was reported by a lane worker or found by the
+orchestrator while verifying, and each is recorded rather than discarded.
+
+### APP-10 · MEDIUM · app · impact M / effort L · status: OPEN
+**Where:** `.nvmrc` (24) vs `backend/Dockerfile` + `frontend/Dockerfile` (`FROM node:22-alpine`) vs `stack.md` (claims 24, citing `.nvmrc`)
+**Claim:** The repo runs **two different Node majors**. CI reads `.nvmrc` via `node-version-file`, so tests execute on Node 24, while both production containers are built on `node:22-alpine`.
+**Why it matters:** Code is verified on a runtime that is not the one serving production. Node 22→24 changed enough (fetch/undici, V8, stream internals) that a green CI run is not proof the prod container behaves identically — and this app has no staging tier to catch the difference.
+**Fix:** Decide the target major, then make all three agree: either bump both Dockerfiles to `node:24-alpine` or set `.nvmrc`/`stack.md` to 22. Do not "fix" this by editing `stack.md` alone — that would document the drift rather than remove it.
+**Verifier:** `NONE — human judgment` (which major to standardize on is a deliberate choice).
+**Eligible for --fix:** no
+
+### REL-06 · MEDIUM · reliability · impact M / effort M · status: OPEN
+**Where:** `tools/watchdog.sh:20,38` vs `backend/src/routes/health.ts`
+**Claim:** REL-03 now reports Qdrant/Ollama status, but the prod watchdog calls `/api/health` **unauthenticated and reads only the HTTP status code** (`curl -s -o /dev/null -w '%{http_code}'`). The new fields live in the authenticated payload and are deliberately non-gating, so the watchdog remains blind to a Qdrant or Ollama outage.
+**Why it matters:** REL-03's PASS should not be read as "the watchdog now catches these outages" — it does not. In a one-environment app whose only safety net is this watchdog, an embedding/AI-search outage still goes unnoticed until a human looks.
+**Fix:** Decide deliberately between (a) having the watchdog authenticate and parse the `services` block, or (b) a separate non-gating `/api/health/deps` endpoint the watchdog checks with its own alert threshold. Do NOT simply make Qdrant/Ollama gate `/api/health` — a Qdrant blip would then trigger container restarts for a non-critical dependency.
+**Verifier:** `NONE — human judgment` (requires choosing the alerting contract).
+**Eligible for --fix:** no
+
+### DB-07 · MEDIUM · db · impact M / effort L · status: OPEN
+**Where:** `backend/src/routes/rules/crud.ts` (`POST /delete-by-sender`, ~lines 313-318)
+**Claim:** The handler calls `Rule.find({ userId })` — an unbounded fetch of every rule the user owns — then filters for the sender match **in application code**.
+**Why it matters:** Direct violation of the standing house rule (filter in the DATABASE, never in app code; no unbounded SELECTs). Cost scales with total rule count rather than with matches.
+**Fix:** Query `conditions.senderEmail` directly with a case-insensitive match and a `.limit()`, instead of fetching all rules and filtering in JS.
+**Verifier:** `cd backend && yarn build && yarn test` green with the sender match expressed in the Mongo query.
+**Eligible for --fix:** yes — deferred only because it was found after the fix scope was agreed.
+
+### TEST-11 · HIGH · tests · impact H / effort M · status: OPEN
+**Where:** `backend/src/routes/__tests__/patterns-hasRule.test.ts`, `backend/src/routes/__tests__/patterns-bulk.test.ts`
+**Claim:** Two independent lane workers observed that these suites largely **re-implement route logic inside the test file** instead of importing and invoking the real handler. `patterns-bulk.test.ts` does import `classifyBulkTarget` — the better pattern — but the surrounding route assertions do not.
+**Why it matters:** These tests can stay green while the production route is broken, which means part of the 68-test baseline was never protecting the code it appears to cover. This materially weakens the confidence that "the suite is green" conveys — including for this audit's own gate.
+**Fix:** Refactor them to pull the handler off the Express router stack and invoke it, as `rules-delete-staged-cleanup.test.ts` (added this run) demonstrates.
+**Verifier:** `cd backend && yarn test` green after refactor, plus a negative control: break the route, confirm the test fails.
+**Eligible for --fix:** yes — deferred; found after scope was agreed.
