@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import logger from '../config/logger.js';
 import { queues } from '../jobs/queues.js';
 import { WebhookSubscription } from '../models/WebhookSubscription.js';
+import { isGraphNotification } from '../utils/graphNotification.js';
 
 const router = Router();
 
@@ -39,9 +40,20 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
   res.status(202).json({ status: 'accepted' });
 
   // Fire-and-forget: validate clientState and enqueue notifications after response is sent
-  const notifications = req.body?.value ?? [];
+  const notifications: unknown[] = Array.isArray(req.body?.value) ? req.body.value : [];
   (async () => {
-    for (const notification of notifications) {
+    for (const raw of notifications) {
+      // Validation boundary: this payload is unauthenticated external input.
+      // Reject anything that is not a well-formed notification BEFORE its
+      // fields reach Mongo queries / job ids / log lines.
+      if (!isGraphNotification(raw)) {
+        logger.warn('Malformed Graph notification -- skipping', {
+          type: raw === null ? 'null' : typeof raw,
+        });
+        continue;
+      }
+      const notification = raw;
+
       try {
         // Look up subscription to validate clientState
         const sub = await WebhookSubscription.findOne({
