@@ -186,6 +186,27 @@ async function gracefulShutdown(signal: string): Promise<void> {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Log unhandled promise rejections and uncaught exceptions before exiting,
+// so a prod crash leaves a diagnostic trail instead of just "container restarted".
+// We do NOT swallow the error to keep the process alive -- an unhandled
+// rejection/exception can leave the process in a corrupted state. Log, then
+// route through the same graceful shutdown path used for signals.
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', {
+    error: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+  void gracefulShutdown('unhandledRejection');
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception', {
+    error: error.message,
+    stack: error.stack,
+  });
+  void gracefulShutdown('uncaughtException');
+});
+
 startServer();
 
 export default app;
