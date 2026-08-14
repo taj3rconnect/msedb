@@ -67,6 +67,22 @@ export interface ChangeNotification {
 }
 
 /**
+ * Graph HTTP statuses that are TERMINAL for a single change notification:
+ * retrying cannot change the outcome, so the job must be allowed to complete.
+ *  - 400 malformed resource id
+ *  - 403 access to the mailbox/message revoked
+ *  - 404 message already deleted or moved by the user
+ *  - 410 resource gone
+ * Every other failure (5xx, 429, network, Mongo blips, unexpected bugs) is
+ * treated as transient/unexpected and is rethrown so BullMQ retries it.
+ */
+const TERMINAL_GRAPH_STATUSES = new Set([400, 403, 404, 410]);
+
+function isTerminalNotificationError(err: unknown): boolean {
+  return err instanceof GraphApiError && TERMINAL_GRAPH_STATUSES.has(err.status);
+}
+
+/**
  * Process a single change notification from Microsoft Graph into EmailEvent documents.
  *
  * Looks up the subscription, fetches message details from Graph API,
@@ -138,13 +154,21 @@ export async function processChangeNotification(
         logger.debug('Unknown changeType -- skipping', { changeType, subscriptionId });
     }
   } catch (err) {
+    const terminal = isTerminalNotificationError(err);
     logger.error('Failed to process change notification', {
       subscriptionId,
       changeType,
       messageId: resourceData?.id,
+      terminal,
       error: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined,
     });
+    // Known-terminal (see TERMINAL_GRAPH_STATUSES): swallow so the BullMQ job
+    // completes instead of burning its retry budget on an unfixable failure.
+    if (terminal) return;
+    // Transient / unexpected: rethrow so BullMQ retries (attempts + backoff from
+    // the queue's defaultJobOptions) and exhausted jobs land in the failed set.
+    throw err;
   }
 }
 
