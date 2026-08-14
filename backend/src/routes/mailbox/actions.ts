@@ -129,8 +129,12 @@ actionsRouter.post(
       }));
       try {
         await EmailEvent.bulkWrite(bulkOps);
-      } catch {
-        // Non-critical, log and continue
+      } catch (err) {
+        // Non-critical: log and continue
+        logger.warn('EmailEvent bulkWrite failed after apply-actions', {
+          mailboxId: req.params.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
