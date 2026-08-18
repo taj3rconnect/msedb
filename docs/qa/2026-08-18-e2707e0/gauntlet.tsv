@@ -1,0 +1,15 @@
+phase	iteration	timestamp	check	result	detail	action
+1	1	2026-08-18T16:00	compose ps	PASS	4/4 containers healthy on DGX, sha c57a706	none
+2	1	2026-08-18T16:00	mongo ping	PASS	{ok:1}	none
+2	1	2026-08-18T16:00	redis ping	PASS	PONG	none
+3	1	2026-08-18T16:01	env names	WARN	MONGO_PASSWORD,REDIS_PASSWORD in .env.example but not .env	none - redis/mongo run no-auth by design per compose comment
+4	1	2026-08-18T16:01	api/health	PASS	200 {"status":"healthy","version":"v1.33.01"}	none
+4	1	2026-08-18T16:01	api/v1/health	PASS	200	none
+4	1	2026-08-18T16:01	frontend serve	PASS	200 https://100.119.177.14:3010/	none
+5	1	2026-08-18T16:30	backend tsc	PASS	0 errors	none
+5	1	2026-08-18T16:30	frontend tsc	PASS	0 errors	none
+5	1	2026-08-18T16:30	frontend lint	FAIL	no eslint.config.js in repo, eslint not in devDependencies - yarn lint would fail immediately	fix loop: add flat config + devDep
+6	1	2026-08-18T16:35	backend vitest	FLAKY-then-PASS	health.test.ts beforeAll timed out at 10s hookTimeout under Docker Desktop Windows bind-mount I/O (import phase 737s in one run, 816ms in another, identical code); confirmed PASS 8/8 twice in <1s on copied (non-bind-mounted) fs at default timeouts	none - test-harness artifact, not app defect. 90/90 non-health tests passed both runs.
+B	1	2026-08-18T17:10	lane:opus-breadth	ABANDONED	6 consecutive 529 Overloaded across resumes over ~35min	proceeded without this lane - noted in scorecard
+B	1	2026-08-18T16:52	lane:fable-depth	PASS	4 findings submitted (L2-001..L2-004) after recovering from 3x 529	handed to Stage C judge
+B	1	2026-08-18T17:15	lane:codex-rival	PASS	15 findings submitted (L3-*) via Codex CLI relay, no overload hit	handed to Stage C judge
