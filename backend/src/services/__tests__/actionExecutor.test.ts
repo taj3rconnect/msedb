@@ -38,8 +38,13 @@ vi.mock('../../models/EmailEvent.js', () => ({
 }));
 
 const mockAuditCreate = vi.fn().mockResolvedValue({});
+const mockAuditFindOne = vi.fn();
+mockAuditFindOne.mockReturnValue({ lean: () => Promise.resolve(null) });
 vi.mock('../../models/AuditLog.js', () => ({
-  AuditLog: { create: (...args: unknown[]) => mockAuditCreate(...args) },
+  AuditLog: {
+    create: (...args: unknown[]) => mockAuditCreate(...args),
+    findOne: (...args: unknown[]) => mockAuditFindOne(...args),
+  },
 }));
 
 const { executeActions } = await import('../actionExecutor.js');
@@ -150,6 +155,36 @@ describe('executeActions', () => {
       String(c[0]).includes('/forward'),
     );
     expect(forwardCall).toBeUndefined();
+  });
+
+  // L3-ACT-02 interim mitigation: on a BullMQ retry, a forward that already
+  // succeeded in a prior attempt (recorded in AuditLog by that attempt's
+  // finally block) must not be re-sent to real recipients.
+  it('skips re-sending a forward already recorded in a recent audit row for this rule/message', async () => {
+    mockAuditFindOne.mockReturnValueOnce({
+      lean: () => Promise.resolve({ _id: 'prior-audit-row' }),
+    });
+
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'forward', forwardTo: ['boss@example.com'] }],
+    });
+
+    const forwardCall = mockGraphFetch.mock.calls.find((c) => String(c[0]).includes('/forward'));
+    expect(forwardCall).toBeUndefined();
+  });
+
+  it('still sends a forward when no recent audit row exists for this rule/message', async () => {
+    // Default mockAuditFindOne resolves null (see module setup) -- this
+    // is really the same assertion as the earlier forward test, kept
+    // here to make the retry-dedup guard's "normal path" explicit.
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'forward', forwardTo: ['boss@example.com'] }],
+    });
+
+    const forwardCall = mockGraphFetch.mock.calls.find((c) => String(c[0]).includes('/forward'));
+    expect(forwardCall).toBeDefined();
   });
 
   it('uses the post-move message id for actions that follow a move', async () => {

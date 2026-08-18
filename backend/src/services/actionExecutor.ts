@@ -230,6 +230,36 @@ export async function executeActions(params: {
               });
               break;
             }
+            // ACT-02 interim mitigation: a BullMQ retry re-runs this whole
+            // function from scratch (attempts:3, exponential backoff -- see
+            // jobs/queues.ts) with no memory of a prior attempt's
+            // executedActions, so a forward that already succeeded before a
+            // LATER action in the same rule failed would otherwise get
+            // re-sent to real recipients on every retry. The prior attempt's
+            // finally block already wrote an audit row recording it, so
+            // check that before sending again. Forward is the only
+            // genuinely non-idempotent action here -- move/archive/flag/
+            // markRead/categorize all either no-op or 404 cleanly on
+            // repeat -- so this targets the actual risk without needing a
+            // full per-action idempotency ledger, which is a schema change
+            // deferred to docs/qa/2026-08-18-e2707e0/REPORT.md's carry-over.
+            const recentForward = await AuditLog.findOne({
+              action: 'rule_executed',
+              targetId: messageId,
+              'details.ruleId': ruleId.toString(),
+              'details.actions': /^forward to /,
+              createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) },
+            }).lean();
+
+            if (recentForward) {
+              logger.warn('Skipping forward -- already sent in a recent attempt for this rule/message (retry dedup)', {
+                ruleId: ruleId.toString(),
+                messageId,
+              });
+              executedActions.push('forward (skipped -- already sent this retry window)');
+              break;
+            }
+
             await graphFetch(
               `${userPath}/messages/${currentMessageId}/forward`,
               accessToken,
