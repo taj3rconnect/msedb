@@ -1,4 +1,4 @@
-# tqa run 2026-08-18-e2707e0 — MSEDB (tqa-fixes-2026-08-18-e2707e0 @ f016dd3)
+# tqa run 2026-08-18-e2707e0 — MSEDB (tqa-fixes-2026-08-18-e2707e0 @ aeb377c)
 
 Mode: fix (bare `/tqa` = fix mode per LESSONS.md) · Panel: opus, fable5, codex · Budget: extended past the default 10/2h (see note below) · Wall: ~5h (includes ~1.5h lost to sustained Anthropic API 529 overload across all three lanes and the judge)
 
@@ -49,9 +49,23 @@ After all 12 fixes: full backend suite **19 files / 123 tests pass**, `tsc --noE
 | L3-WH-05 | minor | WONTFIX (judge-recommended) | 90s dedup window on change-notification jobId can theoretically collapse two genuinely distinct same-message updates within the window — but the code's own comment shows this is a deliberate, reasoned trade-off (collapsing Graph redeliveries), not an oversight. Left as-is. |
 | L2-004 | minor | CONFIRMED but not fixed — posture decision | `/auth`,`/api` rate limiters fail *closed* on a Redis outage; `/webhooks`,`/track` fail *open* (documented). The asymmetry is real and undocumented for the first pair, but whether `/auth` should fail open or closed during a Redis outage is a security-posture call, not a bug — flipping it silently isn't mine to make. Recommend: make both `passOnStoreError` values explicit with a comment, whichever way Taj wants it. |
 
-## Deferred (not attempted — needs a decision, not a mechanical fix)
+## Post-report additions (same run, after Taj said "finish all tasks, then tdev/tprod")
 
-**L3-ACT-02 (major, highest real blast radius in this run)** — A non-404 Graph error rethrows *after* the `finally` block has already written stats/audit; `executeActions` keeps no idempotency ledger, so a BullMQ retry (3 attempts, exponential backoff) re-runs the entire sorted action list from index 0. Concretely: a rule `[forward, archive]` where forward succeeds and archive then 500s will **re-send the forward** on each retry — duplicate outbound email to real recipients from a real customer mailbox, silently. The honest fix needs some form of per-action idempotency (a persisted "already executed" marker keyed by messageId+ruleId+action), which is a **schema change** — FIXLOOP.md forbids applying DB schema migrations in a tqa fix loop; that's `/taudit --db-apply` territory with an authored migration + `data.md` row. Writing this up as the top-priority carry-over item rather than improvising a partial fix.
+Taj explicitly asked to resolve the remaining deferred items rather than leave them open, and separately to land a pending fix from a prior session. Handled each on its own merits — genuine schema/scope decisions stayed deferred rather than being guessed at:
+
+- **L3-ACT-02 — mitigated, not fully fixed (`aeb377c`)**. The complete fix (a per-action idempotency ledger) is still a schema change and still deferred — that rule doesn't bend regardless of instruction, since an unattended prod schema migration is a different risk class entirely. But re-reading the action set: `forward` is the *only* genuinely non-idempotent action here (`move`/`archive`/`flag`/`markRead`/`categorize` all either no-op or 404 cleanly on repeat, already handled). That narrows the real risk to exactly one case, closeable without a new field: before sending a forward, check whether a recent `AuditLog` row (already written by a prior attempt's `finally` block, existing schema) for this exact rule+message already recorded one, and skip if so. Verified: `actionExecutor.test.ts` 12/12 (2 new), full suite 125/125, tsc clean. This closes the actual customer-facing harm (duplicate email) while leaving the complete ledger design as future work.
+- **L2-004 — resolved via explicit documentation, not a behavior change (`5918649`)**. Whether `/auth`/`/api` should fail open or closed on a Redis outage is a security posture call I'm not making unilaterally. Set `passOnStoreError: false` explicitly on both (identical to express-rate-limit's own default — genuinely behavior-neutral, confirmed by the full suite staying green) with a comment explaining the choice, so the asymmetry with webhooks/tracking is visible and deliberate instead of silent. If the posture should flip, that's now a one-line change for Taj to make, not a rediscovery.
+- **Frontend `yarn lint`, still deferred, unchanged** — inventing a project-wide ESLint rule set, plugin selection, and style convention from nothing is a scope/tooling-adoption decision, not a bug fix, even under a "finish everything" instruction. Left as-is.
+- **`PatternCard.tsx` aria-label fix (from the 2026-08-14 session, `5918649` — see commit-hygiene note)** — `Create a ${label} rule` produced "Create a Archive rule" for the Archive quick-action (wrong article before a vowel). Added a small `articleFor()` helper (`/^[aeiou]/i` check) used in both the aria-label and the hover tooltip, so it's correct for any future action label, not just today's three. Verified: frontend `tsc -b --noEmit` clean; manually confirmed `articleFor()` against all 3 real labels (Delete→a, Mark as read→a, Archive→an). No test framework exists for frontend components in this repo (Phase 6 gap noted below), so tsc is the available verifier.
+- **`.gitignore` cleanup (`d4cde1d`)** — closes the other half of that same pending item: added `.taudit/`, `.playwright-mcp/`, and `.claude/troute-runs.md` (a hook-written dispatch log that had gotten accidentally swept into this run's very first checkpoint commit via `git add -A`) to `.gitignore`.
+
+**Commit-hygiene note (second occurrence this run):** `PatternCard.tsx`'s edit landed bundled into the L2-004 commit (`5918649`) by the same `git add -A` pattern as the RULE-03 incident earlier in this run — both changes are individually correct and independently verified, but I should have run `git status` before every commit, not just some. Not rewritten (project policy: new commits only, never amend); noted here for the same reason as the first occurrence.
+
+## Deferred (genuinely left open — needs a decision, not a mechanical fix)
+
+**Frontend `yarn lint`** — no ESLint config exists anywhere in this repo, and `eslint` isn't even a devDependency. Not a regression; adopting lint tooling for the first time means picking a rule set, plugins, and style conventions, which is a project decision for Taj, not something to improvise mid-QA-run.
+
+**L3-ACT-02's complete fix** (a per-action idempotency ledger) remains deferred — the interim mitigation above (`aeb377c`) closes the actual customer-facing risk (duplicate forwarded email) but is narrower than a real ledger, and still needs a schema change to do properly. See Carry-over.
 
 ## Lane scorecard
 
@@ -108,8 +122,8 @@ No vacuous tests found across any of the 12.
 
 ## Carry-over (next run reads this first)
 
-1. **L3-ACT-02** (major) — duplicate outbound email on Graph-error retry. Needs a schema decision (idempotency ledger design) before any code fix. Highest real-world risk in this whole run.
+1. **L3-ACT-02's full fix** (major) — the shipped mitigation (`aeb377c`) closes the duplicate-forward case specifically; a real per-action idempotency ledger (covering every action type, not just forward) still needs a schema decision + migration before it can be built properly.
 2. **Frontend `yarn lint`** — no ESLint config exists anywhere in this repo; not a regression, a first-time-setup gap. Deferred as a tooling/scope decision, not fixed inline.
-3. **L2-004** — rate-limiter fail-open/closed asymmetry between `/auth`,`/api` (closed) and `/webhooks`,`/track` (open, documented). Needs Taj's explicit call on the intended posture for `/auth`,`/api` during a Redis outage; then just needs the choice made explicit with a comment.
-4. **L3-WH-05** — closed as WONTFIX; revisit only if real-world evidence shows Graph redeliveries + genuine near-simultaneous updates actually collide in practice.
-5. **Opus breadth lane never completed** — a systematic route/CRUD/auth sweep hasn't happened this run cycle; worth a dedicated re-run of just that lane once API capacity is normal.
+3. **L3-WH-05** — closed as WONTFIX; revisit only if real-world evidence shows Graph redeliveries + genuine near-simultaneous updates actually collide in practice.
+4. **Opus breadth lane never completed** — a systematic route/CRUD/auth sweep hasn't happened this run cycle; worth a dedicated re-run of just that lane once API capacity is normal.
+5. **No frontend test framework** — `PatternCard.tsx`'s fix this run could only be verified with `tsc`, not a behavioral test; worth considering for a future audit if frontend logic complexity grows.
