@@ -13,3 +13,5 @@ phase	iteration	timestamp	check	result	detail	action
 B	1	2026-08-18T17:10	lane:opus-breadth	ABANDONED	6 consecutive 529 Overloaded across resumes over ~35min	proceeded without this lane - noted in scorecard
 B	1	2026-08-18T16:52	lane:fable-depth	PASS	4 findings submitted (L2-001..L2-004) after recovering from 3x 529	handed to Stage C judge
 B	1	2026-08-18T17:15	lane:codex-rival	PASS	15 findings submitted (L3-*) via Codex CLI relay, no overload hit	handed to Stage C judge
+C	1	2026-08-18T18:20	stage-c-judge	COMPLETE	17/19 findings CONFIRMED (1 DUPLICATE, 1 WONTFIX-recommended), most severities re-graded down after source verification	dispatched to Stage D fix loop
+D	1-12	2026-08-18T18:20	fix-loop	COMPLETE	12 CONFIRMED findings fixed across 12 commits (checkpoint+fix+verify each); 3 findings deferred (ACT-02 needs schema change, WH-05 documented tradeoff/WONTFIX, L2-004 security posture decision)	full backend suite 19 files/123 tests pass, tsc clean after all fixes
