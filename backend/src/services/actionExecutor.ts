@@ -270,16 +270,23 @@ export async function executeActions(params: {
     // Record the error but still persist stats/audit for actions already executed
     thrownError = error;
   } finally {
-    // Update rule execution stats
-    await Rule.findByIdAndUpdate(ruleId, {
-      $inc: {
+    // Update rule execution stats. totalExecutions/emailsProcessed only
+    // count runs that actually did something -- an immediate 404 (message
+    // already moved/deleted) breaks the loop before any action completes,
+    // and counting that as a processed email would over-report rule
+    // effectiveness. lastExecutedAt still updates unconditionally: the rule
+    // WAS evaluated at this time, whether or not anything executed.
+    const statsUpdate: {
+      $set: Record<string, unknown>;
+      $inc?: Record<string, number>;
+    } = { $set: { 'stats.lastExecutedAt': new Date() } };
+    if (executedActions.length > 0) {
+      statsUpdate.$inc = {
         'stats.totalExecutions': 1,
         'stats.emailsProcessed': 1,
-      },
-      $set: {
-        'stats.lastExecutedAt': new Date(),
-      },
-    });
+      };
+    }
+    await Rule.findByIdAndUpdate(ruleId, statsUpdate);
 
     // Audit trail
     await AuditLog.create({

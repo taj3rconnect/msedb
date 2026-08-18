@@ -186,6 +186,37 @@ describe('executeActions', () => {
     }
   });
 
+  // L3-ACT-01: a 404 on the first action (message already moved/deleted)
+  // breaks the loop with nothing executed. Stats must not count that as a
+  // processed email -- only lastExecutedAt should still update.
+  it('does not increment stats.totalExecutions/emailsProcessed when a 404 short-circuits with nothing executed', async () => {
+    const { GraphApiError } = await import('../graphClient.js');
+    mockGraphFetch.mockRejectedValueOnce(new GraphApiError(404, 'not found', '/messages/msg-1'));
+
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'flag' }],
+    });
+
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledTimes(1);
+    const [, update] = mockFindByIdAndUpdate.mock.calls[0];
+    expect(update.$inc).toBeUndefined();
+    expect(update.$set['stats.lastExecutedAt']).toBeInstanceOf(Date);
+  });
+
+  it('still increments stats when at least one action executes', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'flag' }],
+    });
+
+    const [, update] = mockFindByIdAndUpdate.mock.calls[0];
+    expect(update.$inc).toEqual({
+      'stats.totalExecutions': 1,
+      'stats.emailsProcessed': 1,
+    });
+  });
+
   it('creates audit log after execution', async () => {
     await executeActions({
       ...baseParams,
