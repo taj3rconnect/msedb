@@ -55,3 +55,8 @@ yarn-error.log*
 
 # Audit accelerator cache (local only, not a deliverable)
 docs/.audit-cache.json
+
+# Claude Code local tooling artifacts — session-local, never a deliverable
+.taudit/
+.playwright-mcp/
+.claude/troute-runs.md
