@@ -125,6 +125,28 @@ describe('POST /api/rules mailboxId validation', () => {
   });
 });
 
+// L3-NS-03: senderEmail was truthiness-checked but not type-checked before
+// .toLowerCase(), so a non-string body value (object/array) raised an
+// uncaught TypeError -> generic 500 instead of a clean 400.
+describe('POST /api/rules/delete-by-sender senderEmail validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects a non-string senderEmail with 400 instead of crashing', async () => {
+    const app = buildApp();
+    const url = (await listen(app)).replace(/\/rule1$/, '/delete-by-sender');
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ senderEmail: { $ne: null } }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(400);
+  });
+});
+
 async function listen(app: express.Express): Promise<string> {
   return new Promise((resolve) => {
     const server = app.listen(0, () => {

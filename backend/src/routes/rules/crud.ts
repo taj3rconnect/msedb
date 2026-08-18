@@ -330,9 +330,11 @@ crudRouter.patch('/:id/toggle', async (req: Request, res: Response) => {
  */
 crudRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const { senderEmail } = req.body as { senderEmail?: string };
+  const { senderEmail } = req.body as { senderEmail?: unknown };
 
-  if (!senderEmail) throw new ValidationError('senderEmail is required');
+  if (!senderEmail || typeof senderEmail !== 'string') {
+    throw new ValidationError('senderEmail is required and must be a string');
+  }
 
   const senderLower = senderEmail.toLowerCase();
 
