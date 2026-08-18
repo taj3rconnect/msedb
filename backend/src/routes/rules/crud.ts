@@ -15,6 +15,16 @@ import {
 const crudRouter = Router();
 
 /**
+ * True when `value` is a plain 24-hex-char ObjectId string. Request-body
+ * fields destined for a Mongoose filter must pass this before use --
+ * without it, a JSON object like `{"$ne":null}` survives the `!mailboxId`
+ * truthiness check and reaches the query as a live operator.
+ */
+function isValidObjectIdString(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value);
+}
+
+/**
  * POST /api/rules
  *
  * Create a manual rule (not from pattern).
@@ -31,7 +41,7 @@ crudRouter.post('/', async (req: Request, res: Response) => {
   };
 
   // Validate required fields
-  if (!mailboxId) {
+  if (!isValidObjectIdString(mailboxId)) {
     throw new ValidationError('mailboxId is required');
   }
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -159,7 +169,7 @@ crudRouter.put('/reorder', async (req: Request, res: Response) => {
     ruleIds?: string[];
   };
 
-  if (!mailboxId) {
+  if (!isValidObjectIdString(mailboxId)) {
     throw new ValidationError('mailboxId is required');
   }
   if (!ruleIds || !Array.isArray(ruleIds) || ruleIds.length === 0) {

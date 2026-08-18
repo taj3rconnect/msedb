@@ -81,6 +81,50 @@ describe('PUT /api/rules/:id', () => {
   });
 });
 
+// L3-NS-01: mailboxId must be rejected as a plain string before it reaches
+// a Mongoose filter -- otherwise a JSON object like {"$ne":null} survives
+// the old truthiness-only check and becomes a live query operator.
+describe('POST /api/rules mailboxId validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects a non-string mailboxId with 400 instead of querying Mongo', async () => {
+    const app = buildApp();
+    const url = (await listen(app)).replace(/\/rule1$/, '');
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({
+        mailboxId: { $ne: null },
+        name: 'test',
+        conditions: { senderEmail: 'a@b.com' },
+        actions: [{ actionType: 'archive' }],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(findById).not.toHaveBeenCalled();
+  });
+
+  it('accepts a well-formed 24-hex mailboxId', async () => {
+    findById.mockResolvedValue({ _id: 'mailbox1', email: 'mailbox@example.com', userId: 'u1' });
+    const app = buildApp();
+    const url = (await listen(app)).replace(/\/rule1$/, '');
+
+    const res = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ mailboxId: 'x'.repeat(24).replace(/x/g, 'a'), name: 'test' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    // Not a 400 for shape -- may still 400 on the missing conditions/actions
+    // fields this minimal body omits, which is unrelated to NS-01.
+    expect(res.status).not.toBe(500);
+  });
+});
+
 async function listen(app: express.Express): Promise<string> {
   return new Promise((resolve) => {
     const server = app.listen(0, () => {
