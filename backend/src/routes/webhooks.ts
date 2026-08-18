@@ -89,13 +89,20 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
         // Route lifecycle vs change notifications
         if (notification.lifecycleEvent) {
           // attempts/backoff now come from the queue's defaultJobOptions.
+          // jobId dedupes a redelivered lifecycle event the same way change
+          // notifications are deduped below (BullMQ forbids ':' in jobIds).
+          const lifecycleJobId = `webhook_${notification.subscriptionId}_${notification.lifecycleEvent}`.replaceAll(':', '_');
           await queues['webhook-renewal'].add('lifecycle-event', {
             notification,
             subscriptionId: notification.subscriptionId,
+          }, {
+            jobId: lifecycleJobId,
+            removeOnComplete: { age: 90 },
           });
           logger.info('Lifecycle notification enqueued', {
             subscriptionId: notification.subscriptionId,
             lifecycleEvent: notification.lifecycleEvent,
+            jobId: lifecycleJobId,
           });
         } else {
           // Dedup key: subscriptionId + resourceData.id + changeType identifies

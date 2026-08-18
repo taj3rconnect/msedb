@@ -159,6 +159,26 @@ describe('POST /webhooks/graph validation boundary', () => {
     expect(mockEventsAdd).toHaveBeenCalledTimes(1);
   });
 
+  // L3-WH-03: a redelivered lifecycle notification must dedupe via jobId
+  // the same way change notifications already do, instead of enqueuing a
+  // fresh renewal job on every redelivery.
+  it('gives lifecycle notifications a stable jobId so redelivery dedupes', async () => {
+    await post({
+      value: [
+        {
+          subscriptionId: 'sub-1',
+          lifecycleEvent: 'reauthorizationRequired',
+          clientState: 'secret-state',
+        },
+      ],
+    });
+
+    expect(mockRenewalAdd).toHaveBeenCalledTimes(1);
+    const [, , opts] = mockRenewalAdd.mock.calls[0];
+    expect(opts).toMatchObject({ jobId: expect.any(String) });
+    expect(opts.jobId).not.toContain(':');
+  });
+
   // L2-001 / L3-WH-01: an oversized batch must not turn into one Mongo
   // findOne() per item -- the handler caps the batch before the loop.
   it('caps an oversized notification batch instead of querying Mongo once per item', async () => {
