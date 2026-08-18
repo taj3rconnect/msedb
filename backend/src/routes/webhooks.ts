@@ -105,6 +105,27 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
             jobId: lifecycleJobId,
           });
         } else {
+          // Change notifications drive real mailbox actions, so (unlike lifecycle
+          // events above, which exist to renew/reauthorize a subscription and must
+          // keep working even once we've locally marked it expired) require the
+          // subscription to still be locally considered active, and the changeType
+          // to be one this app actually subscribes to (subscriptionService.ts
+          // registers only 'created,updated,deleted').
+          if (sub.status !== 'active' || sub.expiresAt < new Date()) {
+            logger.warn('Change notification for inactive/expired subscription -- skipping', {
+              subscriptionId: notification.subscriptionId,
+              status: sub.status,
+            });
+            continue;
+          }
+          if (!['created', 'updated', 'deleted'].includes(notification.changeType ?? '')) {
+            logger.warn('Change notification with unrecognized changeType -- skipping', {
+              subscriptionId: notification.subscriptionId,
+              changeType: notification.changeType,
+            });
+            continue;
+          }
+
           // Dedup key: subscriptionId + resourceData.id + changeType identifies
           // "this exact change event", which is what Graph sometimes redelivers.
           // Window is short (removeOnComplete age 90s, overriding the queue

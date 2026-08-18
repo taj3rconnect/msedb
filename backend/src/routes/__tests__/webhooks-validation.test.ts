@@ -64,7 +64,12 @@ async function post(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFindOne.mockResolvedValue({ _id: 'sub', clientState: 'secret-state' });
+  mockFindOne.mockResolvedValue({
+    _id: 'sub',
+    clientState: 'secret-state',
+    status: 'active',
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  });
 });
 
 describe('isGraphNotification', () => {
@@ -157,6 +162,65 @@ describe('POST /webhooks/graph validation boundary', () => {
     });
 
     expect(mockEventsAdd).toHaveBeenCalledTimes(1);
+  });
+
+  // L3-WH-06: a change notification for a subscription this app has already
+  // marked expired/failed locally must not enqueue a mailbox action.
+  it('skips a change notification for a non-active subscription', async () => {
+    mockFindOne.mockResolvedValue({
+      _id: 'sub',
+      clientState: 'secret-state',
+      status: 'expired',
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    await post({
+      value: [
+        {
+          subscriptionId: 'sub-1',
+          changeType: 'created',
+          resource: 'users/u/messages/msg-1',
+          clientState: 'secret-state',
+          resourceData: { id: 'msg-1' },
+        },
+      ],
+    });
+
+    expect(mockEventsAdd).not.toHaveBeenCalled();
+  });
+
+  // L3-WH-06: lifecycle notifications must NOT be gated by status/expiry --
+  // their entire purpose is renewing an expiring/expired subscription.
+  it('still enqueues a lifecycle notification for a non-active subscription', async () => {
+    mockFindOne.mockResolvedValue({
+      _id: 'sub',
+      clientState: 'secret-state',
+      status: 'expired',
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    await post({
+      value: [{ subscriptionId: 'sub-1', lifecycleEvent: 'reauthorizationRequired', clientState: 'secret-state' }],
+    });
+
+    expect(mockRenewalAdd).toHaveBeenCalledTimes(1);
+  });
+
+  // L3-WH-06: an unrecognized changeType must not enqueue a mailbox action.
+  it('skips a change notification with an unrecognized changeType', async () => {
+    await post({
+      value: [
+        {
+          subscriptionId: 'sub-1',
+          changeType: 'somethingElse',
+          resource: 'users/u/messages/msg-1',
+          clientState: 'secret-state',
+          resourceData: { id: 'msg-1' },
+        },
+      ],
+    });
+
+    expect(mockEventsAdd).not.toHaveBeenCalled();
   });
 
   // L3-WH-03: a redelivered lifecycle notification must dedupe via jobId
