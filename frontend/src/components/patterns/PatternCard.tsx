@@ -41,6 +41,11 @@ export type QuickRuleAction = 'delete' | 'markRead' | 'archive';
  * that action in a single click — for an already-approved card it re-targets
  * the live rule instead.
  */
+/** "a" or "an" for the given label — e.g. "an Archive rule", "a Delete rule". */
+function articleFor(label: string): 'a' | 'an' {
+  return /^[aeiou]/i.test(label) ? 'an' : 'a';
+}
+
 const QUICK_RULES: ReadonlyArray<{
   actionType: QuickRuleAction;
   Icon: typeof Trash2;
@@ -326,7 +331,7 @@ export function PatternCard({
                       : isApproved
                         ? `Switch this rule to ${label} in one click: future mail from ${sender} ${effect}.\n` +
                           'The current rule is deleted and rebuilt. Applied straight away, with an Undo in the confirmation toast.'
-                        : `Create a ${label} rule in one click: future mail from ${sender} ${effect}.\n` +
+                        : `Create ${articleFor(label)} ${label} rule in one click: future mail from ${sender} ${effect}.\n` +
                           'Approves this pattern with that action instead of the proposed one. Mail already in your mailbox is untouched, and the toast gives you an Undo.'
                   }
                 >
@@ -339,7 +344,7 @@ export function PatternCard({
                         ? `${label} — already the live action`
                         : isApproved
                           ? `Change this rule to ${label}`
-                          : `Create a ${label} rule for this pattern`
+                          : `Create ${articleFor(label)} ${label} rule for this pattern`
                     }
                     disabled={quickRulesBusy || isCurrent}
                     onClick={() => onQuickRule?.(pattern._id, actionType)}

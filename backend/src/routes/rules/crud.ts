@@ -15,6 +15,16 @@ import {
 const crudRouter = Router();
 
 /**
+ * True when `value` is a plain 24-hex-char ObjectId string. Request-body
+ * fields destined for a Mongoose filter must pass this before use --
+ * without it, a JSON object like `{"$ne":null}` survives the `!mailboxId`
+ * truthiness check and reaches the query as a live operator.
+ */
+function isValidObjectIdString(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value);
+}
+
+/**
  * POST /api/rules
  *
  * Create a manual rule (not from pattern).
@@ -31,7 +41,7 @@ crudRouter.post('/', async (req: Request, res: Response) => {
   };
 
   // Validate required fields
-  if (!mailboxId) {
+  if (!isValidObjectIdString(mailboxId)) {
     throw new ValidationError('mailboxId is required');
   }
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -159,7 +169,7 @@ crudRouter.put('/reorder', async (req: Request, res: Response) => {
     ruleIds?: string[];
   };
 
-  if (!mailboxId) {
+  if (!isValidObjectIdString(mailboxId)) {
     throw new ValidationError('mailboxId is required');
   }
   if (!ruleIds || !Array.isArray(ruleIds) || ruleIds.length === 0) {
@@ -232,6 +242,23 @@ crudRouter.put('/:id', async (req: Request, res: Response) => {
 
   await rule.save();
 
+  // Sync edited conditions/actions to Graph inbox rule (create/toggle already do this;
+  // without it, the Graph rule keeps acting on the mailbox per its old definition)
+  if (rule.mailboxId) {
+    try {
+      const mailbox = await Mailbox.findById(rule.mailboxId);
+      if (mailbox) {
+        const accessToken = await getAccessTokenForMailbox(rule.mailboxId.toString());
+        await syncRuleToGraph(rule._id.toString(), mailbox.email, accessToken);
+      }
+    } catch (err) {
+      logger.warn('Failed to sync rule update to Graph inbox rule', {
+        ruleId: rule._id?.toString(),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // Audit log
   await AuditLog.create({
     userId,
@@ -303,9 +330,11 @@ crudRouter.patch('/:id/toggle', async (req: Request, res: Response) => {
  */
 crudRouter.post('/delete-by-sender', async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const { senderEmail } = req.body as { senderEmail?: string };
+  const { senderEmail } = req.body as { senderEmail?: unknown };
 
-  if (!senderEmail) throw new ValidationError('senderEmail is required');
+  if (!senderEmail || typeof senderEmail !== 'string') {
+    throw new ValidationError('senderEmail is required and must be a string');
+  }
 
   const senderLower = senderEmail.toLowerCase();
 

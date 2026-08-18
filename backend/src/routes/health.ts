@@ -53,8 +53,12 @@ const healthHandler = async (req: Request, res: Response): Promise<void> => {
   let hasAuth = false;
   if (sessionToken) {
     try {
-      jwt.verify(sessionToken, config.jwtSecret);
-      hasAuth = true;
+      const decoded = jwt.verify(sessionToken, config.jwtSecret, { algorithms: ['HS256'] }) as { userId: string };
+      // Signature validity alone isn't enough — a deleted/deactivated
+      // user's still-valid token must not unlock diagnostics either
+      // (same class of gap as requireAuth, see backend/src/auth/middleware.ts).
+      const activeUser = await User.findById(decoded.userId).select('isActive').lean();
+      hasAuth = !!activeUser && activeUser.isActive !== false;
     } catch {
       // Invalid/expired token — fall back to the minimal public payload
       hasAuth = false;

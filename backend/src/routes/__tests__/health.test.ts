@@ -30,11 +30,16 @@ vi.mock('../../jobs/queues.js', () => ({
 
 vi.mock('../../models/index.js', () => ({
   WebhookSubscription: { countDocuments: vi.fn().mockResolvedValue(3) },
-  User: { countDocuments: vi.fn().mockResolvedValue(2) },
+  User: {
+    countDocuments: vi.fn().mockResolvedValue(2),
+    findById: (...args: unknown[]) => mockUserFindById(...args),
+  },
 }));
 
 const getCollectionInfo = vi.fn();
 const checkOllamaHealth = vi.fn();
+const mockUserFindById = vi.fn();
+mockUserFindById.mockReturnValue({ select: () => ({ lean: () => Promise.resolve({ isActive: true }) }) });
 
 vi.mock('../../services/qdrantClient.js', () => ({
   getCollectionInfo: (...args: unknown[]) => getCollectionInfo(...args),
@@ -150,6 +155,34 @@ describe('GET /api/health extended diagnostics gating (SEC-05)', () => {
     const body = await res.json();
     expect(body.status).toBe('healthy');
     expect(body.version).toBeDefined();
+  });
+
+  // L3-HEALTH-01: JWT signature validity alone must not unlock diagnostics
+  // -- a deleted/deactivated user's still-valid token must be rejected too,
+  // same as requireAuth (backend/src/auth/middleware.ts).
+  it('withholds diagnostics from a validly-signed token whose user no longer exists', async () => {
+    mockUserFindById.mockReturnValueOnce({ select: () => ({ lean: () => Promise.resolve(null) }) });
+
+    const res = await fetch(`${baseUrl}/api/health`, {
+      headers: { cookie: await signedCookie() },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('healthy'); // still publicly healthy
+    expect(body.mongoHost).toBeUndefined();
+    expect(body.queues).toBeUndefined();
+  });
+
+  it('withholds diagnostics from a validly-signed token for a deactivated user', async () => {
+    mockUserFindById.mockReturnValueOnce({ select: () => ({ lean: () => Promise.resolve({ isActive: false }) }) });
+
+    const res = await fetch(`${baseUrl}/api/health`, {
+      headers: { cookie: await signedCookie() },
+    });
+
+    const body = await res.json();
+    expect(body.mongoHost).toBeUndefined();
   });
 
   it('grants diagnostics to a verified session JWT', async () => {

@@ -7,6 +7,13 @@ import logger from '../config/logger.js';
 /**
  * Create rate limiter for auth routes: 5 requests per minute.
  * Uses factory function because Redis client may not be available at import time.
+ *
+ * Fails CLOSED (passOnStoreError: false, the express-rate-limit default) on a
+ * Redis outage -- unlike the webhook/tracking limiters below. Auth is the
+ * route class brute-force protection matters most for, so this errors rather
+ * than silently skip rate limiting during a Redis blip. If that trade-off
+ * (a Redis outage blocks login) is ever reconsidered, change this explicitly
+ * rather than leaving the asymmetry with webhooks/tracking undocumented.
  */
 export function createAuthLimiter() {
   const redisClient = getRedisClient();
@@ -16,6 +23,7 @@ export function createAuthLimiter() {
     limit: 20,
     standardHeaders: true,
     legacyHeaders: false,
+    passOnStoreError: false,
     store: new RedisStore({
       sendCommand: (command: string, ...args: string[]) =>
         redisClient.call(command, ...args) as Promise<RedisReply>,
@@ -95,6 +103,10 @@ export function createTrackingLimiter() {
 /**
  * Create rate limiter for API routes: 100 requests per minute.
  * Uses factory function because Redis client may not be available at import time.
+ *
+ * Fails CLOSED (passOnStoreError: false, the express-rate-limit default) on a
+ * Redis outage, same posture as the auth limiter above and for the same
+ * reason (see its comment) -- explicit, not accidental.
  */
 export function createApiLimiter() {
   const redisClient = getRedisClient();
@@ -104,6 +116,7 @@ export function createApiLimiter() {
     limit: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    passOnStoreError: false,
     store: new RedisStore({
       sendCommand: (command: string, ...args: string[]) =>
         redisClient.call(command, ...args) as Promise<RedisReply>,

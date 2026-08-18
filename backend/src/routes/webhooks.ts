@@ -39,8 +39,20 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
   // CRITICAL: Send 202 before any async work
   res.status(202).json({ status: 'accepted' });
 
-  // Fire-and-forget: validate clientState and enqueue notifications after response is sent
-  const notifications: unknown[] = Array.isArray(req.body?.value) ? req.body.value : [];
+  // Fire-and-forget: validate clientState and enqueue notifications after response is sent.
+  // MAX_NOTIFICATIONS_PER_BATCH bounds the per-item Mongo lookups below -- Graph batches
+  // notifications in small collections in practice, so a request claiming far more than
+  // that is either a misbehaving client or abuse, and truncating is safe: a dropped
+  // notification just means the next delta-sync poll catches the change.
+  const MAX_NOTIFICATIONS_PER_BATCH = 100;
+  const rawValue: unknown[] = Array.isArray(req.body?.value) ? req.body.value : [];
+  if (rawValue.length > MAX_NOTIFICATIONS_PER_BATCH) {
+    logger.warn('Graph webhook batch exceeds cap -- truncating', {
+      received: rawValue.length,
+      cap: MAX_NOTIFICATIONS_PER_BATCH,
+    });
+  }
+  const notifications = rawValue.slice(0, MAX_NOTIFICATIONS_PER_BATCH);
   (async () => {
     for (const raw of notifications) {
       // Validation boundary: this payload is unauthenticated external input.
@@ -77,15 +89,43 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
         // Route lifecycle vs change notifications
         if (notification.lifecycleEvent) {
           // attempts/backoff now come from the queue's defaultJobOptions.
+          // jobId dedupes a redelivered lifecycle event the same way change
+          // notifications are deduped below (BullMQ forbids ':' in jobIds).
+          const lifecycleJobId = `webhook_${notification.subscriptionId}_${notification.lifecycleEvent}`.replaceAll(':', '_');
           await queues['webhook-renewal'].add('lifecycle-event', {
             notification,
             subscriptionId: notification.subscriptionId,
+          }, {
+            jobId: lifecycleJobId,
+            removeOnComplete: { age: 90 },
           });
           logger.info('Lifecycle notification enqueued', {
             subscriptionId: notification.subscriptionId,
             lifecycleEvent: notification.lifecycleEvent,
+            jobId: lifecycleJobId,
           });
         } else {
+          // Change notifications drive real mailbox actions, so (unlike lifecycle
+          // events above, which exist to renew/reauthorize a subscription and must
+          // keep working even once we've locally marked it expired) require the
+          // subscription to still be locally considered active, and the changeType
+          // to be one this app actually subscribes to (subscriptionService.ts
+          // registers only 'created,updated,deleted').
+          if (sub.status !== 'active' || sub.expiresAt < new Date()) {
+            logger.warn('Change notification for inactive/expired subscription -- skipping', {
+              subscriptionId: notification.subscriptionId,
+              status: sub.status,
+            });
+            continue;
+          }
+          if (!['created', 'updated', 'deleted'].includes(notification.changeType ?? '')) {
+            logger.warn('Change notification with unrecognized changeType -- skipping', {
+              subscriptionId: notification.subscriptionId,
+              changeType: notification.changeType,
+            });
+            continue;
+          }
+
           // Dedup key: subscriptionId + resourceData.id + changeType identifies
           // "this exact change event", which is what Graph sometimes redelivers.
           // Window is short (removeOnComplete age 90s, overriding the queue

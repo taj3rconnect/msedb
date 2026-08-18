@@ -38,8 +38,13 @@ vi.mock('../../models/EmailEvent.js', () => ({
 }));
 
 const mockAuditCreate = vi.fn().mockResolvedValue({});
+const mockAuditFindOne = vi.fn();
+mockAuditFindOne.mockReturnValue({ lean: () => Promise.resolve(null) });
 vi.mock('../../models/AuditLog.js', () => ({
-  AuditLog: { create: (...args: unknown[]) => mockAuditCreate(...args) },
+  AuditLog: {
+    create: (...args: unknown[]) => mockAuditCreate(...args),
+    findOne: (...args: unknown[]) => mockAuditFindOne(...args),
+  },
 }));
 
 const { executeActions } = await import('../actionExecutor.js');
@@ -152,6 +157,36 @@ describe('executeActions', () => {
     expect(forwardCall).toBeUndefined();
   });
 
+  // L3-ACT-02 interim mitigation: on a BullMQ retry, a forward that already
+  // succeeded in a prior attempt (recorded in AuditLog by that attempt's
+  // finally block) must not be re-sent to real recipients.
+  it('skips re-sending a forward already recorded in a recent audit row for this rule/message', async () => {
+    mockAuditFindOne.mockReturnValueOnce({
+      lean: () => Promise.resolve({ _id: 'prior-audit-row' }),
+    });
+
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'forward', forwardTo: ['boss@example.com'] }],
+    });
+
+    const forwardCall = mockGraphFetch.mock.calls.find((c) => String(c[0]).includes('/forward'));
+    expect(forwardCall).toBeUndefined();
+  });
+
+  it('still sends a forward when no recent audit row exists for this rule/message', async () => {
+    // Default mockAuditFindOne resolves null (see module setup) -- this
+    // is really the same assertion as the earlier forward test, kept
+    // here to make the retry-dedup guard's "normal path" explicit.
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'forward', forwardTo: ['boss@example.com'] }],
+    });
+
+    const forwardCall = mockGraphFetch.mock.calls.find((c) => String(c[0]).includes('/forward'));
+    expect(forwardCall).toBeDefined();
+  });
+
   it('uses the post-move message id for actions that follow a move', async () => {
     // Graph assigns a NEW folder-scoped id on move and returns the moved
     // resource. Subsequent actions must target that new id, not the stale one.
@@ -184,6 +219,37 @@ describe('executeActions', () => {
     } finally {
       mockGraphFetch.mockImplementation(() => Promise.resolve({ ok: true }));
     }
+  });
+
+  // L3-ACT-01: a 404 on the first action (message already moved/deleted)
+  // breaks the loop with nothing executed. Stats must not count that as a
+  // processed email -- only lastExecutedAt should still update.
+  it('does not increment stats.totalExecutions/emailsProcessed when a 404 short-circuits with nothing executed', async () => {
+    const { GraphApiError } = await import('../graphClient.js');
+    mockGraphFetch.mockRejectedValueOnce(new GraphApiError(404, 'not found', '/messages/msg-1'));
+
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'flag' }],
+    });
+
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledTimes(1);
+    const [, update] = mockFindByIdAndUpdate.mock.calls[0];
+    expect(update.$inc).toBeUndefined();
+    expect(update.$set['stats.lastExecutedAt']).toBeInstanceOf(Date);
+  });
+
+  it('still increments stats when at least one action executes', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'flag' }],
+    });
+
+    const [, update] = mockFindByIdAndUpdate.mock.calls[0];
+    expect(update.$inc).toEqual({
+      'stats.totalExecutions': 1,
+      'stats.emailsProcessed': 1,
+    });
   });
 
   it('creates audit log after execution', async () => {
