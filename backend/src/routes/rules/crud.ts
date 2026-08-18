@@ -232,6 +232,23 @@ crudRouter.put('/:id', async (req: Request, res: Response) => {
 
   await rule.save();
 
+  // Sync edited conditions/actions to Graph inbox rule (create/toggle already do this;
+  // without it, the Graph rule keeps acting on the mailbox per its old definition)
+  if (rule.mailboxId) {
+    try {
+      const mailbox = await Mailbox.findById(rule.mailboxId);
+      if (mailbox) {
+        const accessToken = await getAccessTokenForMailbox(rule.mailboxId.toString());
+        await syncRuleToGraph(rule._id.toString(), mailbox.email, accessToken);
+      }
+    } catch (err) {
+      logger.warn('Failed to sync rule update to Graph inbox rule', {
+        ruleId: rule._id?.toString(),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // Audit log
   await AuditLog.create({
     userId,
