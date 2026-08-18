@@ -158,4 +158,25 @@ describe('POST /webhooks/graph validation boundary', () => {
 
     expect(mockEventsAdd).toHaveBeenCalledTimes(1);
   });
+
+  // L2-001 / L3-WH-01: an oversized batch must not turn into one Mongo
+  // findOne() per item -- the handler caps the batch before the loop.
+  it('caps an oversized notification batch instead of querying Mongo once per item', async () => {
+    const oversizedBatch = Array.from({ length: 250 }, (_, i) => ({
+      subscriptionId: `sub-${i}`,
+      changeType: 'created',
+      resource: `users/u/messages/msg-${i}`,
+      clientState: 'secret-state',
+      resourceData: { id: `msg-${i}` },
+    }));
+
+    const res = await post({ value: oversizedBatch });
+
+    expect(res.statusCode).toBe(202);
+    expect(mockFindOne.mock.calls.length).toBeLessThanOrEqual(100);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      'Graph webhook batch exceeds cap -- truncating',
+      expect.objectContaining({ received: 250 }),
+    );
+  });
 });

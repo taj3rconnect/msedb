@@ -39,8 +39,20 @@ router.post('/webhooks/graph', (req: Request, res: Response) => {
   // CRITICAL: Send 202 before any async work
   res.status(202).json({ status: 'accepted' });
 
-  // Fire-and-forget: validate clientState and enqueue notifications after response is sent
-  const notifications: unknown[] = Array.isArray(req.body?.value) ? req.body.value : [];
+  // Fire-and-forget: validate clientState and enqueue notifications after response is sent.
+  // MAX_NOTIFICATIONS_PER_BATCH bounds the per-item Mongo lookups below -- Graph batches
+  // notifications in small collections in practice, so a request claiming far more than
+  // that is either a misbehaving client or abuse, and truncating is safe: a dropped
+  // notification just means the next delta-sync poll catches the change.
+  const MAX_NOTIFICATIONS_PER_BATCH = 100;
+  const rawValue: unknown[] = Array.isArray(req.body?.value) ? req.body.value : [];
+  if (rawValue.length > MAX_NOTIFICATIONS_PER_BATCH) {
+    logger.warn('Graph webhook batch exceeds cap -- truncating', {
+      received: rawValue.length,
+      cap: MAX_NOTIFICATIONS_PER_BATCH,
+    });
+  }
+  const notifications = rawValue.slice(0, MAX_NOTIFICATIONS_PER_BATCH);
   (async () => {
     for (const raw of notifications) {
       // Validation boundary: this payload is unauthenticated external input.
