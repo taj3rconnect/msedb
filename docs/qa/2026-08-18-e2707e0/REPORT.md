@@ -81,7 +81,30 @@ All 12 fixes on `tqa-fixes-2026-08-18-e2707e0`, checkpoint→fix→verify patter
 11. `8421caf` checkpoint → `6ac18d6` **ERR-01** → verified: `errorHandler.test.ts` 4/4
 12. `467e210` checkpoint → `f016dd3` **ACT-01** → verified: `actionExecutor.test.ts` 10/10
 
-No reverts — every fix's targeted verifier passed on the first attempt, and the full 123-test suite stayed green throughout. Independent `tverifier` grading of all 12 was dispatched; its per-item PASS/FAIL/UNPROVEN table follows once returned (see conversation for the live result — appending here would require re-editing this file after the fact, which risks silently changing a committed report; the grading is authoritative as delivered to Taj directly).
+No reverts — every fix's targeted verifier passed on the first attempt, and the full 123-test suite stayed green throughout.
+
+## Independent verification (tverifier, non-maker)
+
+A separate `tverifier` agent re-ran the full suite from a clean container checkout of this branch (not the fix-loop's own run) and, for every one of the 12 fixes, read both the fixed source lines and the test asserting the fix, confirming the test exercises the actual guarded code path rather than passing vacuously (i.e. would also pass against the pre-fix code).
+
+**VERDICT: PASS** — `tsc --noEmit` 0 errors, 19/19 test files, 123/123 tests, clean checkout, no stale cache.
+
+| # | id | verdict | note |
+|---|---|---|---|
+| 1 | AUTH-01/02 | PASS | Role confirmed sourced from `activeUser.role`, never `decoded.role`; null-user rejection confirmed |
+| 2 | RULE-03 | PASS | `syncRuleToGraph(ruleId, mailbox.email, token)` confirmed called inside PUT after `rule.save()` |
+| 3 | L2-001/WH-01 | PASS | 250-item batch confirmed capped to ≤100 `findOne` calls + warn logged |
+| 4 | WH-03 | PASS | Lifecycle `jobId` confirmed passed to the renewal queue `.add()` call |
+| 5 | WH-06 | PASS | Status/expiry + changeType gating confirmed on change notifications only; lifecycle path confirmed still ungated |
+| 6 | L2-002 | PASS | `recordOpen` confirmed called with `req.ip`, forged XFF/X-Real-IP headers confirmed unused |
+| 7 | L2-003/HEALTH-01 | PASS | `algorithms:['HS256']` confirmed pinned in both files; DB re-check of user existence/active status confirmed in health.ts |
+| 8 | CSRF-01 | PASS | Skip condition confirmed requires both no-session-cookie AND Bearer header |
+| 9 | NS-01 | PASS | `isValidObjectIdString` confirmed gating both POST `/` and PUT `/reorder` before any query |
+| 10 | NS-03 | PASS | `typeof senderEmail !== 'string'` confirmed gating before `.toLowerCase()` |
+| 11 | ERR-01 | PASS | 400/413 mapping and body-parser-message stripping both confirmed in source |
+| 12 | ACT-01 | PASS | Conditional `$inc` / unconditional `$set` split confirmed exactly as claimed |
+
+No vacuous tests found across any of the 12.
 
 ## Carry-over (next run reads this first)
 
