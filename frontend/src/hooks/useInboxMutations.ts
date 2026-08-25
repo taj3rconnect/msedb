@@ -455,10 +455,13 @@ export function useInboxMutations({
         `Rule created for ${senderEmail}${mbLabel} — ${totalApplied} ${totalApplied === 1 ? 'email' : 'emails'} marked read`,
       );
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      // Refetch events so the sender's clear-rules icon turns orange (senderRuleActions)
+      queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
     },
     onError: (_err: Error) => {
       toast.success('Rule created — emails will be marked read on next sync');
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
     },
   });
 
@@ -478,6 +481,8 @@ export function useInboxMutations({
         `${deleted} rule${deleted !== 1 ? 's' : ''} removed for ${event.sender.email}`,
       );
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      // Refetch events so the sender's clear-rules icon returns to green
+      queryClient.invalidateQueries({ queryKey: ['inbox-events'] });
     },
     onError: (err: Error) => {
       toast.error(`Failed to clear rules: ${err.message}`);
