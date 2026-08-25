@@ -20,6 +20,12 @@ export interface EventItem {
   hasAttachments: boolean;
   categories: string[];
   isRead: boolean;
+  /**
+   * Distinct action types of the rules that already target this sender's email,
+   * e.g. ['markRead', 'delete']. Empty when the sender has no rules.
+   * Mirrors exactly what POST /api/rules/delete-by-sender would remove.
+   */
+  senderRuleActions?: string[];
 }
 
 export interface EventsResponse {

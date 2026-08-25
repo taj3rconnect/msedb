@@ -3,6 +3,13 @@ import { Types } from 'mongoose';
 import { requireAuth, getUserId } from '../auth/middleware.js';
 import { EmailEvent, type IEmailEvent } from '../models/EmailEvent.js';
 import { Mailbox } from '../models/Mailbox.js';
+import { Rule } from '../models/Rule.js';
+import {
+  collectSenderEmails,
+  buildSenderActionMap,
+  attachSenderRuleActions,
+  type SenderRuleLike,
+} from '../utils/senderRuleActions.js';
 import { getFolderName } from '../services/folderCache.js';
 import { getRedisClient } from '../config/redis.js';
 import { graphFetch } from '../services/graphClient.js';
@@ -287,8 +294,26 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     }
   }
 
+  // Enrich with the sender's existing rule actions so the inbox row-actions icon
+  // can signal "this sender already has rules". Matched on conditions.senderEmail
+  // case-insensitively -- the SAME set POST /api/rules/delete-by-sender removes.
+  // Bounded by the senders on THIS page (max `limit`), never a full rule scan.
+  const senderEmails = collectSenderEmails(resolvedEvents);
+  let senderActionMap = new Map<string, string[]>();
+  if (senderEmails.length > 0) {
+    const senderRules = await Rule.find({
+      userId,
+      'conditions.senderEmail': { $in: senderEmails },
+    })
+      .collation({ locale: 'en', strength: 2 })
+      .select('conditions.senderEmail actions.actionType')
+      .lean();
+    senderActionMap = buildSenderActionMap(senderRules as unknown as SenderRuleLike[]);
+  }
+  const eventsWithRules = attachSenderRuleActions(resolvedEvents, senderActionMap);
+
   res.json({
-    events: resolvedEvents,
+    events: eventsWithRules,
     pagination: {
       page,
       limit,

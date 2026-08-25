@@ -60,11 +60,49 @@ export function CheckboxCellRenderer(props: CustomCellRendererProps<EventItem, u
 
 // --- Cell Renderers ---
 
+/** Human-readable names for rule action types, for the clear-rules tooltip. */
+const RULE_ACTION_LABELS: Record<string, string> = {
+  markRead: 'Mark read',
+  delete: 'Delete',
+  move: 'Move',
+  archive: 'Archive',
+  flag: 'Flag',
+  categorize: 'Categorize',
+  forward: 'Forward',
+  popup: 'Popup',
+};
+
+/**
+ * Compact badge letters for the two action types Taj scans for at a glance:
+ * R = mark-read rule, D = delete rule. Other action types still turn the icon
+ * orange (any rule means clicking removes something) but carry no letter --
+ * they are named in the tooltip instead.
+ */
+function ruleBadgeLetters(actions: string[]): string {
+  let badge = '';
+  if (actions.includes('markRead')) badge += 'R';
+  if (actions.includes('delete')) badge += 'D';
+  return badge;
+}
+
+/** "Mark read, Delete" -- falls back to the raw type for anything unmapped. */
+function ruleActionSummary(actions: string[]): string {
+  return actions.map((a) => RULE_ACTION_LABELS[a] ?? a).join(', ');
+}
+
 export function RowActionsCellRenderer(props: CustomCellRendererProps<EventItem, unknown, GridContext>) {
   const event = props.data!;
   const ctx = props.context!;
   const iconSize = ctx.largeIcons ? 20 : 16;
   const btnPad = ctx.largeIcons ? 8 : 6;
+
+  // Rules already targeting this sender -- drives the orange/green clear-rules icon.
+  const senderRuleActions = event.senderRuleActions ?? [];
+  const hasSenderRules = senderRuleActions.length > 0;
+  const senderRuleBadge = ruleBadgeLetters(senderRuleActions);
+  const clearRulesLabel = hasSenderRules
+    ? `Rules for this sender: ${ruleActionSummary(senderRuleActions)} — click to remove all`
+    : 'Remove all rules for this sender';
 
   return (
     <div className="h-full flex items-center gap-0.5">
@@ -88,15 +126,29 @@ export function RowActionsCellRenderer(props: CustomCellRendererProps<EventItem,
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="shrink-0 rounded text-green-600 hover:!text-green-500 transition-all"
+                className={`relative shrink-0 rounded transition-all ${
+                  hasSenderRules
+                    ? 'text-orange-500 hover:!text-orange-400'
+                    : 'text-green-600 hover:!text-green-500'
+                }`}
                 style={{ padding: btnPad }}
                 onClick={(e) => { e.stopPropagation(); ctx.onClearRules(event); }}
                 disabled={!event.sender?.email}
+                aria-label={clearRulesLabel}
               >
                 <CheckCircle style={{ width: iconSize, height: iconSize }} />
+                {senderRuleBadge && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-0 right-0 font-bold leading-none tracking-tighter pointer-events-none"
+                    style={{ fontSize: ctx.largeIcons ? 10 : 8 }}
+                  >
+                    {senderRuleBadge}
+                  </span>
+                )}
               </button>
             </TooltipTrigger>
-            <TooltipContent>Remove all rules for this sender</TooltipContent>
+            <TooltipContent>{clearRulesLabel}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>

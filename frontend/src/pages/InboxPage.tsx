@@ -197,25 +197,21 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     setFocusedIndex(visibleEventsRef.current.findIndex((e) => e._id === event._id));
   }, []);
 
-  // Auto-mark email as read after 3 seconds of previewing
+  // Mark email as read immediately when it is previewed — no delay
   useEffect(() => {
     if (!previewEvent || previewEvent.isRead) return;
 
-    const timer = setTimeout(() => {
-      applyActionsToMessages(previewEvent.mailboxId, [previewEvent.messageId], [{ actionType: 'markRead' }])
-        .then(() => {
-          // Update local cache to reflect read status
-          markEventsReadInCache(queryClient, queryKeyId, (e) => e._id === previewEvent._id);
-          setPreviewEvent((prev) =>
-            prev?._id === previewEvent._id ? { ...prev, isRead: true } : prev,
-          );
-        })
-        .catch(() => {
-          // Silent fail — not critical
-        });
-    }, 3000);
-
-    return () => clearTimeout(timer);
+    applyActionsToMessages(previewEvent.mailboxId, [previewEvent.messageId], [{ actionType: 'markRead' }])
+      .then(() => {
+        // Update local cache to reflect read status
+        markEventsReadInCache(queryClient, queryKeyId, (e) => e._id === previewEvent._id);
+        setPreviewEvent((prev) =>
+          prev?._id === previewEvent._id ? { ...prev, isRead: true } : prev,
+        );
+      })
+      .catch(() => {
+        // Silent fail — not critical
+      });
   }, [previewEvent?._id, previewEvent?.isRead, previewEvent?.mailboxId, queryKeyId, queryClient]);
 
   // Debounce search input by 400ms
