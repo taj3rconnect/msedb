@@ -60,3 +60,4 @@ docs/.audit-cache.json
 .taudit/
 .playwright-mcp/
 .claude/troute-runs.md
+.claude/worktrees/

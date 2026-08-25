@@ -20,7 +20,8 @@ import {
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
-import { fetchEvents, summarizeToday, sendSummaryEmail } from '@/api/events';
+import { fetchEvents, fetchRuleActionCounts, summarizeToday, sendSummaryEmail } from '@/api/events';
+import type { MailFilter } from '@/api/events';
 import type { EventItem } from '@/api/events';
 import { applyActionsToMessages } from '@/api/mailboxes';
 import { batchLookupTracking, type TrackingMatch } from '@/api/tracking';
@@ -96,7 +97,12 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState(() => searchParams.get('date') || 'today');
-  const [unreadOnly, setUnreadOnly] = useState(() => searchParams.get('status') === 'unread');
+  // ?status= carries the filter. Older links only ever said 'unread' or 'all',
+  // and both still resolve correctly here.
+  const [mailFilter, setMailFilter] = useState<MailFilter>(() => {
+    const s = searchParams.get('status');
+    return s === 'unread' || s === 'read' || s === 'deleted' ? s : 'all';
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -230,12 +236,12 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
       (prev) => {
         const next = new URLSearchParams(prev);
         next.set('date', dateFilter);
-        next.set('status', unreadOnly ? 'unread' : 'all');
+        next.set('status', mailFilter);
         return next;
       },
       { replace: true },
     );
-  }, [dateFilter, unreadOnly, setSearchParams]);
+  }, [dateFilter, mailFilter, setSearchParams]);
 
   // Clear selection and reset page when page, search, date filter, or folder changes
   useEffect(() => {
@@ -294,7 +300,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   }, [dateFilter]);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, unreadOnly, folderFilter],
+    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, mailFilter, folderFilter],
     queryFn: () =>
       fetchEvents({
         mailboxId: mailboxId || undefined,
@@ -306,7 +312,22 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         limit: 50,
         excludeDeleted: folderFilter === 'inbox',
         folder: folderFilter,
-        unreadOnly: unreadOnly || undefined,
+        unreadOnly: mailFilter === 'unread' || undefined,
+        // For 'read'/'deleted' the server reads the RULE-action stamp and
+        // applies dateRange to when the rule acted, not to arrival time.
+        ruleAction: mailFilter === 'read' || mailFilter === 'deleted' ? mailFilter : undefined,
+        ...dateRange,
+      }),
+  });
+
+  // Badge counts for the Read/Deleted filters -- how much the rules did inside
+  // the selected date window. Its own query so switching filters doesn't
+  // refetch it, and it survives an error in the main list.
+  const { data: ruleActionCounts } = useQuery({
+    queryKey: ['rule-action-counts', queryKeyId, dateFilter],
+    queryFn: () =>
+      fetchRuleActionCounts({
+        mailboxId: mailboxId || undefined,
         ...dateRange,
       }),
   });
@@ -408,13 +429,14 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     setSearchInput('');
     setSearch('');
     setDateFilter('all');
-    setUnreadOnly(false);
+    setMailFilter('all');
     setFolderFilter('inbox');
     setPage(1);
     setDeletedEventIds(new Set());
     setSelectedIds(new Set());
     queryClient.refetchQueries({ queryKey: ['inbox-events', queryKeyId] });
     queryClient.refetchQueries({ queryKey: ['deleted-count', queryKeyId] });
+    queryClient.refetchQueries({ queryKey: ['rule-action-counts', queryKeyId] });
   }, [setFolderFilter, queryClient, queryKeyId]);
 
   const handleDateFilterChange = useCallback((filter: string) => {
@@ -422,8 +444,8 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     setPage(1);
   }, []);
 
-  const handleUnreadOnlyChange = useCallback((unread: boolean) => {
-    setUnreadOnly(unread);
+  const handleMailFilterChange = useCallback((filter: MailFilter) => {
+    setMailFilter(filter);
     setPage(1);
   }, []);
 
@@ -646,8 +668,9 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         onAiSearch={() => setAiSearchOpen(true)}
         dateFilter={dateFilter}
         onDateFilterChange={handleDateFilterChange}
-        unreadOnly={unreadOnly}
-        onUnreadOnlyChange={handleUnreadOnlyChange}
+        mailFilter={mailFilter}
+        onMailFilterChange={handleMailFilterChange}
+        ruleActionCounts={ruleActionCounts}
         totalCount={data?.pagination.total}
         previewPosition={previewPosition}
         onPreviewPositionChange={handlePreviewPositionChange}
@@ -705,8 +728,25 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
       ) : !visibleEvents.length ? (
         <EmptyState
           icon={Inbox}
-          title="No emails found"
-          description="No arrived emails have been recorded for this mailbox yet."
+          title={
+            mailFilter === 'read'
+              ? 'No rule-read emails'
+              : mailFilter === 'deleted'
+                ? 'No rule-deleted emails'
+                : 'No emails found'
+          }
+          description={
+            // These two filters only ever show what a RULE did, and provenance
+            // is recorded going forward -- so "empty" here usually means the
+            // rules simply haven't acted in this window, NOT that the mailbox
+            // failed to sync. Saying "no arrived emails" would read as a sync
+            // fault and send you chasing the wrong problem.
+            mailFilter === 'read'
+              ? 'No rules have marked emails read in this period. Try a wider date range.'
+              : mailFilter === 'deleted'
+                ? 'No rules have deleted emails in this period. Try a wider date range.'
+                : 'No arrived emails have been recorded for this mailbox yet.'
+          }
         />
       ) : (
         <PanelGroup

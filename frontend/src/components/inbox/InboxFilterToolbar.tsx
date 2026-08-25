@@ -1,5 +1,16 @@
 import { Loader2, RefreshCw, Sparkles, Brain, PanelRight, PanelBottom } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import type { MailFilter, RuleActionCounts } from '@/api/events';
+
+// Same shape as DATE_FILTERS above. "Read" and "Deleted" mean a RULE did it --
+// the tooltip says so, because the words alone would suggest plain read/deleted
+// mail and quietly misrepresent what the user is looking at.
+const MAIL_FILTERS: ReadonlyArray<readonly [MailFilter, string, string]> = [
+  ['unread', 'Unread', 'Unread emails'],
+  ['all', 'All', 'All emails'],
+  ['read', 'Read', 'Emails marked read by a rule'],
+  ['deleted', 'Deleted', 'Emails deleted by a rule'],
+] as const;
 
 const DATE_FILTERS = [
   ['all', 'All'],
@@ -22,8 +33,9 @@ interface InboxFilterToolbarProps {
   onAiSearch: () => void;
   dateFilter: string;
   onDateFilterChange: (filter: string) => void;
-  unreadOnly: boolean;
-  onUnreadOnlyChange: (unreadOnly: boolean) => void;
+  mailFilter: MailFilter;
+  onMailFilterChange: (filter: MailFilter) => void;
+  ruleActionCounts?: RuleActionCounts;
   totalCount?: number;
   previewPosition: 'right' | 'bottom';
   onPreviewPositionChange: (pos: 'right' | 'bottom') => void;
@@ -38,8 +50,9 @@ export function InboxFilterToolbar({
   onAiSearch,
   dateFilter,
   onDateFilterChange,
-  unreadOnly,
-  onUnreadOnlyChange,
+  mailFilter,
+  onMailFilterChange,
+  ruleActionCounts,
   totalCount,
   previewPosition,
   onPreviewPositionChange,
@@ -108,22 +121,36 @@ export function InboxFilterToolbar({
         </Button>
       ))}
       <span className="mx-1 h-5 w-px bg-border" />
-      <Button
-        variant={unreadOnly ? 'default' : 'outline'}
-        size="sm"
-        className="h-7 text-xs"
-        onClick={() => onUnreadOnlyChange(true)}
-      >
-        Unread
-      </Button>
-      <Button
-        variant={!unreadOnly ? 'default' : 'outline'}
-        size="sm"
-        className="h-7 text-xs"
-        onClick={() => onUnreadOnlyChange(false)}
-      >
-        All
-      </Button>
+      {MAIL_FILTERS.map(([key, label, title]) => {
+        const count =
+          key === 'read'
+            ? ruleActionCounts?.read
+            : key === 'deleted'
+              ? ruleActionCounts?.deleted
+              : undefined;
+        return (
+          <Button
+            key={key}
+            variant={mailFilter === key ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => onMailFilterChange(key)}
+            title={title}
+            aria-pressed={mailFilter === key}
+          >
+            {label}
+            {count !== undefined && (
+              <span
+                className={`ml-1 rounded px-1 tabular-nums ${
+                  mailFilter === key ? 'bg-background/25' : 'bg-muted'
+                }`}
+              >
+                {count}
+              </span>
+            )}
+          </Button>
+        );
+      })}
       {totalCount !== undefined && (
         <span className="text-sm text-muted-foreground tabular-nums ml-2">
           {totalCount.toLocaleString()} {totalCount === 1 ? 'email' : 'emails'}

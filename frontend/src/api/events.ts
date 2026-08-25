@@ -60,6 +60,17 @@ export interface TimelineResponse {
 
 // --- Params ---
 
+/**
+ * Which inbox filter is active. 'read' and 'deleted' mean "a RULE did this",
+ * not "this email is read/deleted" -- manual actions never match them.
+ */
+export type MailFilter = 'all' | 'unread' | 'read' | 'deleted';
+
+export interface RuleActionCounts {
+  read: number;
+  deleted: number;
+}
+
 export interface FetchEventsParams {
   mailboxId?: string;
   eventType?: string;
@@ -72,6 +83,7 @@ export interface FetchEventsParams {
   excludeDeleted?: boolean;
   inboxOnly?: boolean;
   unreadOnly?: boolean;
+  ruleAction?: 'read' | 'deleted';
   folder?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -95,11 +107,30 @@ export async function fetchEvents(params: FetchEventsParams): Promise<EventsResp
   if (params.excludeDeleted) searchParams.set('excludeDeleted', 'true');
   if (params.inboxOnly) searchParams.set('inboxOnly', 'true');
   if (params.unreadOnly) searchParams.set('unreadOnly', 'true');
+  if (params.ruleAction) searchParams.set('ruleAction', params.ruleAction);
   if (params.folder) searchParams.set('folder', params.folder);
   if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom);
   if (params.dateTo) searchParams.set('dateTo', params.dateTo);
   const qs = searchParams.toString();
   return apiFetch<EventsResponse>(`/events${qs ? `?${qs}` : ''}`);
+}
+
+/**
+ * Counts for the "Read" / "Deleted" filter badges -- how many emails a RULE
+ * acted on inside the given window. Counted server-side against sparse
+ * indexes; never derived by fetching rows and counting them here.
+ */
+export async function fetchRuleActionCounts(params: {
+  mailboxId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<RuleActionCounts> {
+  const searchParams = new URLSearchParams();
+  if (params.mailboxId) searchParams.set('mailboxId', params.mailboxId);
+  if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom);
+  if (params.dateTo) searchParams.set('dateTo', params.dateTo);
+  const qs = searchParams.toString();
+  return apiFetch<RuleActionCounts>(`/events/rule-action-counts${qs ? `?${qs}` : ''}`);
 }
 
 /**
