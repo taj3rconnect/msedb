@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
 import { requireAuth, getUserId } from '../auth/middleware.js';
 import { EmailEvent, type IEmailEvent } from '../models/EmailEvent.js';
+import { applyRuleActionFilter } from '../utils/ruleActionFilter.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { Rule } from '../models/Rule.js';
 import {
@@ -50,7 +51,7 @@ eventsRouter.use(requireAuth);
  */
 eventsRouter.get('/', async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const { mailboxId, eventType, senderDomain, search, excludeDeleted, inboxOnly, unreadOnly, dateFrom, dateTo, folder } = req.query;
+  const { mailboxId, eventType, senderDomain, search, excludeDeleted, inboxOnly, unreadOnly, dateFrom, dateTo, folder, ruleAction } = req.query;
 
   // Pagination
   const { page, limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
@@ -94,13 +95,26 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     }
   }
 
-  // Filter to unread messages only
-  if (unreadOnly === 'true') {
+  // --- Rule-action filter ("what did my RULES do?") --------------------------
+  // ruleAction=read | deleted -> only events a RULE marked read / deleted.
+  // Manual inbox actions are deliberately unstamped and never match here.
+  //
+  // The date window MOVES to the action timestamp. Filtering rule actions by
+  // `timestamp` would filter by when the mail ARRIVED, so an email that landed
+  // last week and was deleted by a rule this morning would be missing from
+  // "today" -- the exact question this filter exists to answer.
+  applyRuleActionFilter(filter, ruleAction);
+
+  // Filter to unread messages only. Meaningless alongside ruleAction=read
+  // (those are read by definition), so the rule filter wins.
+  if (unreadOnly === 'true' && ruleAction !== 'read') {
     filter.isRead = false;
   }
 
-  // Exclude messages that have been deleted
-  if (excludeDeleted === 'true') {
+  // Exclude messages that have been deleted -- except when the caller is
+  // explicitly ASKING for the rule-deleted ones, where this would hide the
+  // entire result set.
+  if (excludeDeleted === 'true' && ruleAction !== 'deleted') {
     filter.isDeleted = { $ne: true };
   }
 
@@ -415,6 +429,50 @@ eventsRouter.get('/mailbox-counts', async (req: Request, res: Response) => {
   }
 
   res.json({ counts: result });
+});
+
+/**
+ * GET /api/events/rule-action-counts
+ *
+ * How many emails a RULE marked read / deleted inside a date window --
+ * the badge numbers on the inbox "Read" and "Deleted" filter buttons.
+ * Query: mailboxId?, dateFrom?, dateTo?
+ *
+ * Counted with two indexed countDocuments calls (sparse indexes on
+ * userId + metadata.ruleMarkedReadAt / ruleDeletedAt) rather than by pulling
+ * rows back and counting in app code.
+ */
+eventsRouter.get('/rule-action-counts', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const { mailboxId, dateFrom, dateTo } = req.query;
+
+  const base: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
+  if (mailboxId && typeof mailboxId === 'string') {
+    base.mailboxId = new Types.ObjectId(mailboxId);
+  }
+
+  // Same window the list query uses, applied to the ACTION timestamp.
+  const window: Record<string, unknown> = {};
+  if (dateFrom && typeof dateFrom === 'string') {
+    const from = new Date(dateFrom);
+    if (!isNaN(from.getTime())) window.$gte = from;
+  }
+  if (dateTo && typeof dateTo === 'string') {
+    const to = new Date(dateTo);
+    if (!isNaN(to.getTime())) window.$lte = to;
+  }
+
+  const bound = (field: string) => ({
+    ...base,
+    [field]: { $exists: true, $ne: null, ...window },
+  });
+
+  const [read, deleted] = await Promise.all([
+    EmailEvent.countDocuments(bound('metadata.ruleMarkedReadAt')),
+    EmailEvent.countDocuments(bound('metadata.ruleDeletedAt')),
+  ]);
+
+  res.json({ read, deleted });
 });
 
 /**

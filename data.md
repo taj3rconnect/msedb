@@ -86,6 +86,8 @@ row.
 |---|---|---|---|
 | 2026-08-08 | Log created (no historical entries reconstructed) | `/tappaudit --fix` | Per-App Standard DOC-010 |
 | 2026-08-13 | Added `pattern_unapproved` to `AuditLog.action` enum | `b17a29d` | Unapprove action for approved patterns needed an audit action value |
+| 2026-08-25 | `EmailEvent.metadata` +4 optional fields (`ruleMarkedReadAt/By`, `ruleDeletedAt/By`) + 2 SPARSE indexes on `{userId, metadata.ruleMarkedReadAt}` and `{userId, metadata.ruleDeletedAt}` | `feature/inbox-rule-action-filters` | Inbox "Read"/"Deleted" filters must show what RULES did; provenance was never recorded, so the question was unanswerable. Sparse because only rule-touched events carry the fields. Additive and backward-compatible: existing docs simply lack them, so the filters start empty and fill forward (no backfill, by decision). |
+| 2026-08-25 | `StagedEmail` +1 optional field (`originalMessageId`) | `feature/inbox-rule-action-filters` | Graph message ids are folder-scoped, so the staged (post-move) id does not match the EmailEvent's arrival id. Needed so rescuing a staged email can un-stamp its rule-delete provenance. Optional: rows staged before this simply have no stamp to clear. |
 
 _No schema change has been made by an audit run. `/tdbaudit` on 2026-08-08 was
 read-only — see the audit notes below._

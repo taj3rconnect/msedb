@@ -2,7 +2,7 @@ import type { Types } from 'mongoose';
 import { graphFetch, GraphApiError } from './graphClient.js';
 import { createStagedEmail, ensureStagingFolder } from './stagingManager.js';
 import { Rule, type IRuleAction } from '../models/Rule.js';
-import { EmailEvent } from '../models/EmailEvent.js';
+import { stampRuleMarkedRead, stampRuleDeleted } from '../utils/ruleActionStamp.js';
 import { AuditLog } from '../models/AuditLog.js';
 import logger from '../config/logger.js';
 
@@ -102,6 +102,10 @@ export async function executeActions(params: {
                 },
               );
               await adoptMovedMessageId(moved);
+              // Stamp with the ARRIVAL id (messageId), not currentMessageId --
+              // the move above just reassigned the folder-scoped id, and the
+              // EmailEvent is keyed on the id seen at arrival.
+              await stampRuleDeleted({ userId, mailboxId, messageId, ruleId });
               executedActions.push('delete (direct)');
             } else {
               // Route through staging folder for webhook-triggered automation
@@ -123,9 +127,15 @@ export async function executeActions(params: {
                 mailboxId,
                 ruleId,
                 messageId: currentMessageId,
+                // Arrival id, so a rescue can find the EmailEvent we stamped.
+                originalMessageId: messageId,
                 originalFolder,
                 actions: [{ actionType: 'delete' }],
               });
+              // Stamped at decision time so the Deleted filter reflects the
+              // rule firing. A rescue during the grace period clears it again
+              // (services/stagingManager.ts -> clearRuleDeletedStamp).
+              await stampRuleDeleted({ userId, mailboxId, messageId, ruleId });
               executedActions.push('delete (staged)');
             }
             break;
@@ -161,11 +171,9 @@ export async function executeActions(params: {
                 body: JSON.stringify({ isRead: true }),
               },
             );
-            // Update our DB so the inbox page reflects the change
-            await EmailEvent.updateMany(
-              { userId, mailboxId, messageId },
-              { $set: { isRead: true } },
-            );
+            // Update our DB so the inbox page reflects the change, and record
+            // WHICH rule did it -- the inbox "Read" filter reads that stamp.
+            await stampRuleMarkedRead({ userId, mailboxId, messageId, ruleId });
             executedActions.push('markRead');
             break;
           }

@@ -37,6 +37,13 @@ vi.mock('../../models/EmailEvent.js', () => ({
   EmailEvent: { updateMany: vi.fn().mockResolvedValue({}) },
 }));
 
+const mockStampRuleMarkedRead = vi.fn().mockResolvedValue(undefined);
+const mockStampRuleDeleted = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../utils/ruleActionStamp.js', () => ({
+  stampRuleMarkedRead: (...args: unknown[]) => mockStampRuleMarkedRead(...args),
+  stampRuleDeleted: (...args: unknown[]) => mockStampRuleDeleted(...args),
+}));
+
 const mockAuditCreate = vi.fn().mockResolvedValue({});
 const mockAuditFindOne = vi.fn();
 mockAuditFindOne.mockReturnValue({ lean: () => Promise.resolve(null) });
@@ -265,5 +272,72 @@ describe('executeActions', () => {
         targetId: 'msg-1',
       }),
     );
+  });
+});
+
+describe('rule-action provenance', () => {
+  it('stamps markRead with the rule that did it', async () => {
+    await executeActions({ ...baseParams, actions: [{ actionType: 'markRead' }] });
+
+    expect(mockStampRuleMarkedRead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: 'msg-1',
+        ruleId: baseParams.ruleId,
+        userId: baseParams.userId,
+        mailboxId: baseParams.mailboxId,
+      }),
+    );
+  });
+
+  it('stamps a direct delete', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'delete' }],
+      skipStaging: true,
+    });
+    expect(mockStampRuleDeleted).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'msg-1', ruleId: baseParams.ruleId }),
+    );
+  });
+
+  it('stamps a staged delete, and records the arrival id for a later rescue', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'delete' }],
+      skipStaging: false,
+    });
+
+    expect(mockStampRuleDeleted).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'msg-1' }),
+    );
+    expect(mockCreateStagedEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ originalMessageId: 'msg-1' }),
+    );
+  });
+
+  it('stamps with the ARRIVAL id even after a move reassigned the id', async () => {
+    // Graph ids are folder-scoped. The EmailEvent is keyed on the arrival id,
+    // so stamping with the post-move id would match zero documents and the
+    // Read/Deleted filters would silently stay empty.
+    mockGraphFetch.mockImplementation((path: string) => {
+      if (String(path).includes('/move')) {
+        return Promise.resolve({ json: () => Promise.resolve({ id: 'msg-1-after-move' }) });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    await executeActions({
+      ...baseParams,
+      actions: [
+        { actionType: 'move', toFolder: 'archive-id', order: 1 },
+        { actionType: 'markRead', order: 2 },
+      ],
+    });
+
+    expect(mockStampRuleMarkedRead).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'msg-1' }),
+    );
+    const arg = mockStampRuleMarkedRead.mock.calls[0][0] as { messageId: string };
+    expect(arg.messageId).not.toBe('msg-1-after-move');
   });
 });

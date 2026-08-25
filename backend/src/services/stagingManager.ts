@@ -2,6 +2,7 @@ import type { Types } from 'mongoose';
 import { graphFetch } from './graphClient.js';
 import { StagedEmail, type IStagedEmail } from '../models/StagedEmail.js';
 import { AuditLog } from '../models/AuditLog.js';
+import { clearRuleDeletedStamp } from '../utils/ruleActionStamp.js';
 import { getIO } from '../config/socket.js';
 import logger from '../config/logger.js';
 import { NotFoundError } from '../middleware/errorHandler.js';
@@ -79,6 +80,8 @@ export async function createStagedEmail(params: {
   mailboxId: Types.ObjectId;
   ruleId: Types.ObjectId;
   messageId: string;
+  /** Arrival-time id, so a rescue can un-stamp the EmailEvent. */
+  originalMessageId?: string;
   originalFolder: string;
   actions: Array<{ actionType: string; toFolder?: string }>;
 }): Promise<IStagedEmail> {
@@ -91,6 +94,7 @@ export async function createStagedEmail(params: {
     mailboxId: params.mailboxId,
     ruleId: params.ruleId,
     messageId: params.messageId,
+    originalMessageId: params.originalMessageId ?? params.messageId,
     originalFolder: params.originalFolder,
     stagedAt: now,
     expiresAt,
@@ -153,6 +157,15 @@ export async function rescueStagedEmail(
     throw new NotFoundError('Staged email not found or already processed');
   }
 
+  // The delete was stamped when the rule fired; the user just cancelled it, so
+  // drop the stamp or this email sits in the inbox "Deleted" filter forever
+  // claiming a rule deleted it.
+  await clearRuleDeletedStamp({
+    userId,
+    mailboxId: stagedEmail.mailboxId,
+    messageId: stagedEmail.originalMessageId ?? stagedEmail.messageId,
+  });
+
   // Audit trail
   await AuditLog.create({
     userId,
@@ -192,7 +205,18 @@ export async function batchRescueStagedEmails(
       _id: { $in: ids },
       userId,
       status: 'rescued',
-    }).select('messageId mailboxId ruleId');
+    }).select('messageId originalMessageId mailboxId ruleId');
+
+    // Same un-stamp as the single rescue above, for each cancelled delete.
+    await Promise.all(
+      rescuedEmails.map((email) =>
+        clearRuleDeletedStamp({
+          userId,
+          mailboxId: email.mailboxId,
+          messageId: email.originalMessageId ?? email.messageId,
+        }),
+      ),
+    );
 
     const auditEntries = rescuedEmails.map((email) => ({
       userId,
