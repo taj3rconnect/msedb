@@ -19,7 +19,7 @@ import adminRouter from './routes/admin.js';
 import mailboxRouter from './routes/mailbox/index.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { userRouter } from './routes/user.js';
-import { eventsRouter } from './routes/events.js';
+import { eventsRouter } from './routes/events/index.js';
 import { patternsRouter } from './routes/patterns.js';
 import { rulesRouter } from './routes/rules/index.js';
 import { stagingRouter } from './routes/staging.js';
