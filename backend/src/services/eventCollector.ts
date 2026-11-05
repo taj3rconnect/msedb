@@ -2,6 +2,7 @@ import { graphFetch, GraphApiError } from './graphClient.js';
 import { extractMetadata, type GraphMessage } from './metadataExtractor.js';
 import { evaluateRulesForMessage } from './ruleEngine.js';
 import { executeActions } from './actionExecutor.js';
+import { isRuleExemptFolder } from './stagingManager.js';
 import { buildSelectParam } from '../utils/graph.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { EmailEvent, type IEmailEvent } from '../models/EmailEvent.js';
@@ -337,6 +338,14 @@ async function handleCreated(
     );
 
     if (result.matched && result.ruleId && result.actions) {
+      if (await isRuleExemptFolder(mailboxEmail, graphMessage.parentFolderId, accessToken)) {
+        logger.debug('Rule matched mail in an exempt folder -- skipping', {
+          ruleId: result.ruleId,
+          messageId,
+        });
+        return;
+      }
+
       logger.info('Rule matched incoming email', {
         ruleId: result.ruleId,
         messageId,

@@ -12,6 +12,10 @@ import { NotFoundError } from '../middleware/errorHandler.js';
  * Avoids repeated Graph API lookups for the same mailbox.
  */
 const stagingFolderCache = new Map<string, string>();
+const deletedItemsFolderCache = new Map<string, string>();
+
+/** MongoDB error code for a collection that does not exist. */
+const NAMESPACE_NOT_FOUND = 26;
 
 /** Grace period buffer: 7 days after expiresAt for TTL cleanup */
 const CLEANUP_BUFFER_MS = 7 * 24 * 60 * 60 * 1000;
@@ -67,6 +71,84 @@ export async function ensureStagingFolder(
   });
 
   return createData.id;
+}
+
+/** The Deleted Items folder ID for a mailbox, cached like the staging folder. */
+async function getDeletedItemsFolderId(
+  mailboxEmail: string,
+  accessToken: string,
+): Promise<string> {
+  const cached = deletedItemsFolderCache.get(mailboxEmail);
+  if (cached) {
+    return cached;
+  }
+
+  const response = await graphFetch(
+    `/users/${encodeURIComponent(mailboxEmail)}/mailFolders/deleteditems?$select=id`,
+    accessToken,
+  );
+  const { id } = (await response.json()) as { id: string };
+
+  deletedItemsFolderCache.set(mailboxEmail, id);
+  return id;
+}
+
+/**
+ * True for folders rules must never act on: Deleted Items and MSEDB Staging.
+ *
+ * A Graph move gives the message a new id, which arrives as a 'created'
+ * notification, so mail moved to these folders looks like new mail. Acting on it
+ * would pull a finished delete back into staging, every 24 hours, forever.
+ */
+export async function isRuleExemptFolder(
+  mailboxEmail: string,
+  folderId: string | undefined,
+  accessToken: string,
+): Promise<boolean> {
+  if (!folderId) {
+    return false;
+  }
+
+  const [deletedItemsId, stagingId] = await Promise.all([
+    getDeletedItemsFolderId(mailboxEmail, accessToken),
+    ensureStagingFolder(mailboxEmail, accessToken),
+  ]);
+
+  return folderId === deletedItemsId || folderId === stagingId;
+}
+
+/**
+ * Remove the TTL index on `expiresAt` if the database still has one.
+ *
+ * It is not in the schema, and Mongoose never drops an index it did not define.
+ * It erased each staged row the moment its grace period ended, before the
+ * 30-minute staging processor could act, so staged mail was never deleted.
+ *
+ * @returns true if the index was found and dropped
+ */
+export async function dropStaleStagingTtlIndex(): Promise<boolean> {
+  let indexes: Awaited<ReturnType<typeof StagedEmail.collection.indexes>>;
+  try {
+    indexes = await StagedEmail.collection.indexes();
+  } catch (err) {
+    if ((err as { code?: number }).code === NAMESPACE_NOT_FOUND) {
+      return false; // Fresh database: the collection does not exist yet
+    }
+    throw err;
+  }
+
+  const stale = indexes.find(
+    (index) =>
+      index.expireAfterSeconds !== undefined &&
+      Object.keys(index.key).join() === 'expiresAt',
+  );
+  if (!stale?.name) {
+    return false;
+  }
+
+  await StagedEmail.collection.dropIndex(stale.name);
+  logger.warn('Dropped stale TTL index from stagedemails', { index: stale.name });
+  return true;
 }
 
 /**

@@ -1,33 +1,30 @@
 <!-- resume-branch: main -->
 # MSEDB session status (2026-11-05, TajHome-Room)
 
-**Goal:** on the Unread filter, let Taj enter a number and see only unread emails from senders or domains with at
-least that many unread, to spot who is piling up.
+**Goal:** make rule-deleted mail actually reach Deleted Items. It was stuck in the MSEDB Staging folder, which is why
+Taj saw unread ororo mail in Outlook that MSEDB's Inbox + Unread view does not list.
 
-**Done (code):** feature/unread-sender-threshold was merged into develop.
-- `backend/src/services/senderVolume.ts`: parse, list pipeline, pill pipeline, all in Mongo.
-- `frontend/src/components/inbox/SenderVolumeFilter.tsx`: the control, shown only on Unread.
-- `/events/mailbox-counts` now returns `total` for the unified pill.
+**Done (code):** fix/staging-never-completes was merged into develop.
+- `dropStaleStagingTtlIndex()` removes a TTL index on `stagedemails.expiresAt` at startup (not in the schema).
+- `isRuleExemptFolder()` stops rules acting on mail landing in Deleted Items or MSEDB Staging.
 
-Shipped earlier today in `c750bf7`: filtered mailbox pills and server-side Sender sort.
+Shipped earlier today: `c750bf7` (filtered pills, Sender sort), `675f232` (unread sender volume filter).
 
-**Verified before ship:** backend tsc, vitest 182/182, frontend build, new pipelines on real mail against a separate
-tally (totals, every pill, row counts, every page), and a stubbed render at 1600px and 375px.
+**Verified before ship:** backend tsc, vitest 194/194, independent run, red-then-green rule test, folder ids on real data.
 
-**In progress:** /tdone is shipping this to prod. If this note is the newest thing you see, confirm prod's live
-commit first: the ship may have stopped.
+**In progress:** /tdone is shipping this to prod, then moves the approved taj@aptask.com backlog. If this note is the
+newest thing you see, confirm prod's live commit first: the ship may have stopped.
 
-**Live checks still owed after deploy, signed in:**
-- Unread + type 5: rows group biggest first, each with a count, and the Unified MB pill equals "N emails".
-- Domain switch changes the groups; leaving Unread hides the box.
-- From c750bf7: Sender sort survives a reload.
+**Owed after deploy:**
+- Confirm the `expiresAt` TTL index is gone from `stagedemails`.
+- Within about 24 hours, confirm rows reach `executed` and mail reaches Deleted Items without returning to staging.
+- Signed-in UI check of the unread volume filter.
 
 **Open questions:**
-- 3 means "senders with 3 or more", not "exactly three messages". Taj has not confirmed this reading.
-- Subject, Date, Folder, Status and Priority still sort only the loaded 50 rows.
-- `frontend/` has no ESLint installed, so `yarn lint` cannot run there.
-- Ollama router on the DGX returned 502 (nothing on 11435), so embeddings were failing.
-- shirin@aptask.com refresh token expired; that mailbox must sign in again.
-- 12 `autorefactor/*` branches on origin are stale; 9 delete `backend/src/routes/events.ts`. Never merge them.
+- Taj has not said whether to clean the backlog in taj@jobtalk.ai (247) and taj@yenom.ai (41).
+- 14 `messaging-digest-noreply@linkedin.com` messages in taj@aptask.com staging have no delete rule; Taj decides.
+- Rule-deleted counts include mail that never left staging, so the Deleted badge is overstated.
+- Ollama down; Qdrant unreachable at startup; shirin@aptask.com sign-in expired.
+- 12 stale `autorefactor/*` branches; 9 delete `backend/src/routes/events.ts`. Never merge them.
 
-Next step: confirm prod serves the release, run the signed-in checks above, then ask Taj what is next.
+Next step: confirm prod serves the release, run the post-deploy checks above, then ask Taj about the open questions.

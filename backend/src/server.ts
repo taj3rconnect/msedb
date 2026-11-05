@@ -7,6 +7,7 @@ import { getRedisClient } from './config/redis.js';
 import { initializeSchedulers } from './jobs/schedulers.js';
 import { closeAllWorkers, closeAllQueues } from './jobs/queues.js';
 import { syncSubscriptionsOnStartup } from './services/subscriptionService.js';
+import { dropStaleStagingTtlIndex } from './services/stagingManager.js';
 import { initializeTunnelConfig } from './services/tunnelService.js';
 import { configureSecurityMiddleware } from './middleware/security.js';
 import { createAuthLimiter, createApiLimiter, createWebhookLimiter, createTrackingLimiter } from './middleware/rateLimiter.js';
@@ -57,6 +58,7 @@ async function startServer(): Promise<void> {
   try {
     // 1. Connect to MongoDB with retry logic
     await connectDatabase();
+    await dropStaleStagingTtlIndex();
 
     // 2. Verify Redis connection
     const redisClient = getRedisClient();

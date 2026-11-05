@@ -11,6 +11,11 @@
   is sending me a lot of emails and it's accumulating too many emails from the one sender or one domains."
 - Taj's examples: rows from `dan@tldrnewsletter.com` (many display names) and `hello@grow.briefs.co`.
 
+- "email from ororo are not showing in filter" (Outlook showed 11 unread from ororo; MSEDB showed 0).
+- Taj chose, for the mail stuck in MSEDB Staging on taj@aptask.com: "Delete if rule matches": move to Deleted Items
+  only mail whose sender has an active delete rule, and list the rest for review.
+- Taj approved removing the stale index, knowing rule-deleted mail will really move to Deleted Items after 24 hours.
+
 ## Decisions made while working
 - Branches in this repo start from `origin/main`, not `origin/develop`: GIT-001 in CLAUDE.md overrides the
   /tstart default.
