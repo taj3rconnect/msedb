@@ -7,6 +7,11 @@ import {
   buildMailboxCountsMatch,
   toAggregationFilter,
 } from '../services/eventListFilter.js';
+import {
+  buildSenderVolumeCountsPipeline,
+  buildSenderVolumeListPipeline,
+  parseSenderVolumeFilter,
+} from '../services/senderVolume.js';
 import { Mailbox } from '../models/Mailbox.js';
 import { Rule } from '../models/Rule.js';
 import {
@@ -51,7 +56,8 @@ eventsRouter.use(requireAuth);
  * GET /api/events
  *
  * Returns paginated, filterable email events for the authenticated user.
- * Query params: mailboxId, eventType, senderDomain, page, limit, sortBy, sortOrder
+ * Query params: mailboxId, eventType, senderDomain, page, limit, sortBy, sortOrder,
+ * minSenderCount, senderGroupBy (the last two with unreadOnly only)
  */
 eventsRouter.get('/', async (req: Request, res: Response) => {
   const userId = getUserId(req);
@@ -63,13 +69,14 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
   const sortBy = (req.query.sortBy as string) || 'timestamp';
   const sortOrder = (req.query.sortOrder as string) === 'asc' ? 1 : -1;
 
+  const senderVolume = parseSenderVolumeFilter(req.query);
   const filter = await buildEventListFilter(userId, req.query);
 
   // For sender field sorts, use aggregation to handle nulls and case-insensitive ordering
   const senderSortFields = new Set(['sender.domain', 'sender.email', 'sender.name']);
   const useAggSort = senderSortFields.has(sortBy);
 
-  const projectFields = {
+  const projectFields: Record<string, 0 | 1> = {
     eventType: 1, sender: 1, subject: 1, timestamp: 1,
     mailboxId: 1, messageId: 1, fromFolder: 1, toFolder: 1,
     importance: 1, hasAttachments: 1, categories: 1, isRead: 1,
@@ -79,7 +86,18 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
   let events: any[];
   let total: number;
 
-  if (useAggSort) {
+  if (senderVolume) {
+    const [result] = await EmailEvent.aggregate(
+      buildSenderVolumeListPipeline(toAggregationFilter(filter, userId), senderVolume, {
+        page,
+        limit,
+        project: projectFields,
+        senderSortOrder: sortBy === 'sender.email' ? sortOrder : undefined,
+      }),
+    );
+    events = result.rows;
+    total = result.total[0]?.count ?? 0;
+  } else if (useAggSort) {
     let sortKeyExpr: unknown;
     if (sortBy === 'sender.domain') {
       sortKeyExpr = {
@@ -279,21 +297,38 @@ eventsRouter.get('/timeline', async (req: Request, res: Response) => {
  * Returns event counts grouped by mailboxId, under the same filters as
  * GET /api/events (folder, unreadOnly, ruleAction, dateFrom, dateTo, ...), so
  * each mailbox badge matches what the inbox list shows for that mailbox.
+ * `total` is the unified badge. It is returned separately because with
+ * minSenderCount it is not the sum of the mailboxes: a sender can reach the
+ * threshold across mailboxes without reaching it in any single one.
  */
 eventsRouter.get('/mailbox-counts', async (req: Request, res: Response) => {
   const userId = getUserId(req);
+  const senderVolume = parseSenderVolumeFilter(req.query);
+  const match = await buildMailboxCountsMatch(userId, req.query);
 
-  const counts = await EmailEvent.aggregate([
-    { $match: await buildMailboxCountsMatch(userId, req.query) },
-    { $group: { _id: '$mailboxId', count: { $sum: 1 } } },
-  ]);
+  let perMailbox: Array<{ _id: Types.ObjectId; count: number }>;
+  let total: number;
 
-  const result: Record<string, number> = {};
-  for (const c of counts) {
-    result[c._id.toString()] = c.count;
+  if (senderVolume) {
+    const [result] = await EmailEvent.aggregate(
+      buildSenderVolumeCountsPipeline(match, senderVolume),
+    );
+    perMailbox = result.perMailbox;
+    total = result.unified[0]?.count ?? 0;
+  } else {
+    perMailbox = await EmailEvent.aggregate([
+      { $match: match },
+      { $group: { _id: '$mailboxId', count: { $sum: 1 } } },
+    ]);
+    total = perMailbox.reduce((sum, c) => sum + c.count, 0);
   }
 
-  res.json({ counts: result });
+  const counts: Record<string, number> = {};
+  for (const c of perMailbox) {
+    counts[c._id.toString()] = c.count;
+  }
+
+  res.json({ counts, total });
 });
 
 /**

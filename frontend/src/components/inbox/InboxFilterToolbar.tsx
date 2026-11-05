@@ -1,6 +1,7 @@
 import { Loader2, RefreshCw, Sparkles, Brain, PanelRight, PanelBottom } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { MailFilter, RuleActionCounts } from '@/api/events';
+import type { MailFilter, RuleActionCounts, SenderGroupBy } from '@/api/events';
+import { SenderVolumeFilter } from './SenderVolumeFilter';
 
 // Same shape as DATE_FILTERS above. "Read" and "Deleted" mean a RULE did it --
 // the tooltip says so, because the words alone would suggest plain read/deleted
@@ -35,6 +36,10 @@ interface InboxFilterToolbarProps {
   onDateFilterChange: (filter: string) => void;
   mailFilter: MailFilter;
   onMailFilterChange: (filter: MailFilter) => void;
+  minSenderCount?: number;
+  senderGroupBy: SenderGroupBy;
+  onMinSenderCountChange: (minCount: number | undefined) => void;
+  onSenderGroupByChange: (groupBy: SenderGroupBy) => void;
   ruleActionCounts?: RuleActionCounts;
   totalCount?: number;
   previewPosition: 'right' | 'bottom';
@@ -52,6 +57,10 @@ export function InboxFilterToolbar({
   onDateFilterChange,
   mailFilter,
   onMailFilterChange,
+  minSenderCount,
+  senderGroupBy,
+  onMinSenderCountChange,
+  onSenderGroupByChange,
   ruleActionCounts,
   totalCount,
   previewPosition,
@@ -151,6 +160,14 @@ export function InboxFilterToolbar({
           </Button>
         );
       })}
+      {mailFilter === 'unread' && (
+        <SenderVolumeFilter
+          minCount={minSenderCount}
+          groupBy={senderGroupBy}
+          onMinCountChange={onMinSenderCountChange}
+          onGroupByChange={onSenderGroupByChange}
+        />
+      )}
       {totalCount !== undefined && (
         <span className="text-sm text-muted-foreground tabular-nums ml-2">
           {totalCount.toLocaleString()} {totalCount === 1 ? 'email' : 'emails'}
