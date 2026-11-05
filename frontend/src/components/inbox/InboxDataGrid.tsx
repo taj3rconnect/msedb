@@ -8,6 +8,7 @@ import {
   type GridReadyEvent,
   type ColumnState,
   type StateUpdatedEvent,
+  type SortChangedEvent,
   type GridApi,
   type RowClassRules,
   type GetRowIdParams,
@@ -93,6 +94,11 @@ const gridThemeDark = themeQuartz.withParams({
   headerColumnResizeHandleColor: 'hsl(var(--primary))',
 });
 
+const SENDER_COL_ID = 'sender';
+
+/** Direction of the Sender column sort, or null when it is not sorted. */
+export type SenderSort = 'asc' | 'desc' | null;
+
 // --- Props ---
 interface InboxDataGridProps {
   data: EventItem[];
@@ -112,6 +118,7 @@ interface InboxDataGridProps {
   activeEventId?: string;
   focusedEventId?: string;
   folderFilter?: string;
+  onSenderSortChange?: (sort: SenderSort) => void;
   showFilters?: boolean;
   onToggleFilters?: (show: boolean) => void;
   toolbarSlot?: React.ReactNode;
@@ -142,6 +149,7 @@ export function InboxDataGrid({
   activeEventId,
   focusedEventId,
   folderFilter = 'inbox',
+  onSenderSortChange,
   showFilters: showFiltersProp,
   onToggleFilters,
   toolbarSlot,
@@ -242,7 +250,7 @@ export function InboxDataGrid({
       // Including the row _id makes props.value unique per row, guaranteeing
       // the renderer always sees the correct props.data.
       {
-        colId: 'sender',
+        colId: SENDER_COL_ID,
         headerName: 'Sender',
         valueGetter: (p) => {
           const s = p.data?.sender;
@@ -255,6 +263,10 @@ export function InboxDataGrid({
         width: 280,
         filter: 'agTextColumnFilter',
         sortable: true,
+        // The server orders this column by email address across all pages (see
+        // onSortChanged). Every pair compares equal so the grid keeps that order;
+        // sorting here would use the _id-prefixed value above.
+        comparator: () => 0,
         resizable: true,
         cellClass: 'text-left',
       },
@@ -480,6 +492,18 @@ export function InboxDataGrid({
     [saveColumnState],
   );
 
+  // Tell the page when the Sender sort changes, whether by a header click or by a
+  // restored or reset column state.
+  const onSortChanged = useCallback(
+    (params: SortChangedEvent<EventItem>) => {
+      const senderColumn = params.api
+        .getColumnState()
+        .find((c) => c.colId === SENDER_COL_ID);
+      onSenderSortChange?.(senderColumn?.sort ?? null);
+    },
+    [onSenderSortChange],
+  );
+
   // Scroll focused row into view
   useEffect(() => {
     const api = apiRef.current;
@@ -589,6 +613,7 @@ export function InboxDataGrid({
           onGridReady={onGridReady}
           onRowClicked={onRowClicked}
           onStateUpdated={onStateUpdated}
+          onSortChanged={onSortChanged}
           suppressRowClickSelection={true}
           animateRows={false}
           enableCellTextSelection={true}
