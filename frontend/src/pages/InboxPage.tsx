@@ -37,7 +37,13 @@ import { InboxBulkActionBar } from '@/components/inbox/InboxBulkActionBar';
 import { InboxContactsPanel } from '@/components/inbox/InboxContactsPanel';
 import { markEventsReadInCache } from '@/lib/inboxCache';
 import type { AiSearchResult } from '@/api/aiSearch';
-import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
+import { InboxDataGrid, type SenderSort } from '@/components/inbox/InboxDataGrid';
+import {
+  buildInboxFilterParams,
+  parseDateFilter,
+  parseMailFilter,
+  resolveDateRange,
+} from '@/lib/inboxFilters';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -96,13 +102,13 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [dateFilter, setDateFilter] = useState(() => searchParams.get('date') || 'today');
-  // ?status= carries the filter. Older links only ever said 'unread' or 'all',
-  // and both still resolve correctly here.
-  const [mailFilter, setMailFilter] = useState<MailFilter>(() => {
-    const s = searchParams.get('status');
-    return s === 'unread' || s === 'read' || s === 'deleted' ? s : 'all';
-  });
+  const [dateFilter, setDateFilter] = useState(() => parseDateFilter(searchParams.get('date')));
+  const [mailFilter, setMailFilter] = useState<MailFilter>(() =>
+    parseMailFilter(searchParams.get('status')),
+  );
+  // Set by a click on the Sender header. Sorted on the server so it covers every
+  // page; null is the default newest-first order.
+  const [senderSort, setSenderSort] = useState<SenderSort>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -254,71 +260,35 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   }, [folderFilter]);
 
   // Compute date range from filter selection
-  const dateRange = useMemo(() => {
-    const now = new Date();
-    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-    const today = startOfDay(now);
-
-    switch (dateFilter) {
-      case 'today':
-        return { dateFrom: today.toISOString(), dateTo: endOfDay(now).toISOString() };
-      case 'yesterday': {
-        const y = new Date(today); y.setDate(y.getDate() - 1);
-        return { dateFrom: y.toISOString(), dateTo: endOfDay(y).toISOString() };
-      }
-      case 'this-week': {
-        const d = new Date(today); d.setDate(d.getDate() - d.getDay());
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
-      }
-      case 'last-week': {
-        const d = new Date(today); d.setDate(d.getDate() - d.getDay() - 7);
-        const e = new Date(d); e.setDate(e.getDate() + 6);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
-      }
-      case 'this-month': {
-        const d = new Date(now.getFullYear(), now.getMonth(), 1);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
-      }
-      case 'last-month': {
-        const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const e = new Date(now.getFullYear(), now.getMonth(), 0);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
-      }
-      case 'ytd': {
-        const d = new Date(now.getFullYear(), 0, 1);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
-      }
-      case 'last-year': {
-        const d = new Date(now.getFullYear() - 1, 0, 1);
-        const e = new Date(now.getFullYear() - 1, 11, 31);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
-      }
-      default:
-        return {};
-    }
-  }, [dateFilter]);
+  const dateRange = useMemo(() => resolveDateRange(dateFilter), [dateFilter]);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, mailFilter, folderFilter],
+    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, mailFilter, folderFilter, senderSort],
     queryFn: () =>
       fetchEvents({
+        ...buildInboxFilterParams(mailFilter, folderFilter, dateRange),
         mailboxId: mailboxId || undefined,
-        eventType: 'arrived',
-        sortBy: 'timestamp',
-        sortOrder: 'desc',
+        sortBy: senderSort ? 'sender.email' : 'timestamp',
+        sortOrder: senderSort ?? 'desc',
         search: search || undefined,
         page,
         limit: 50,
-        excludeDeleted: folderFilter === 'inbox',
-        folder: folderFilter,
-        unreadOnly: mailFilter === 'unread' || undefined,
-        // For 'read'/'deleted' the server reads the RULE-action stamp and
-        // applies dateRange to when the rule acted, not to arrival time.
-        ruleAction: mailFilter === 'read' || mailFilter === 'deleted' ? mailFilter : undefined,
-        ...dateRange,
       }),
   });
+
+  // The mailbox badges refresh on a timer; refresh them as soon as the list's
+  // own total moves, so a delete or sync doesn't leave them a minute behind.
+  const listTotal = data?.pagination.total;
+  useEffect(() => {
+    if (listTotal !== undefined) {
+      queryClient.invalidateQueries({ queryKey: ['mailbox-counts'] });
+    }
+  }, [listTotal, queryClient]);
+
+  const handleSenderSortChange = useCallback((sort: SenderSort) => {
+    setSenderSort(sort);
+    setPage(1);
+  }, []);
 
   // Badge counts for the Read/Deleted filters -- how much the rules did inside
   // the selected date window. Its own query so switching filters doesn't
@@ -776,6 +746,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                 activeEventId={previewEvent?._id}
                 focusedEventId={focusedIndex >= 0 && focusedIndex < visibleEvents.length ? visibleEvents[focusedIndex]._id : undefined}
                 folderFilter={folderFilter}
+                onSenderSortChange={handleSenderSortChange}
                 searchQuery={search}
                 isUnifiedMode={isUnifiedMode}
                 mailboxEmailMap={isUnifiedMode ? new Map(connectedMailboxes.map((mb) => [mb.id, mb.email])) : undefined}

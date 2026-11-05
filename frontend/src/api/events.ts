@@ -91,10 +91,7 @@ export interface FetchEventsParams {
 
 // --- API functions ---
 
-/**
- * Fetch paginated, filterable email events.
- */
-export async function fetchEvents(params: FetchEventsParams): Promise<EventsResponse> {
+function buildEventsQueryString(params: FetchEventsParams): string {
   const searchParams = new URLSearchParams();
   if (params.mailboxId) searchParams.set('mailboxId', params.mailboxId);
   if (params.eventType) searchParams.set('eventType', params.eventType);
@@ -112,7 +109,14 @@ export async function fetchEvents(params: FetchEventsParams): Promise<EventsResp
   if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom);
   if (params.dateTo) searchParams.set('dateTo', params.dateTo);
   const qs = searchParams.toString();
-  return apiFetch<EventsResponse>(`/events${qs ? `?${qs}` : ''}`);
+  return qs ? `?${qs}` : '';
+}
+
+/**
+ * Fetch paginated, filterable email events.
+ */
+export async function fetchEvents(params: FetchEventsParams): Promise<EventsResponse> {
+  return apiFetch<EventsResponse>(`/events${buildEventsQueryString(params)}`);
 }
 
 /**
@@ -156,10 +160,14 @@ export async function fetchEventTimeline(
 }
 
 /**
- * Fetch total indexed event counts grouped by mailboxId.
+ * Fetch event counts grouped by mailboxId, under the same filters as the list.
  */
-export async function fetchMailboxCounts(): Promise<{ counts: Record<string, number> }> {
-  return apiFetch<{ counts: Record<string, number> }>('/events/mailbox-counts');
+export async function fetchMailboxCounts(
+  params: FetchEventsParams,
+): Promise<{ counts: Record<string, number> }> {
+  return apiFetch<{ counts: Record<string, number> }>(
+    `/events/mailbox-counts${buildEventsQueryString(params)}`,
+  );
 }
 
 /**
