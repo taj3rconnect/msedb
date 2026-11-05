@@ -26,6 +26,8 @@ import {
   buildInboxFilterParams,
   parseDateFilter,
   parseMailFilter,
+  parseMinSenderCount,
+  parseSenderGroupBy,
   resolveDateRange,
 } from '@/lib/inboxFilters';
 import { useAuthStore } from '@/stores/authStore';
@@ -83,11 +85,16 @@ export function Topbar() {
   // The badges follow the filters the inbox list is showing (see inboxFilters.ts).
   const dateFilter = parseDateFilter(searchParams.get('date'));
   const mailFilter = parseMailFilter(searchParams.get('status'));
+  const minCount = parseMinSenderCount(searchParams.get('minCount'));
+  const groupBy = parseSenderGroupBy(searchParams.get('groupBy'));
   const dateRange = useMemo(() => resolveDateRange(dateFilter), [dateFilter]);
 
   const { data: countsData } = useQuery({
-    queryKey: ['mailbox-counts', dateFilter, mailFilter, inboxFolder],
-    queryFn: () => fetchMailboxCounts(buildInboxFilterParams(mailFilter, inboxFolder, dateRange)),
+    queryKey: ['mailbox-counts', dateFilter, mailFilter, inboxFolder, minCount, groupBy],
+    queryFn: () =>
+      fetchMailboxCounts(
+        buildInboxFilterParams(mailFilter, inboxFolder, dateRange, { minCount, groupBy }),
+      ),
     enabled: isInboxPage && connectedMailboxes.length > 0,
     refetchInterval: 60000,
     placeholderData: keepPreviousData,
@@ -125,7 +132,7 @@ export function Topbar() {
                 <div className="flex flex-col items-start">
                   <span>Unified MB</span>
                   <span className="text-[10px] opacity-70 tabular-nums">
-                    {Object.values(mailboxCounts).reduce((a, b) => a + b, 0).toLocaleString()}
+                    {(countsData?.total ?? 0).toLocaleString()}
                   </span>
                 </div>
               </Badge>

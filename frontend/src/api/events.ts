@@ -26,6 +26,8 @@ export interface EventItem {
    * Mirrors exactly what POST /api/rules/delete-by-sender would remove.
    */
   senderRuleActions?: string[];
+  /** Unread emails in this row's sender or domain group, when that filter is on. */
+  senderGroupCount?: number;
 }
 
 export interface EventsResponse {
@@ -36,6 +38,12 @@ export interface EventsResponse {
     total: number;
     totalPages: number;
   };
+}
+
+export interface MailboxCountsResponse {
+  counts: Record<string, number>;
+  /** The unified badge. Not always the sum of `counts`; see the backend route. */
+  total: number;
 }
 
 export interface SenderBreakdownItem {
@@ -66,6 +74,9 @@ export interface TimelineResponse {
  */
 export type MailFilter = 'all' | 'unread' | 'read' | 'deleted';
 
+/** What the unread volume filter counts: one address, or a whole domain. */
+export type SenderGroupBy = 'sender' | 'domain';
+
 export interface RuleActionCounts {
   read: number;
   deleted: number;
@@ -84,6 +95,8 @@ export interface FetchEventsParams {
   inboxOnly?: boolean;
   unreadOnly?: boolean;
   ruleAction?: 'read' | 'deleted';
+  minSenderCount?: number;
+  senderGroupBy?: SenderGroupBy;
   folder?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -105,6 +118,8 @@ function buildEventsQueryString(params: FetchEventsParams): string {
   if (params.inboxOnly) searchParams.set('inboxOnly', 'true');
   if (params.unreadOnly) searchParams.set('unreadOnly', 'true');
   if (params.ruleAction) searchParams.set('ruleAction', params.ruleAction);
+  if (params.minSenderCount) searchParams.set('minSenderCount', String(params.minSenderCount));
+  if (params.senderGroupBy) searchParams.set('senderGroupBy', params.senderGroupBy);
   if (params.folder) searchParams.set('folder', params.folder);
   if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom);
   if (params.dateTo) searchParams.set('dateTo', params.dateTo);
@@ -164,10 +179,8 @@ export async function fetchEventTimeline(
  */
 export async function fetchMailboxCounts(
   params: FetchEventsParams,
-): Promise<{ counts: Record<string, number> }> {
-  return apiFetch<{ counts: Record<string, number> }>(
-    `/events/mailbox-counts${buildEventsQueryString(params)}`,
-  );
+): Promise<MailboxCountsResponse> {
+  return apiFetch<MailboxCountsResponse>(`/events/mailbox-counts${buildEventsQueryString(params)}`);
 }
 
 /**

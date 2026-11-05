@@ -1,4 +1,4 @@
-import type { FetchEventsParams, MailFilter } from '@/api/events';
+import type { FetchEventsParams, MailFilter, SenderGroupBy } from '@/api/events';
 
 /**
  * The inbox filter state, read in one place so the list (InboxPage) and the
@@ -10,7 +10,15 @@ export interface DateRange {
   dateTo?: string;
 }
 
+/** "At least N unread from one sender". Lives in the URL as ?minCount= and ?groupBy=. */
+export interface SenderVolume {
+  minCount?: number;
+  groupBy: SenderGroupBy;
+}
+
 const DEFAULT_DATE_FILTER = 'today';
+const MIN_SENDER_COUNT = 2;
+const MAX_SENDER_COUNT = 100_000;
 
 /** ?date= value, or the default for a link that has none. */
 export function parseDateFilter(value: string | null): string {
@@ -20,6 +28,18 @@ export function parseDateFilter(value: string | null): string {
 /** ?status= value. Older links only ever said 'unread' or 'all'; both still resolve. */
 export function parseMailFilter(value: string | null): MailFilter {
   return value === 'unread' || value === 'read' || value === 'deleted' ? value : 'all';
+}
+
+/** A typed or linked count, or undefined when it is not a usable threshold. */
+export function parseMinSenderCount(value: string | null): number | undefined {
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  const count = Number(value);
+  return count >= MIN_SENDER_COUNT && count <= MAX_SENDER_COUNT ? count : undefined;
+}
+
+/** ?groupBy= value. Anything else counts by sender. */
+export function parseSenderGroupBy(value: string | null): SenderGroupBy {
+  return value === 'domain' ? 'domain' : 'sender';
 }
 
 /** The ISO window for a date filter. 'all' and unknown values have no window. */
@@ -73,7 +93,9 @@ export function buildInboxFilterParams(
   mailFilter: MailFilter,
   folderFilter: string,
   dateRange: DateRange,
+  senderVolume: SenderVolume,
 ): FetchEventsParams {
+  const volumeActive = mailFilter === 'unread' && senderVolume.minCount !== undefined;
   return {
     eventType: 'arrived',
     excludeDeleted: folderFilter === 'inbox',
@@ -82,6 +104,8 @@ export function buildInboxFilterParams(
     // For 'read'/'deleted' the server reads the RULE-action stamp and
     // applies dateRange to when the rule acted, not to arrival time.
     ruleAction: mailFilter === 'read' || mailFilter === 'deleted' ? mailFilter : undefined,
+    minSenderCount: volumeActive ? senderVolume.minCount : undefined,
+    senderGroupBy: volumeActive ? senderVolume.groupBy : undefined,
     ...dateRange,
   };
 }

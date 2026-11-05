@@ -256,7 +256,8 @@ export function InboxDataGrid({
           const s = p.data?.sender;
           // Prefix with _id so this value is unique per row even when multiple
           // emails share the same sender name or email address.
-          return `${p.data?._id ?? ''}\x00${s?.name ?? ''}\x00${s?.email ?? ''}`;
+          // The group count is included so the cell redraws when that number moves.
+          return `${p.data?._id ?? ''}\x00${s?.name ?? ''}\x00${s?.email ?? ''}\x00${p.data?.senderGroupCount ?? ''}`;
         },
         cellRenderer: SenderCellRenderer,
         minWidth: 150,

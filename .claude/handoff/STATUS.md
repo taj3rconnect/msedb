@@ -1,29 +1,33 @@
 <!-- resume-branch: main -->
 # MSEDB session status (2026-11-05, TajHome-Room)
 
-**Goal:** two inbox bugs reported from msedb.aptask.com/inbox?date=all&status=unread.
-1. Clicking the Sender header must sort ALL emails by sender email address.
-2. The mailbox pills must show filtered numbers (Unified MB showed 77,417 while the list showed 1,884 unread).
+**Goal:** on the Unread filter, let Taj enter a number and see only unread emails from senders or domains with at
+least that many unread, to spot who is piling up.
 
-**Done (code):** feature/thr-1105 was merged into develop.
-- `backend/src/services/eventListFilter.ts`: one filter for the list and `/events/mailbox-counts`.
-- `frontend/src/lib/inboxFilters.ts`: one source of filter params for InboxPage and Topbar.
-- Sender header sorts on the server (`sortBy=sender.email`), blank addresses last, `_id` tiebreak.
+**Done (code):** feature/unread-sender-threshold was merged into develop.
+- `backend/src/services/senderVolume.ts`: parse, list pipeline, pill pipeline, all in Mongo.
+- `frontend/src/components/inbox/SenderVolumeFilter.tsx`: the control, shown only on Unread.
+- `/events/mailbox-counts` now returns `total` for the unified pill.
 
-**Verified before ship:** backend tsc, vitest 162/162, frontend build, CI on develop, sort pipeline on real data
-(15,840 rows ordered both ways, read-only).
+Shipped earlier today in `c750bf7`: filtered mailbox pills and server-side Sender sort.
+
+**Verified before ship:** backend tsc, vitest 182/182, frontend build, new pipelines on real mail against a separate
+tally (totals, every pill, row counts, every page), and a stubbed render at 1600px and 375px.
 
 **In progress:** /tdone is shipping this to prod. If this note is the newest thing you see, confirm prod's live
 commit first: the ship may have stopped.
 
-**Live checks still owed after deploy:**
-- Sender click reorders page 1 and page 2; a second click reverses; the sort survives a reload.
-- With Unread + All + Inbox, the Unified MB pill equals the "N emails" count and the mailbox pills add up to it.
+**Live checks still owed after deploy, signed in:**
+- Unread + type 5: rows group biggest first, each with a count, and the Unified MB pill equals "N emails".
+- Domain switch changes the groups; leaving Unread hides the box.
+- From c750bf7: Sender sort survives a reload.
 
 **Open questions:**
-- Subject, Date, Folder, Status and Priority still sort only the loaded 50 rows. Taj has not asked to change them.
+- 3 means "senders with 3 or more", not "exactly three messages". Taj has not confirmed this reading.
+- Subject, Date, Folder, Status and Priority still sort only the loaded 50 rows.
 - `frontend/` has no ESLint installed, so `yarn lint` cannot run there.
-- 12 `autorefactor/*` branches on origin are 82 commits behind main; 9 delete `backend/src/routes/events.ts`.
-  Never merge them. Deleting or re-cutting them is Taj's call.
+- Ollama router on the DGX returned 502 (nothing on 11435), so embeddings were failing.
+- shirin@aptask.com refresh token expired; that mailbox must sign in again.
+- 12 `autorefactor/*` branches on origin are stale; 9 delete `backend/src/routes/events.ts`. Never merge them.
 
-Next step: confirm prod serves the release, run the live checks above, then ask Taj what is next.
+Next step: confirm prod serves the release, run the signed-in checks above, then ask Taj what is next.
