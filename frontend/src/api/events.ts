@@ -20,6 +20,12 @@ export interface EventItem {
   hasAttachments: boolean;
   categories: string[];
   isRead: boolean;
+  /**
+   * Distinct action types of the rules that already target this sender's email,
+   * e.g. ['markRead', 'delete']. Empty when the sender has no rules.
+   * Mirrors exactly what POST /api/rules/delete-by-sender would remove.
+   */
+  senderRuleActions?: string[];
 }
 
 export interface EventsResponse {
@@ -54,6 +60,17 @@ export interface TimelineResponse {
 
 // --- Params ---
 
+/**
+ * Which inbox filter is active. 'read' and 'deleted' mean "a RULE did this",
+ * not "this email is read/deleted" -- manual actions never match them.
+ */
+export type MailFilter = 'all' | 'unread' | 'read' | 'deleted';
+
+export interface RuleActionCounts {
+  read: number;
+  deleted: number;
+}
+
 export interface FetchEventsParams {
   mailboxId?: string;
   eventType?: string;
@@ -66,6 +83,7 @@ export interface FetchEventsParams {
   excludeDeleted?: boolean;
   inboxOnly?: boolean;
   unreadOnly?: boolean;
+  ruleAction?: 'read' | 'deleted';
   folder?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -73,10 +91,7 @@ export interface FetchEventsParams {
 
 // --- API functions ---
 
-/**
- * Fetch paginated, filterable email events.
- */
-export async function fetchEvents(params: FetchEventsParams): Promise<EventsResponse> {
+function buildEventsQueryString(params: FetchEventsParams): string {
   const searchParams = new URLSearchParams();
   if (params.mailboxId) searchParams.set('mailboxId', params.mailboxId);
   if (params.eventType) searchParams.set('eventType', params.eventType);
@@ -89,11 +104,37 @@ export async function fetchEvents(params: FetchEventsParams): Promise<EventsResp
   if (params.excludeDeleted) searchParams.set('excludeDeleted', 'true');
   if (params.inboxOnly) searchParams.set('inboxOnly', 'true');
   if (params.unreadOnly) searchParams.set('unreadOnly', 'true');
+  if (params.ruleAction) searchParams.set('ruleAction', params.ruleAction);
   if (params.folder) searchParams.set('folder', params.folder);
   if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom);
   if (params.dateTo) searchParams.set('dateTo', params.dateTo);
   const qs = searchParams.toString();
-  return apiFetch<EventsResponse>(`/events${qs ? `?${qs}` : ''}`);
+  return qs ? `?${qs}` : '';
+}
+
+/**
+ * Fetch paginated, filterable email events.
+ */
+export async function fetchEvents(params: FetchEventsParams): Promise<EventsResponse> {
+  return apiFetch<EventsResponse>(`/events${buildEventsQueryString(params)}`);
+}
+
+/**
+ * Counts for the "Read" / "Deleted" filter badges -- how many emails a RULE
+ * acted on inside the given window. Counted server-side against sparse
+ * indexes; never derived by fetching rows and counting them here.
+ */
+export async function fetchRuleActionCounts(params: {
+  mailboxId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<RuleActionCounts> {
+  const searchParams = new URLSearchParams();
+  if (params.mailboxId) searchParams.set('mailboxId', params.mailboxId);
+  if (params.dateFrom) searchParams.set('dateFrom', params.dateFrom);
+  if (params.dateTo) searchParams.set('dateTo', params.dateTo);
+  const qs = searchParams.toString();
+  return apiFetch<RuleActionCounts>(`/events/rule-action-counts${qs ? `?${qs}` : ''}`);
 }
 
 /**
@@ -119,10 +160,14 @@ export async function fetchEventTimeline(
 }
 
 /**
- * Fetch total indexed event counts grouped by mailboxId.
+ * Fetch event counts grouped by mailboxId, under the same filters as the list.
  */
-export async function fetchMailboxCounts(): Promise<{ counts: Record<string, number> }> {
-  return apiFetch<{ counts: Record<string, number> }>('/events/mailbox-counts');
+export async function fetchMailboxCounts(
+  params: FetchEventsParams,
+): Promise<{ counts: Record<string, number> }> {
+  return apiFetch<{ counts: Record<string, number> }>(
+    `/events/mailbox-counts${buildEventsQueryString(params)}`,
+  );
 }
 
 /**

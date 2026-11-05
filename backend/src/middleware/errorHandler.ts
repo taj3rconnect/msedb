@@ -56,6 +56,15 @@ export function globalErrorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  // body-parser (express.json/urlencoded) throws plain errors -- not AppError
+  // instances -- carrying their own .status/.type for malformed JSON and
+  // oversized bodies. Read them defensively since err's real shape here is
+  // whatever upstream middleware threw, not necessarily our own classes.
+  const bodyParserStatus = (err as { status?: unknown; statusCode?: unknown }).status
+    ?? (err as { status?: unknown; statusCode?: unknown }).statusCode;
+  const isBodyParserClientError =
+    typeof bodyParserStatus === 'number' && bodyParserStatus >= 400 && bodyParserStatus < 500;
+
   // Determine status code
   let statusCode = 500;
   if (err instanceof AppError) {
@@ -69,10 +78,17 @@ export function globalErrorHandler(
     } else if (err.status === 429) {
       statusCode = 429;
     }
+  } else if (isBodyParserClientError) {
+    statusCode = bodyParserStatus as number;
   }
 
   // Sanitize error message — never leak Graph API response bodies or paths (may contain email addresses / keys)
   let safeMessage = err.message;
+  if (isBodyParserClientError && !(err instanceof AppError) && !(err instanceof GraphApiError)) {
+    // body-parser's own message can echo a snippet of the raw (invalid) body
+    // -- never forward that to the client.
+    safeMessage = statusCode === 413 ? 'Request body too large' : 'Malformed request body';
+  }
   if (err instanceof GraphApiError) {
     if (err.status === 404 || err.status === 410) {
       safeMessage = 'Message not found';

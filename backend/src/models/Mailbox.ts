@@ -86,7 +86,6 @@ const mailboxSchema = new Schema<IMailbox>(
 
 // Indexes
 mailboxSchema.index({ userId: 1, email: 1 }, { unique: true });
-mailboxSchema.index({ userId: 1 });
 mailboxSchema.index({ homeAccountId: 1 }, { unique: true, sparse: true });
 
 export const Mailbox = model<IMailbox>('Mailbox', mailboxSchema);

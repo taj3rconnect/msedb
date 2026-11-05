@@ -11,8 +11,8 @@
 #   - msedb-mongo     -> SHARED WITH JTCRM. Never touched. ALERT ONLY.
 #   - msedb-redis     -> queue state. ALERT ONLY.
 #
-# NOT INSTALLED YET. See docs/tauditall-2026-08-08.md — the prod deploy must
-# install/refresh the cron entry so a host rebuild cannot silently lose it:
+# Installed/refreshed on every deploy by tools/deploy-live.sh (AGT-003), so a
+# host rebuild or a fresh clone cannot silently lose the cron entry:
 #   */1 * * * * /home/admin/claude/MSEDB/tools/watchdog.sh >/dev/null 2>&1
 
 set -uo pipefail

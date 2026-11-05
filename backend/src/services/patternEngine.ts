@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { EmailEvent } from '../models/EmailEvent.js';
 import { Pattern, type IPattern } from '../models/Pattern.js';
 import { User } from '../models/User.js';
+import { loadWhitelistMatcher } from './whitelistService.js';
 import logger from '../config/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -393,6 +394,8 @@ async function upsertPattern(params: {
   exceptionCount: number;
   evidence: Array<{ messageId: string; timestamp: Date; action: string }>;
   suggest: boolean;
+  /** Whitelist predicate loaded once per analysis run (see loadWhitelistMatcher). */
+  isSuppressed?: (senderEmail: string) => boolean;
 }): Promise<void> {
   const {
     userId,
@@ -407,7 +410,16 @@ async function upsertPattern(params: {
     exceptionCount,
     evidence,
     suggest,
+    isSuppressed,
   } = params;
+
+  // Whitelisted senders are permanently suppressed: never detect, never suggest.
+  // ruleEngine already refuses to act on them; without this check the engine
+  // would keep re-creating patterns the user has explicitly silenced forever.
+  if (isSuppressed?.(senderEmail)) {
+    logger.debug('Sender is whitelisted, skipping pattern', { senderEmail, actionType });
+    return;
+  }
 
   // Check rejection cooldown
   const inCooldown = await isInRejectionCooldown(
@@ -517,6 +529,10 @@ export async function analyzeMailboxPatterns(
     markRead: settings.thresholdMarkRead,
   };
 
+  // Load the whitelist once for the whole run — one Mongo read + two Redis
+  // reads, rather than three per candidate sender.
+  const isSuppressed = await loadWhitelistMatcher(mailboxId);
+
   // --- Sender-level detection ---
   const senderResults = await detectSenderPatterns(
     userId,
@@ -615,6 +631,7 @@ export async function analyzeMailboxPatterns(
             action: e.eventType,
           })),
           suggest,
+          isSuppressed,
         });
 
         counters.senderPatterns++;
@@ -673,6 +690,7 @@ export async function analyzeMailboxPatterns(
         action: e.eventType,
       })),
       suggest,
+      isSuppressed,
     });
 
     counters.folderRoutingPatterns++;

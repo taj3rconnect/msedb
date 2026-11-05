@@ -10,6 +10,14 @@ export interface IStagedEmail extends Document {
   mailboxId: Types.ObjectId;
   ruleId: Types.ObjectId;
   messageId: string;
+  /**
+   * The message id as recorded on the EmailEvent at ARRIVAL. Graph ids are
+   * folder-scoped, so `messageId` above is the post-move staging id and does
+   * NOT match the EmailEvent. Kept so a rescue can find and un-stamp the
+   * rule-delete provenance. Optional: rows staged before this field existed
+   * simply have no stamp to clear.
+   */
+  originalMessageId?: string;
   senderEmail?: string;
   senderName?: string;
   subject?: string;
@@ -31,6 +39,7 @@ const stagedEmailSchema = new Schema<IStagedEmail>(
     mailboxId: { type: Schema.Types.ObjectId, ref: 'Mailbox', required: true },
     ruleId: { type: Schema.Types.ObjectId, ref: 'Rule', required: true },
     messageId: { type: String, required: true },
+    originalMessageId: { type: String },
     senderEmail: { type: String },
     senderName: { type: String },
     subject: { type: String },

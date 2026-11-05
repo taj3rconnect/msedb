@@ -113,13 +113,15 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   const cookieToken = req.cookies?.msedb_session;
   if (cookieToken) {
     try {
-      const decoded = jwt.verify(cookieToken, config.jwtSecret) as JwtPayload;
-      const activeUser = await User.findById(decoded.userId).select('isActive').lean();
-      if (activeUser?.isActive === false) {
-        next(new UnauthorizedError('Account deactivated'));
+      const decoded = jwt.verify(cookieToken, config.jwtSecret, { algorithms: ['HS256'] }) as JwtPayload;
+      const activeUser = await User.findById(decoded.userId).select('isActive role').lean();
+      if (!activeUser || activeUser.isActive === false) {
+        next(new UnauthorizedError('Session invalid'));
         return;
       }
-      req.user = decoded;
+      // Role comes from the fresh DB read, never the JWT payload — a demoted
+      // admin's already-issued token must not keep granting admin access.
+      req.user = { ...decoded, role: activeUser.role || 'user' };
       next();
       return;
     } catch {

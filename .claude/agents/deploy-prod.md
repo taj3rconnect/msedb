@@ -30,7 +30,8 @@ in `/tprod`).
 - The DGX working tree may hold DGX-specific `docker-compose.yml` changes that are not in
   git. Never `git checkout` / `git stash` / `git reset` over it blindly — see DEPLOY.md
   § Current caveat.
-- There is **no prod watchdog installed yet** (open AGT-003 gap). Do not report a watchdog
-  as alive until `tools/watchdog.sh` is actually installed on the DGX by the deploy.
+- The prod watchdog (`tools/watchdog.sh`, AGT-003) is installed/refreshed on the DGX by
+  every deploy (see `tools/deploy-live.sh`). Do not report it as alive from that fact
+  alone — confirm the cron entry and the alive-file mtime (< 60s) on the DGX.
 
 NEVER deploy to prod without `/tprod`'s confirmation having been given.

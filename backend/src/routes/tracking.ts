@@ -22,13 +22,12 @@ trackingRouter.get('/open/:trackingId.png', (req: Request, res: Response) => {
   });
   res.end(TRACKING_PIXEL);
 
-  // Record open asynchronously (fire-and-forget)
-  const xff = req.headers['x-forwarded-for'];
-  const realIp = req.headers['x-real-ip'];
-  const ip = (typeof xff === 'string' ? xff : Array.isArray(xff) ? xff[0] : '')?.split(',')[0]?.trim()
-    || (typeof realIp === 'string' ? realIp : '')
-    || req.ip
-    || '';
+  // Record open asynchronously (fire-and-forget). req.ip is Express's own
+  // resolution of the client address (app.set('trust proxy', 1) in
+  // server.ts already makes it proxy-aware) -- reading X-Forwarded-For /
+  // X-Real-IP directly here let anyone holding this public pixel URL
+  // forge either header to rotate past the per-IP open dedup window.
+  const ip = req.ip || '';
   const ua = req.headers['user-agent'] || '';
 
   recordOpen(trackingId, ip, ua);

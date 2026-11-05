@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
-import { AlertCircle, Brain, Sparkles } from 'lucide-react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { toast } from 'sonner';
+import { AlertCircle, Brain, Sparkles, Layers } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -7,15 +8,25 @@ import { PatternCard } from '@/components/patterns/PatternCard';
 import { PatternFilters } from '@/components/patterns/PatternFilters';
 import { PatternCustomizeDialog } from '@/components/patterns/PatternCustomizeDialog';
 import { PatternPreviewDialog } from '@/components/patterns/PatternPreviewDialog';
+import { BulkRuleDrawer } from '@/components/patterns/BulkRuleDrawer';
 import {
   usePatterns,
   useApprovePattern,
   useRejectPattern,
+  useUnapprovePattern,
   useCustomizePattern,
   useTriggerAnalysis,
 } from '@/hooks/usePatterns';
 import { useUiStore } from '@/stores/uiStore';
 import type { Pattern, PatternSuggestedAction } from '@/api/patterns';
+import type { QuickAction, QuickRuleAction } from '@/components/patterns/PatternCard';
+
+/** Labels for the one-click hover icons, for toast copy. */
+const QUICK_RULE_LABEL: Record<QuickRuleAction, string> = {
+  delete: 'Delete',
+  markRead: 'Mark as read',
+  archive: 'Archive',
+};
 
 /**
  * Patterns page showing card-based pattern suggestions with confidence
@@ -47,6 +58,9 @@ export function PatternsPage() {
   // Preview dialog state
   const [previewTarget, setPreviewTarget] = useState<Pattern | null>(null);
 
+  // Bulk rule drawer state
+  const [bulkOpen, setBulkOpen] = useState(false);
+
   // Build query params — status, hasRule, search are server-side; patternType is client-side
   const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
   const hasRuleParam = ruleFilter === 'has-rule' ? true : ruleFilter === 'no-rule' ? false : undefined;
@@ -57,8 +71,13 @@ export function PatternsPage() {
   // Mutation hooks
   const approveMutation = useApprovePattern();
   const rejectMutation = useRejectPattern();
+  const unapproveMutation = useUnapprovePattern();
   const customizeMutation = useCustomizePattern();
   const triggerMutation = useTriggerAnalysis();
+
+  // Which approved card currently has a request in flight — so only that card's
+  // buttons go into the pending state, not every card on the page.
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   // Filter by pattern type client-side (API doesn't support patternType filter)
   const filteredPatterns = data?.patterns.filter(
@@ -103,6 +122,110 @@ export function PatternsPage() {
     [rejectMutation],
   );
 
+  const handleUnapprove = useCallback(
+    (id: string) => {
+      setUpdatingId(id);
+      unapproveMutation.mutate(id, {
+        onSuccess: (result) => {
+          toast.success('Approval undone', {
+            description:
+              result.rulesDeleted > 0
+                ? `${result.rulesDeleted} rule${result.rulesDeleted === 1 ? '' : 's'} deleted. The pattern is back in Suggested.`
+                : 'The pattern is back in Suggested.',
+          });
+        },
+        onError: (err: unknown) => {
+          toast.error('Could not unapprove this pattern', {
+            description: err instanceof Error ? err.message : String(err),
+          });
+        },
+        onSettled: () => setUpdatingId(null),
+      });
+    },
+    [unapproveMutation],
+  );
+
+  const handleRetarget = useCallback(
+    (id: string, actionType: QuickAction) => {
+      setUpdatingId(id);
+      customizeMutation.mutate(
+        { patternId: id, action: { actionType } },
+        {
+          onSuccess: () => {
+            toast.success(
+              `Rule changed to ${actionType === 'delete' ? 'Delete' : 'Mark as read'}`,
+            );
+          },
+          onError: (err: unknown) => {
+            toast.error('Could not change this rule', {
+              description: err instanceof Error ? err.message : String(err),
+            });
+          },
+          onSettled: () => setUpdatingId(null),
+        },
+      );
+    },
+    [customizeMutation],
+  );
+
+  /**
+   * One-click rule from a card's hover icons. The customize endpoint sets the
+   * action and approves in a single request, so this both creates a rule for a
+   * suggestion and re-targets an already-approved one.
+   *
+   * Undo has to differ between those two cases: a pattern that was only a
+   * suggestion is unapproved (rule deleted, back to Suggested), while one that
+   * was already approved is customized back to the action it had before —
+   * unapproving that one would throw away a rule the user never asked to lose.
+   */
+  const handleQuickRule = useCallback(
+    (id: string, actionType: QuickRuleAction) => {
+      const pattern = filteredPatterns.find((p) => p._id === id);
+      if (!pattern) return;
+
+      const wasApproved = pattern.status === 'approved';
+      const previousAction = pattern.suggestedAction;
+      const label = QUICK_RULE_LABEL[actionType];
+      const sender =
+        pattern.condition.senderEmail ?? pattern.condition.senderDomain ?? 'this sender';
+
+      setUpdatingId(id);
+      customizeMutation.mutate(
+        { patternId: id, action: { actionType } },
+        {
+          onSuccess: () => {
+            toast.success(
+              wasApproved
+                ? `Rule changed to ${label} for ${sender}`
+                : `${label} rule created for ${sender}`,
+              {
+                description:
+                  'It acts on mail arriving from now on — emails already in your mailbox are untouched.',
+                action: {
+                  label: 'Undo',
+                  onClick: () => {
+                    if (wasApproved) {
+                      customizeMutation.mutate({ patternId: id, action: previousAction });
+                    } else {
+                      unapproveMutation.mutate(id);
+                    }
+                  },
+                },
+              },
+            );
+          },
+          onError: (err: unknown) => {
+            toast.error(`Could not create the ${label} rule`, {
+              description: err instanceof Error ? err.message : String(err),
+            });
+          },
+          onSettled: () => setUpdatingId(null),
+        },
+      );
+    },
+    [filteredPatterns, customizeMutation, unapproveMutation],
+  );
+
   const handleOpenCustomize = useCallback(
     (id: string) => {
       const pattern = filteredPatterns.find((p) => p._id === id);
@@ -129,6 +252,24 @@ export function PatternsPage() {
     [filteredPatterns],
   );
 
+  // Filters handed to the bulk drawer — identical to what this page is showing,
+  // so a bulk action can never reach a pattern the user has filtered out.
+  const bulkFilters = useMemo(() => {
+    const parts: string[] = [];
+    if (statusFilter !== 'all') parts.push(`status ${statusFilter}`);
+    if (typeFilter !== 'all') parts.push(`type ${typeFilter}`);
+    if (ruleFilter !== 'all') parts.push(ruleFilter === 'has-rule' ? 'has rule' : 'no rule');
+    if (searchDebounced) parts.push(`search "${searchDebounced}"`);
+    return {
+      mailboxId: selectedMailboxId,
+      status: statusParam,
+      hasRule: hasRuleParam,
+      search: searchDebounced || undefined,
+      patternType: typeFilter,
+      summary: parts.length ? parts.join(', ') : 'no filters (all patterns)',
+    };
+  }, [statusFilter, typeFilter, ruleFilter, searchDebounced, selectedMailboxId, statusParam, hasRuleParam]);
+
   const handleAnalyze = useCallback(() => {
     triggerMutation.mutate(selectedMailboxId ?? undefined);
   }, [triggerMutation, selectedMailboxId]);
@@ -138,13 +279,38 @@ export function PatternsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Patterns</h1>
-        <Button
-          onClick={handleAnalyze}
-          disabled={triggerMutation.isPending}
-        >
-          <Sparkles className="h-4 w-4 mr-2" />
-          {triggerMutation.isPending ? 'Analyzing...' : 'Analyze Now'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setBulkOpen(true)}
+            data-tip={
+              'Bulk Rule — handle many patterns in one pass.\n' +
+              'Opens a drawer listing every pattern that matches the filters currently set on this page, which you then narrow further by % acted on, confidence and emails observed. You pick one action for the whole selection and see, per row, whether it creates a new rule, replaces an existing one, or changes nothing.\n' +
+              'Nothing is created until you click Apply.'
+            }
+          >
+            <Layers className="h-4 w-4 mr-2" />
+            Bulk Rule
+          </Button>
+          <span
+            className="inline-flex"
+            data-tip={
+              triggerMutation.isPending
+                ? 'Analysis is running. New suggestions appear on this page as soon as it finishes — you can keep working in the meantime.'
+                : 'Analyze Now — run pattern detection immediately instead of waiting for the scheduled job.\n' +
+                  'Re-reads the recent email activity recorded for the selected mailbox and looks for senders you treat the same way over and over. Existing patterns get updated confidence; new ones appear as Suggested.\n' +
+                  'It only proposes. No mailbox rule is ever created without your explicit approval.'
+            }
+          >
+            <Button
+              onClick={handleAnalyze}
+              disabled={triggerMutation.isPending}
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              {triggerMutation.isPending ? 'Analyzing...' : 'Analyze Now'}
+            </Button>
+          </span>
+        </div>
       </div>
 
       {/* Filters + count */}
@@ -154,6 +320,7 @@ export function PatternsPage() {
           patternType={typeFilter}
           ruleFilter={ruleFilter}
           search={searchInput}
+          mailboxId={selectedMailboxId}
           onStatusChange={handleStatusChange}
           onPatternTypeChange={handleTypeChange}
           onRuleFilterChange={handleRuleFilterChange}
@@ -202,8 +369,12 @@ export function PatternsPage() {
                 onReject={handleReject}
                 onCustomize={handleOpenCustomize}
                 onPreview={handlePreview}
+                onRetarget={handleRetarget}
+                onUnapprove={handleUnapprove}
+                onQuickRule={handleQuickRule}
                 isApproving={approveMutation.isPending}
                 isRejecting={rejectMutation.isPending}
+                isUpdating={updatingId === pattern._id}
               />
             ))}
           </div>
@@ -211,25 +382,46 @@ export function PatternsPage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-4 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1}
+              <span
+                className="inline-flex"
+                data-tip={
+                  page <= 1
+                    ? 'You are on the first page — there is nothing before this.'
+                    : `Go back to page ${page - 1}. Your filters and search stay applied.`
+                }
               >
-                Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  Previous
+                </Button>
+              </span>
+              <span
+                className="text-sm text-muted-foreground"
+                data-tip={`Showing page ${page} of ${totalPages}. Patterns are sorted by confidence, so the strongest candidates are on page 1.`}
+              >
                 Page {page} of {totalPages}
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
+              <span
+                className="inline-flex"
+                data-tip={
+                  page >= totalPages
+                    ? 'You are on the last page — no more patterns match these filters.'
+                    : `Go on to page ${page + 1}. Your filters and search stay applied.`
+                }
               >
-                Next
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Next
+                </Button>
+              </span>
             </div>
           )}
         </>
@@ -251,6 +443,9 @@ export function PatternsPage() {
         open={previewTarget !== null}
         onOpenChange={(open) => { if (!open) setPreviewTarget(null); }}
       />
+
+      {/* Bulk rule drawer */}
+      <BulkRuleDrawer open={bulkOpen} onOpenChange={setBulkOpen} filters={bulkFilters} />
     </div>
   );
 }

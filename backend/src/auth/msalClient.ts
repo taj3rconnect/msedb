@@ -21,7 +21,6 @@ export const GRAPH_SCOPES: string[] = [
   'Mail.Send',
   'MailboxSettings.ReadWrite',
   'Contacts.Read',
-  'Calendars.ReadWrite',
   'offline_access',
 ];
 

@@ -122,7 +122,11 @@ executeRouter.post('/:id/run', async (req: Request, res: Response) => {
             hasAttachments: false,
             categories: [],
             isRead: false,
-            metadata: { automatedByRule: rule._id },
+            metadata: {
+              automatedByRule: rule._id,
+              ruleDeletedAt: new Date(),
+              ruleDeletedBy: rule._id,
+            },
           },
         },
         upsert: true,
@@ -154,7 +158,17 @@ executeRouter.post('/:id/run', async (req: Request, res: Response) => {
       };
     }
     try {
-      const result = await EmailEvent.updateMany(senderFilter, { $set: { isRead: true } });
+      // Stamp WHICH rule marked these read -- a bare `isRead: true` left the
+      // inbox "Read" filter with nothing to key off, so a rule-driven read was
+      // indistinguishable from the user reading the mail themselves.
+      const result = await EmailEvent.updateMany(senderFilter, {
+        $set: {
+          isRead: true,
+          'metadata.ruleMarkedReadAt': new Date(),
+          'metadata.ruleMarkedReadBy': rule._id,
+          'metadata.automatedByRule': rule._id,
+        },
+      });
       logger.info('Bulk updated isRead in DB', { modified: result.modifiedCount });
     } catch (err) {
       logger.warn('Failed to bulk update isRead', {

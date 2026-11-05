@@ -6,6 +6,7 @@ import { getAccessTokenForMailbox } from '../../auth/tokenManager.js';
 import { getRedisClient } from '../../config/redis.js';
 import { bodyCacheKey, BODY_CACHE_TTL } from '../../jobs/processors/bodyPrefetch.js';
 import { graphFetch } from '../../services/graphClient.js';
+import { inlineCidImages } from '../../services/messageBody.js';
 import { NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
 
 const messagesRouter = Router();
@@ -70,18 +71,7 @@ messagesRouter.get('/:id/messages/:messageId', async (req: Request, res: Respons
       const attData = (await attResponse.json()) as {
         value: { contentId?: string; contentType?: string; contentBytes?: string; isInline?: boolean }[];
       };
-      if (attData.value?.length) {
-        let html = message.body.content;
-        for (const att of attData.value) {
-          if (att.contentId && att.contentBytes && att.contentType && att.contentType.startsWith('image/')) {
-            const cid = att.contentId.replace(/^<|>$/g, '');
-            const dataUri = `data:${att.contentType};base64,${att.contentBytes}`;
-            html = html.split(`cid:${cid}`).join(dataUri);
-            html = html.split(`cid:<${cid}>`).join(dataUri);
-          }
-        }
-        message.body.content = html;
-      }
+      inlineCidImages(message.body, attData.value);
     } catch {
       // Non-fatal — return body as-is if attachment fetch fails
     }

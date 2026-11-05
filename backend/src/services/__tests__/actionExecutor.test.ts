@@ -37,9 +37,21 @@ vi.mock('../../models/EmailEvent.js', () => ({
   EmailEvent: { updateMany: vi.fn().mockResolvedValue({}) },
 }));
 
+const mockStampRuleMarkedRead = vi.fn().mockResolvedValue(undefined);
+const mockStampRuleDeleted = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../utils/ruleActionStamp.js', () => ({
+  stampRuleMarkedRead: (...args: unknown[]) => mockStampRuleMarkedRead(...args),
+  stampRuleDeleted: (...args: unknown[]) => mockStampRuleDeleted(...args),
+}));
+
 const mockAuditCreate = vi.fn().mockResolvedValue({});
+const mockAuditFindOne = vi.fn();
+mockAuditFindOne.mockReturnValue({ lean: () => Promise.resolve(null) });
 vi.mock('../../models/AuditLog.js', () => ({
-  AuditLog: { create: (...args: unknown[]) => mockAuditCreate(...args) },
+  AuditLog: {
+    create: (...args: unknown[]) => mockAuditCreate(...args),
+    findOne: (...args: unknown[]) => mockAuditFindOne(...args),
+  },
 }));
 
 const { executeActions } = await import('../actionExecutor.js');
@@ -152,6 +164,101 @@ describe('executeActions', () => {
     expect(forwardCall).toBeUndefined();
   });
 
+  // L3-ACT-02 interim mitigation: on a BullMQ retry, a forward that already
+  // succeeded in a prior attempt (recorded in AuditLog by that attempt's
+  // finally block) must not be re-sent to real recipients.
+  it('skips re-sending a forward already recorded in a recent audit row for this rule/message', async () => {
+    mockAuditFindOne.mockReturnValueOnce({
+      lean: () => Promise.resolve({ _id: 'prior-audit-row' }),
+    });
+
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'forward', forwardTo: ['boss@example.com'] }],
+    });
+
+    const forwardCall = mockGraphFetch.mock.calls.find((c) => String(c[0]).includes('/forward'));
+    expect(forwardCall).toBeUndefined();
+  });
+
+  it('still sends a forward when no recent audit row exists for this rule/message', async () => {
+    // Default mockAuditFindOne resolves null (see module setup) -- this
+    // is really the same assertion as the earlier forward test, kept
+    // here to make the retry-dedup guard's "normal path" explicit.
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'forward', forwardTo: ['boss@example.com'] }],
+    });
+
+    const forwardCall = mockGraphFetch.mock.calls.find((c) => String(c[0]).includes('/forward'));
+    expect(forwardCall).toBeDefined();
+  });
+
+  it('uses the post-move message id for actions that follow a move', async () => {
+    // Graph assigns a NEW folder-scoped id on move and returns the moved
+    // resource. Subsequent actions must target that new id, not the stale one.
+    mockGraphFetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        String(path).includes('/move')
+          ? { ok: true, json: async () => ({ id: 'msg-1-after-move' }) }
+          : { ok: true },
+      ),
+    );
+
+    try {
+      await executeActions({
+        ...baseParams,
+        actions: [
+          { actionType: 'move', toFolder: 'folder-abc', order: 1 },
+          { actionType: 'markRead', order: 2 },
+        ],
+      });
+
+      const calls = mockGraphFetch.mock.calls;
+      expect(calls.length).toBe(2);
+      expect(String(calls[0][0])).toContain('/messages/msg-1/move');
+
+      const markReadPath = String(calls[1][0]);
+      expect(markReadPath).toContain('/messages/msg-1-after-move');
+      expect(markReadPath).not.toContain('/messages/msg-1?');
+      expect(markReadPath.endsWith('/messages/msg-1')).toBe(false);
+      expect(JSON.parse(calls[1][2].body)).toHaveProperty('isRead', true);
+    } finally {
+      mockGraphFetch.mockImplementation(() => Promise.resolve({ ok: true }));
+    }
+  });
+
+  // L3-ACT-01: a 404 on the first action (message already moved/deleted)
+  // breaks the loop with nothing executed. Stats must not count that as a
+  // processed email -- only lastExecutedAt should still update.
+  it('does not increment stats.totalExecutions/emailsProcessed when a 404 short-circuits with nothing executed', async () => {
+    const { GraphApiError } = await import('../graphClient.js');
+    mockGraphFetch.mockRejectedValueOnce(new GraphApiError(404, 'not found', '/messages/msg-1'));
+
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'flag' }],
+    });
+
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledTimes(1);
+    const [, update] = mockFindByIdAndUpdate.mock.calls[0];
+    expect(update.$inc).toBeUndefined();
+    expect(update.$set['stats.lastExecutedAt']).toBeInstanceOf(Date);
+  });
+
+  it('still increments stats when at least one action executes', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'flag' }],
+    });
+
+    const [, update] = mockFindByIdAndUpdate.mock.calls[0];
+    expect(update.$inc).toEqual({
+      'stats.totalExecutions': 1,
+      'stats.emailsProcessed': 1,
+    });
+  });
+
   it('creates audit log after execution', async () => {
     await executeActions({
       ...baseParams,
@@ -165,5 +272,72 @@ describe('executeActions', () => {
         targetId: 'msg-1',
       }),
     );
+  });
+});
+
+describe('rule-action provenance', () => {
+  it('stamps markRead with the rule that did it', async () => {
+    await executeActions({ ...baseParams, actions: [{ actionType: 'markRead' }] });
+
+    expect(mockStampRuleMarkedRead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: 'msg-1',
+        ruleId: baseParams.ruleId,
+        userId: baseParams.userId,
+        mailboxId: baseParams.mailboxId,
+      }),
+    );
+  });
+
+  it('stamps a direct delete', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'delete' }],
+      skipStaging: true,
+    });
+    expect(mockStampRuleDeleted).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'msg-1', ruleId: baseParams.ruleId }),
+    );
+  });
+
+  it('stamps a staged delete, and records the arrival id for a later rescue', async () => {
+    await executeActions({
+      ...baseParams,
+      actions: [{ actionType: 'delete' }],
+      skipStaging: false,
+    });
+
+    expect(mockStampRuleDeleted).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'msg-1' }),
+    );
+    expect(mockCreateStagedEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ originalMessageId: 'msg-1' }),
+    );
+  });
+
+  it('stamps with the ARRIVAL id even after a move reassigned the id', async () => {
+    // Graph ids are folder-scoped. The EmailEvent is keyed on the arrival id,
+    // so stamping with the post-move id would match zero documents and the
+    // Read/Deleted filters would silently stay empty.
+    mockGraphFetch.mockImplementation((path: string) => {
+      if (String(path).includes('/move')) {
+        return Promise.resolve({ json: () => Promise.resolve({ id: 'msg-1-after-move' }) });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    await executeActions({
+      ...baseParams,
+      actions: [
+        { actionType: 'move', toFolder: 'archive-id', order: 1 },
+        { actionType: 'markRead', order: 2 },
+      ],
+    });
+
+    expect(mockStampRuleMarkedRead).toHaveBeenCalledWith(
+      expect.objectContaining({ messageId: 'msg-1' }),
+    );
+    const arg = mockStampRuleMarkedRead.mock.calls[0][0] as { messageId: string };
+    expect(arg.messageId).not.toBe('msg-1-after-move');
   });
 });

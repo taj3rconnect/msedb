@@ -54,6 +54,26 @@ rm -f /tmp/msedb-incoming-$$.txt
 git reset --hard "$TARGET"
 NEW="$(git rev-parse HEAD)"
 
+# --- Stamp the build date into version.json ----------------------------------
+# version.json is the ONLY source of the version/date shown in the app sidebar
+# (frontend/vite.config.ts bakes it in at build time as __APP_VERSION__ /
+# __APP_BUILD_DATE__, and backend/src/routes/health.ts reports it). Nothing used
+# to write it, so the stamp froze at the last hand-edit — 2026-03-16 — while
+# months of deploys shipped that date. Rewrite buildDate here, AFTER the
+# reset --hard (which would otherwise restore the committed value) and BEFORE
+# the image build (both Dockerfiles COPY version.json from the build context).
+#
+# `version` stays hand-bumped in the committed file — that is the convention;
+# only the date is automatic, and it can no longer go stale.
+APP_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' version.json | head -1)"
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+if [ -z "$APP_VERSION" ]; then
+  echo "::warning::could not read version from version.json - leaving it untouched"
+else
+  printf '{\n  "version": "%s",\n  "buildDate": "%s"\n}\n' "$APP_VERSION" "$BUILD_DATE" > version.json
+  echo "  stamped version.json: $APP_VERSION @ $BUILD_DATE"
+fi
+
 # --- Rebuild ONLY the app services -------------------------------------------
 # mongo/redis use prebuilt images and hold the data. Never recreate them here, and
 # NEVER `down -v` — the mongo volume is shared with JTCRM and -v destroys their data.

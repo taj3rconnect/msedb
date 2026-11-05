@@ -1,8 +1,20 @@
 import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
 import { requireAuth, getUserId } from '../auth/middleware.js';
-import { EmailEvent } from '../models/EmailEvent.js';
+import { EmailEvent, type IEmailEvent } from '../models/EmailEvent.js';
+import {
+  buildEventListFilter,
+  buildMailboxCountsMatch,
+  toAggregationFilter,
+} from '../services/eventListFilter.js';
 import { Mailbox } from '../models/Mailbox.js';
+import { Rule } from '../models/Rule.js';
+import {
+  collectSenderEmails,
+  buildSenderActionMap,
+  attachSenderRuleActions,
+  type SenderRuleLike,
+} from '../utils/senderRuleActions.js';
 import { getFolderName } from '../services/folderCache.js';
 import { getRedisClient } from '../config/redis.js';
 import { graphFetch } from '../services/graphClient.js';
@@ -11,6 +23,24 @@ import { parsePagination } from '../utils/pagination.js';
 import { AppError, ValidationError } from '../middleware/errorHandler.js';
 import { generateOllamaCompletion } from '../services/ollamaClient.js';
 import { config } from '../config/index.js';
+
+/**
+ * Shape of the lean daily-summary event projection.
+ *
+ * Mongoose's dotted `.select('metadata.isNewsletter')` is not reflected in the
+ * inferred `.lean()` type, so the projected subset is declared explicitly.
+ */
+type DailySummaryEvent = Pick<
+  IEmailEvent,
+  | 'sender'
+  | 'subject'
+  | 'importance'
+  | 'isRead'
+  | 'categories'
+  | 'hasAttachments'
+  | 'receivedAt'
+  | 'timestamp'
+> & { metadata?: { isNewsletter?: boolean } };
 
 const eventsRouter = Router();
 
@@ -25,7 +55,6 @@ eventsRouter.use(requireAuth);
  */
 eventsRouter.get('/', async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const { mailboxId, eventType, senderDomain, search, excludeDeleted, inboxOnly, unreadOnly, dateFrom, dateTo, folder } = req.query;
 
   // Pagination
   const { page, limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
@@ -34,142 +63,11 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
   const sortBy = (req.query.sortBy as string) || 'timestamp';
   const sortOrder = (req.query.sortOrder as string) === 'asc' ? 1 : -1;
 
-  // Build match filter -- always filter by userId
-  const filter: Record<string, unknown> = { userId };
-  if (mailboxId && typeof mailboxId === 'string') {
-    filter.mailboxId = mailboxId;
-  }
-  if (eventType && typeof eventType === 'string') {
-    filter.eventType = eventType;
-  }
-  if (senderDomain && typeof senderDomain === 'string') {
-    filter['sender.domain'] = senderDomain;
-  }
-  if (search && typeof search === 'string' && search.trim()) {
-    const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = { $regex: escaped, $options: 'i' };
-    filter.$or = [
-      { 'sender.email': regex },
-      { 'sender.name': regex },
-      { subject: regex },
-    ];
-  }
-
-  // Date range filter
-  if (dateFrom && typeof dateFrom === 'string') {
-    const from = new Date(dateFrom);
-    if (!isNaN(from.getTime())) {
-      filter.timestamp = { ...(filter.timestamp as Record<string, unknown> || {}), $gte: from };
-    }
-  }
-  if (dateTo && typeof dateTo === 'string') {
-    const to = new Date(dateTo);
-    if (!isNaN(to.getTime())) {
-      filter.timestamp = { ...(filter.timestamp as Record<string, unknown> || {}), $lte: to };
-    }
-  }
-
-  // Filter to unread messages only
-  if (unreadOnly === 'true') {
-    filter.isRead = false;
-  }
-
-  // Exclude messages that have been deleted
-  if (excludeDeleted === 'true') {
-    filter.isDeleted = { $ne: true };
-  }
-
-  // Filter by folder: supports 'inbox', 'deleted', well-known names, or subfolder paths
-  const folderParam = typeof folder === 'string' ? folder : (inboxOnly === 'true' ? 'inbox' : null);
-  if (folderParam) {
-    const folderAliasMap: Record<string, string> = {
-      inbox: 'Inbox',
-      deleted: 'DeletedItems',
-      sent: 'SentItems',
-      drafts: 'Drafts',
-      junk: 'JunkEmail',
-      archive: 'Archive',
-    };
-    const wellKnownAlias = folderAliasMap[folderParam.toLowerCase()] || folderParam;
-    const displayNameMap: Record<string, string> = {
-      Inbox: 'Inbox',
-      DeletedItems: 'Deleted Items',
-      SentItems: 'Sent Items',
-      Drafts: 'Drafts',
-      JunkEmail: 'Junk Email',
-      Archive: 'Archive',
-    };
-    const displayName = displayNameMap[wellKnownAlias] || wellKnownAlias;
-
-    // Determine which mailboxes to resolve folder IDs for
-    const mailboxesToResolve = mailboxId && typeof mailboxId === 'string'
-      ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
-      : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
-
-    const redis = getRedisClient();
-    const folderOrConditions: Record<string, unknown>[] = [
-      { toFolder: displayName },
-      { toFolder: wellKnownAlias },
-      { toFolder: folderParam }, // exact match for subfolder paths like "Inbox/Abacus"
-    ];
-    // Batch fetch well-known folder IDs and full folder lists
-    const wkKeys = mailboxesToResolve.filter((mb) => mb.email).map((mb) => `folder:${mb.email}:wk:${wellKnownAlias}`);
-    const allKeys = mailboxesToResolve.filter((mb) => mb.email).map((mb) => `folder:${mb.email}:all`);
-    const [wkValues, allValues] = await Promise.all([
-      wkKeys.length > 0 ? redis.mget(...wkKeys) : Promise.resolve([]),
-      allKeys.length > 0 ? redis.mget(...allKeys) : Promise.resolve([]),
-    ]);
-
-    for (const cachedFolderId of wkValues) {
-      if (cachedFolderId) folderOrConditions.push({ toFolder: cachedFolderId });
-    }
-
-    // Collect all subfolder keys, then batch fetch
-    const subfolderKeys: string[] = [];
-    const subfolderMeta: Array<{ email: string; fid: string }> = [];
-    for (let i = 0; i < allValues.length; i++) {
-      const raw = allValues[i];
-      if (!raw) continue;
-      const mb = mailboxesToResolve.filter((m) => m.email)[i];
-      const ids: string[] = JSON.parse(raw);
-      for (const fid of ids) {
-        subfolderKeys.push(`folder:${mb.email}:${fid}`);
-        subfolderMeta.push({ email: mb.email, fid });
-      }
-    }
-
-    if (subfolderKeys.length > 0) {
-      const subfolderNames = await redis.mget(...subfolderKeys);
-      for (let j = 0; j < subfolderNames.length; j++) {
-        const fname = subfolderNames[j];
-        const { fid } = subfolderMeta[j];
-        if (
-          fname === folderParam ||
-          fname === displayName ||
-          fname?.endsWith(`/${folderParam}`) ||
-          fname?.endsWith(`/${displayName}`)
-        ) {
-          folderOrConditions.push({ toFolder: fid });
-          if (fname) folderOrConditions.push({ toFolder: fname });
-        }
-      }
-    }
-
-    filter.$and = [
-      ...(filter.$and ? (filter.$and as Record<string, unknown>[]) : []),
-      { $or: folderOrConditions },
-    ];
-  }
+  const filter = await buildEventListFilter(userId, req.query);
 
   // For sender field sorts, use aggregation to handle nulls and case-insensitive ordering
   const senderSortFields = new Set(['sender.domain', 'sender.email', 'sender.name']);
   const useAggSort = senderSortFields.has(sortBy);
-
-  // Aggregation-safe filter: ObjectId fields must be cast explicitly
-  const aggFilter: Record<string, unknown> = { ...filter, userId: new Types.ObjectId(userId) };
-  if (mailboxId && typeof mailboxId === 'string') {
-    aggFilter.mailboxId = new Types.ObjectId(mailboxId);
-  }
 
   const projectFields = {
     eventType: 1, sender: 1, subject: 1, timestamp: 1,
@@ -201,9 +99,13 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
 
     [events, total] = await Promise.all([
       EmailEvent.aggregate([
-        { $match: aggFilter },
+        { $match: toAggregationFilter(filter, userId) },
         { $addFields: { _sortKey: sortKeyExpr } },
-        { $sort: { _sortKey: sortOrder, timestamp: -1 } },
+        // Rows with no sender value stay at the bottom in both directions, so
+        // they never fill the top of the list. _id keeps paging stable when two
+        // rows tie, such as one message delivered to two mailboxes.
+        { $addFields: { _sortKeyBlank: { $eq: ['$_sortKey', ''] } } },
+        { $sort: { _sortKeyBlank: 1, _sortKey: sortOrder, timestamp: -1, _id: -1 } },
         { $skip: (page - 1) * limit },
         { $limit: limit },
         { $project: projectFields },
@@ -269,8 +171,26 @@ eventsRouter.get('/', async (req: Request, res: Response) => {
     }
   }
 
+  // Enrich with the sender's existing rule actions so the inbox row-actions icon
+  // can signal "this sender already has rules". Matched on conditions.senderEmail
+  // case-insensitively -- the SAME set POST /api/rules/delete-by-sender removes.
+  // Bounded by the senders on THIS page (max `limit`), never a full rule scan.
+  const senderEmails = collectSenderEmails(resolvedEvents);
+  let senderActionMap = new Map<string, string[]>();
+  if (senderEmails.length > 0) {
+    const senderRules = await Rule.find({
+      userId,
+      'conditions.senderEmail': { $in: senderEmails },
+    })
+      .collation({ locale: 'en', strength: 2 })
+      .select('conditions.senderEmail actions.actionType')
+      .lean();
+    senderActionMap = buildSenderActionMap(senderRules as unknown as SenderRuleLike[]);
+  }
+  const eventsWithRules = attachSenderRuleActions(resolvedEvents, senderActionMap);
+
   res.json({
-    events: resolvedEvents,
+    events: eventsWithRules,
     pagination: {
       page,
       limit,
@@ -356,13 +276,15 @@ eventsRouter.get('/timeline', async (req: Request, res: Response) => {
 /**
  * GET /api/events/mailbox-counts
  *
- * Returns total indexed event counts grouped by mailboxId.
+ * Returns event counts grouped by mailboxId, under the same filters as
+ * GET /api/events (folder, unreadOnly, ruleAction, dateFrom, dateTo, ...), so
+ * each mailbox badge matches what the inbox list shows for that mailbox.
  */
 eventsRouter.get('/mailbox-counts', async (req: Request, res: Response) => {
   const userId = getUserId(req);
 
   const counts = await EmailEvent.aggregate([
-    { $match: { userId: new Types.ObjectId(userId), eventType: 'arrived' } },
+    { $match: await buildMailboxCountsMatch(userId, req.query) },
     { $group: { _id: '$mailboxId', count: { $sum: 1 } } },
   ]);
 
@@ -372,6 +294,50 @@ eventsRouter.get('/mailbox-counts', async (req: Request, res: Response) => {
   }
 
   res.json({ counts: result });
+});
+
+/**
+ * GET /api/events/rule-action-counts
+ *
+ * How many emails a RULE marked read / deleted inside a date window --
+ * the badge numbers on the inbox "Read" and "Deleted" filter buttons.
+ * Query: mailboxId?, dateFrom?, dateTo?
+ *
+ * Counted with two indexed countDocuments calls (sparse indexes on
+ * userId + metadata.ruleMarkedReadAt / ruleDeletedAt) rather than by pulling
+ * rows back and counting in app code.
+ */
+eventsRouter.get('/rule-action-counts', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const { mailboxId, dateFrom, dateTo } = req.query;
+
+  const base: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
+  if (mailboxId && typeof mailboxId === 'string') {
+    base.mailboxId = new Types.ObjectId(mailboxId);
+  }
+
+  // Same window the list query uses, applied to the ACTION timestamp.
+  const window: Record<string, unknown> = {};
+  if (dateFrom && typeof dateFrom === 'string') {
+    const from = new Date(dateFrom);
+    if (!isNaN(from.getTime())) window.$gte = from;
+  }
+  if (dateTo && typeof dateTo === 'string') {
+    const to = new Date(dateTo);
+    if (!isNaN(to.getTime())) window.$lte = to;
+  }
+
+  const bound = (field: string) => ({
+    ...base,
+    [field]: { $exists: true, $ne: null, ...window },
+  });
+
+  const [read, deleted] = await Promise.all([
+    EmailEvent.countDocuments(bound('metadata.ruleMarkedReadAt')),
+    EmailEvent.countDocuments(bound('metadata.ruleDeletedAt')),
+  ]);
+
+  res.json({ read, deleted });
 });
 
 /**
@@ -400,7 +366,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
 
   // Filter to inbox folder only (same logic as GET /events with folder=inbox)
   const mailboxesToResolve = mailboxId && typeof mailboxId === 'string'
-    ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
+    ? await Mailbox.find({ _id: mailboxId, userId }).select('email').lean()
     : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
 
   const redis = getRedisClient();
@@ -435,7 +401,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
       .sort({ receivedAt: -1 })
       .limit(200)
       .select('sender subject importance isRead categories metadata.isNewsletter hasAttachments receivedAt')
-      .lean(),
+      .lean<DailySummaryEvent[]>(),
     EmailEvent.aggregate([
       { $match: aggFilterExclDeleted },
       { $group: { _id: '$isRead', count: { $sum: 1 } } },
@@ -473,7 +439,7 @@ eventsRouter.post('/summarize-today', async (req: Request, res: Response) => {
       : (e.sender?.email || 'Unknown');
     const subject = e.subject || '(no subject)';
     const importance = e.importance || 'normal';
-    const isNewsletter = (e as any).metadata?.isNewsletter ? 'yes' : 'no';
+    const isNewsletter = e.metadata?.isNewsletter ? 'yes' : 'no';
     const isRead = e.isRead ? 'read' : 'unread';
     const attachments = e.hasAttachments ? 'has attachments' : '';
     const categories = e.categories?.length ? `categories: ${e.categories.join(', ')}` : '';
@@ -543,7 +509,7 @@ eventsRouter.get('/summarize-today/csv', async (req: Request, res: Response) => 
 
   // Filter to inbox folder only
   const csvMailboxes = mailboxId && typeof mailboxId === 'string'
-    ? await Mailbox.find({ _id: mailboxId }).select('email').lean()
+    ? await Mailbox.find({ _id: mailboxId, userId }).select('email').lean()
     : await Mailbox.find({ userId, isConnected: true }).select('email').lean();
   const csvRedis = getRedisClient();
   const csvInboxFolders: string[] = ['Inbox'];

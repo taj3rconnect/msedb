@@ -2,9 +2,31 @@ import type { Types } from 'mongoose';
 import { graphFetch, GraphApiError } from './graphClient.js';
 import { createStagedEmail, ensureStagingFolder } from './stagingManager.js';
 import { Rule, type IRuleAction } from '../models/Rule.js';
-import { EmailEvent } from '../models/EmailEvent.js';
+import { stampRuleMarkedRead, stampRuleDeleted } from '../utils/ruleActionStamp.js';
 import { AuditLog } from '../models/AuditLog.js';
 import logger from '../config/logger.js';
+
+/**
+ * Read the NEW message id out of a Graph `/move` response body.
+ *
+ * Graph returns the moved message resource (with its new folder-scoped `id`).
+ * Returns null when the body carries no usable id, in which case the caller
+ * keeps the id it already had.
+ */
+async function readMovedMessageId(response: unknown): Promise<string | null> {
+  const json = (response as { json?: () => Promise<unknown> } | null)?.json;
+  if (typeof json !== 'function') return null;
+  try {
+    const data = (await json.call(response)) as { id?: unknown } | null;
+    const id = data?.id;
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  } catch (error) {
+    logger.warn('Could not read new message id from Graph move response', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
 
 /**
  * Execute a list of rule actions against a message via Microsoft Graph API.
@@ -53,6 +75,17 @@ export async function executeActions(params: {
   const executedActions: string[] = [];
   let thrownError: unknown;
 
+  // Graph message ids are FOLDER-SCOPED: a move/archive assigns the message a
+  // NEW id and returns the moved resource in the response body. Subsequent
+  // actions in the same rule must target that new id, or they 404 against the
+  // stale pre-move id and the rest of the approved actions are silently skipped.
+  let currentMessageId = messageId;
+
+  const adoptMovedMessageId = async (response: unknown): Promise<void> => {
+    const newId = await readMovedMessageId(response);
+    if (newId) currentMessageId = newId;
+  };
+
   try {
     for (const action of sortedActions) {
       try {
@@ -60,14 +93,19 @@ export async function executeActions(params: {
           case 'delete': {
             if (skipStaging) {
               // Direct delete — skip staging for user-initiated quick actions
-              await graphFetch(
-                `${userPath}/messages/${messageId}/move`,
+              const moved = await graphFetch(
+                `${userPath}/messages/${currentMessageId}/move`,
                 accessToken,
                 {
                   method: 'POST',
                   body: JSON.stringify({ destinationId: 'deleteditems' }),
                 },
               );
+              await adoptMovedMessageId(moved);
+              // Stamp with the ARRIVAL id (messageId), not currentMessageId --
+              // the move above just reassigned the folder-scoped id, and the
+              // EmailEvent is keyed on the id seen at arrival.
+              await stampRuleDeleted({ userId, mailboxId, messageId, ruleId });
               executedActions.push('delete (direct)');
             } else {
               // Route through staging folder for webhook-triggered automation
@@ -75,22 +113,29 @@ export async function executeActions(params: {
                 mailboxEmail,
                 accessToken,
               );
-              await graphFetch(
-                `${userPath}/messages/${messageId}/move`,
+              const moved = await graphFetch(
+                `${userPath}/messages/${currentMessageId}/move`,
                 accessToken,
                 {
                   method: 'POST',
                   body: JSON.stringify({ destinationId: stagingFolderId }),
                 },
               );
+              await adoptMovedMessageId(moved);
               await createStagedEmail({
                 userId,
                 mailboxId,
                 ruleId,
-                messageId,
+                messageId: currentMessageId,
+                // Arrival id, so a rescue can find the EmailEvent we stamped.
+                originalMessageId: messageId,
                 originalFolder,
                 actions: [{ actionType: 'delete' }],
               });
+              // Stamped at decision time so the Deleted filter reflects the
+              // rule firing. A rescue during the grace period clears it again
+              // (services/stagingManager.ts -> clearRuleDeletedStamp).
+              await stampRuleDeleted({ userId, mailboxId, messageId, ruleId });
               executedActions.push('delete (staged)');
             }
             break;
@@ -104,32 +149,31 @@ export async function executeActions(params: {
               });
               break;
             }
-            await graphFetch(
-              `${userPath}/messages/${messageId}/move`,
+            const moved = await graphFetch(
+              `${userPath}/messages/${currentMessageId}/move`,
               accessToken,
               {
                 method: 'POST',
                 body: JSON.stringify({ destinationId: action.toFolder }),
               },
             );
+            await adoptMovedMessageId(moved);
             executedActions.push(`move to ${action.toFolder}`);
             break;
           }
 
           case 'markRead': {
             await graphFetch(
-              `${userPath}/messages/${messageId}`,
+              `${userPath}/messages/${currentMessageId}`,
               accessToken,
               {
                 method: 'PATCH',
                 body: JSON.stringify({ isRead: true }),
               },
             );
-            // Update our DB so the inbox page reflects the change
-            await EmailEvent.updateMany(
-              { userId, mailboxId, messageId },
-              { $set: { isRead: true } },
-            );
+            // Update our DB so the inbox page reflects the change, and record
+            // WHICH rule did it -- the inbox "Read" filter reads that stamp.
+            await stampRuleMarkedRead({ userId, mailboxId, messageId, ruleId });
             executedActions.push('markRead');
             break;
           }
@@ -143,7 +187,7 @@ export async function executeActions(params: {
               break;
             }
             await graphFetch(
-              `${userPath}/messages/${messageId}`,
+              `${userPath}/messages/${currentMessageId}`,
               accessToken,
               {
                 method: 'PATCH',
@@ -155,21 +199,22 @@ export async function executeActions(params: {
           }
 
           case 'archive': {
-            await graphFetch(
-              `${userPath}/messages/${messageId}/move`,
+            const moved = await graphFetch(
+              `${userPath}/messages/${currentMessageId}/move`,
               accessToken,
               {
                 method: 'POST',
                 body: JSON.stringify({ destinationId: 'archive' }),
               },
             );
+            await adoptMovedMessageId(moved);
             executedActions.push('archive');
             break;
           }
 
           case 'flag': {
             await graphFetch(
-              `${userPath}/messages/${messageId}`,
+              `${userPath}/messages/${currentMessageId}`,
               accessToken,
               {
                 method: 'PATCH',
@@ -193,8 +238,38 @@ export async function executeActions(params: {
               });
               break;
             }
+            // ACT-02 interim mitigation: a BullMQ retry re-runs this whole
+            // function from scratch (attempts:3, exponential backoff -- see
+            // jobs/queues.ts) with no memory of a prior attempt's
+            // executedActions, so a forward that already succeeded before a
+            // LATER action in the same rule failed would otherwise get
+            // re-sent to real recipients on every retry. The prior attempt's
+            // finally block already wrote an audit row recording it, so
+            // check that before sending again. Forward is the only
+            // genuinely non-idempotent action here -- move/archive/flag/
+            // markRead/categorize all either no-op or 404 cleanly on
+            // repeat -- so this targets the actual risk without needing a
+            // full per-action idempotency ledger, which is a schema change
+            // deferred to docs/qa/2026-08-18-e2707e0/REPORT.md's carry-over.
+            const recentForward = await AuditLog.findOne({
+              action: 'rule_executed',
+              targetId: messageId,
+              'details.ruleId': ruleId.toString(),
+              'details.actions': /^forward to /,
+              createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) },
+            }).lean();
+
+            if (recentForward) {
+              logger.warn('Skipping forward -- already sent in a recent attempt for this rule/message (retry dedup)', {
+                ruleId: ruleId.toString(),
+                messageId,
+              });
+              executedActions.push('forward (skipped -- already sent this retry window)');
+              break;
+            }
+
             await graphFetch(
-              `${userPath}/messages/${messageId}/forward`,
+              `${userPath}/messages/${currentMessageId}/forward`,
               accessToken,
               {
                 method: 'POST',
@@ -233,16 +308,23 @@ export async function executeActions(params: {
     // Record the error but still persist stats/audit for actions already executed
     thrownError = error;
   } finally {
-    // Update rule execution stats
-    await Rule.findByIdAndUpdate(ruleId, {
-      $inc: {
+    // Update rule execution stats. totalExecutions/emailsProcessed only
+    // count runs that actually did something -- an immediate 404 (message
+    // already moved/deleted) breaks the loop before any action completes,
+    // and counting that as a processed email would over-report rule
+    // effectiveness. lastExecutedAt still updates unconditionally: the rule
+    // WAS evaluated at this time, whether or not anything executed.
+    const statsUpdate: {
+      $set: Record<string, unknown>;
+      $inc?: Record<string, number>;
+    } = { $set: { 'stats.lastExecutedAt': new Date() } };
+    if (executedActions.length > 0) {
+      statsUpdate.$inc = {
         'stats.totalExecutions': 1,
         'stats.emailsProcessed': 1,
-      },
-      $set: {
-        'stats.lastExecutedAt': new Date(),
-      },
-    });
+      };
+    }
+    await Rule.findByIdAndUpdate(ruleId, statsUpdate);
 
     // Audit trail
     await AuditLog.create({

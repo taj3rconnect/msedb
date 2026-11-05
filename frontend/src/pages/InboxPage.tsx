@@ -20,7 +20,8 @@ import {
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
-import { fetchEvents, summarizeToday, sendSummaryEmail } from '@/api/events';
+import { fetchEvents, fetchRuleActionCounts, summarizeToday, sendSummaryEmail } from '@/api/events';
+import type { MailFilter } from '@/api/events';
 import type { EventItem } from '@/api/events';
 import { applyActionsToMessages } from '@/api/mailboxes';
 import { batchLookupTracking, type TrackingMatch } from '@/api/tracking';
@@ -36,7 +37,13 @@ import { InboxBulkActionBar } from '@/components/inbox/InboxBulkActionBar';
 import { InboxContactsPanel } from '@/components/inbox/InboxContactsPanel';
 import { markEventsReadInCache } from '@/lib/inboxCache';
 import type { AiSearchResult } from '@/api/aiSearch';
-import { InboxDataGrid } from '@/components/inbox/InboxDataGrid';
+import { InboxDataGrid, type SenderSort } from '@/components/inbox/InboxDataGrid';
+import {
+  buildInboxFilterParams,
+  parseDateFilter,
+  parseMailFilter,
+  resolveDateRange,
+} from '@/lib/inboxFilters';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,8 +102,13 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [dateFilter, setDateFilter] = useState(() => searchParams.get('date') || 'today');
-  const [unreadOnly, setUnreadOnly] = useState(() => searchParams.get('status') === 'unread');
+  const [dateFilter, setDateFilter] = useState(() => parseDateFilter(searchParams.get('date')));
+  const [mailFilter, setMailFilter] = useState<MailFilter>(() =>
+    parseMailFilter(searchParams.get('status')),
+  );
+  // Set by a click on the Sender header. Sorted on the server so it covers every
+  // page; null is the default newest-first order.
+  const [senderSort, setSenderSort] = useState<SenderSort>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -197,25 +209,21 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     setFocusedIndex(visibleEventsRef.current.findIndex((e) => e._id === event._id));
   }, []);
 
-  // Auto-mark email as read after 3 seconds of previewing
+  // Mark email as read immediately when it is previewed — no delay
   useEffect(() => {
     if (!previewEvent || previewEvent.isRead) return;
 
-    const timer = setTimeout(() => {
-      applyActionsToMessages(previewEvent.mailboxId, [previewEvent.messageId], [{ actionType: 'markRead' }])
-        .then(() => {
-          // Update local cache to reflect read status
-          markEventsReadInCache(queryClient, queryKeyId, (e) => e._id === previewEvent._id);
-          setPreviewEvent((prev) =>
-            prev?._id === previewEvent._id ? { ...prev, isRead: true } : prev,
-          );
-        })
-        .catch(() => {
-          // Silent fail — not critical
-        });
-    }, 3000);
-
-    return () => clearTimeout(timer);
+    applyActionsToMessages(previewEvent.mailboxId, [previewEvent.messageId], [{ actionType: 'markRead' }])
+      .then(() => {
+        // Update local cache to reflect read status
+        markEventsReadInCache(queryClient, queryKeyId, (e) => e._id === previewEvent._id);
+        setPreviewEvent((prev) =>
+          prev?._id === previewEvent._id ? { ...prev, isRead: true } : prev,
+        );
+      })
+      .catch(() => {
+        // Silent fail — not critical
+      });
   }, [previewEvent?._id, previewEvent?.isRead, previewEvent?.mailboxId, queryKeyId, queryClient]);
 
   // Debounce search input by 400ms
@@ -234,12 +242,12 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
       (prev) => {
         const next = new URLSearchParams(prev);
         next.set('date', dateFilter);
-        next.set('status', unreadOnly ? 'unread' : 'all');
+        next.set('status', mailFilter);
         return next;
       },
       { replace: true },
     );
-  }, [dateFilter, unreadOnly, setSearchParams]);
+  }, [dateFilter, mailFilter, setSearchParams]);
 
   // Clear selection and reset page when page, search, date filter, or folder changes
   useEffect(() => {
@@ -252,65 +260,44 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   }, [folderFilter]);
 
   // Compute date range from filter selection
-  const dateRange = useMemo(() => {
-    const now = new Date();
-    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-    const today = startOfDay(now);
-
-    switch (dateFilter) {
-      case 'today':
-        return { dateFrom: today.toISOString(), dateTo: endOfDay(now).toISOString() };
-      case 'yesterday': {
-        const y = new Date(today); y.setDate(y.getDate() - 1);
-        return { dateFrom: y.toISOString(), dateTo: endOfDay(y).toISOString() };
-      }
-      case 'this-week': {
-        const d = new Date(today); d.setDate(d.getDate() - d.getDay());
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
-      }
-      case 'last-week': {
-        const d = new Date(today); d.setDate(d.getDate() - d.getDay() - 7);
-        const e = new Date(d); e.setDate(e.getDate() + 6);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
-      }
-      case 'this-month': {
-        const d = new Date(now.getFullYear(), now.getMonth(), 1);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
-      }
-      case 'last-month': {
-        const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const e = new Date(now.getFullYear(), now.getMonth(), 0);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
-      }
-      case 'ytd': {
-        const d = new Date(now.getFullYear(), 0, 1);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(now).toISOString() };
-      }
-      case 'last-year': {
-        const d = new Date(now.getFullYear() - 1, 0, 1);
-        const e = new Date(now.getFullYear() - 1, 11, 31);
-        return { dateFrom: d.toISOString(), dateTo: endOfDay(e).toISOString() };
-      }
-      default:
-        return {};
-    }
-  }, [dateFilter]);
+  const dateRange = useMemo(() => resolveDateRange(dateFilter), [dateFilter]);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, unreadOnly, folderFilter],
+    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, mailFilter, folderFilter, senderSort],
     queryFn: () =>
       fetchEvents({
+        ...buildInboxFilterParams(mailFilter, folderFilter, dateRange),
         mailboxId: mailboxId || undefined,
-        eventType: 'arrived',
-        sortBy: 'timestamp',
-        sortOrder: 'desc',
+        sortBy: senderSort ? 'sender.email' : 'timestamp',
+        sortOrder: senderSort ?? 'desc',
         search: search || undefined,
         page,
         limit: 50,
-        excludeDeleted: folderFilter === 'inbox',
-        folder: folderFilter,
-        unreadOnly: unreadOnly || undefined,
+      }),
+  });
+
+  // The mailbox badges refresh on a timer; refresh them as soon as the list's
+  // own total moves, so a delete or sync doesn't leave them a minute behind.
+  const listTotal = data?.pagination.total;
+  useEffect(() => {
+    if (listTotal !== undefined) {
+      queryClient.invalidateQueries({ queryKey: ['mailbox-counts'] });
+    }
+  }, [listTotal, queryClient]);
+
+  const handleSenderSortChange = useCallback((sort: SenderSort) => {
+    setSenderSort(sort);
+    setPage(1);
+  }, []);
+
+  // Badge counts for the Read/Deleted filters -- how much the rules did inside
+  // the selected date window. Its own query so switching filters doesn't
+  // refetch it, and it survives an error in the main list.
+  const { data: ruleActionCounts } = useQuery({
+    queryKey: ['rule-action-counts', queryKeyId, dateFilter],
+    queryFn: () =>
+      fetchRuleActionCounts({
+        mailboxId: mailboxId || undefined,
         ...dateRange,
       }),
   });
@@ -412,13 +399,14 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     setSearchInput('');
     setSearch('');
     setDateFilter('all');
-    setUnreadOnly(false);
+    setMailFilter('all');
     setFolderFilter('inbox');
     setPage(1);
     setDeletedEventIds(new Set());
     setSelectedIds(new Set());
     queryClient.refetchQueries({ queryKey: ['inbox-events', queryKeyId] });
     queryClient.refetchQueries({ queryKey: ['deleted-count', queryKeyId] });
+    queryClient.refetchQueries({ queryKey: ['rule-action-counts', queryKeyId] });
   }, [setFolderFilter, queryClient, queryKeyId]);
 
   const handleDateFilterChange = useCallback((filter: string) => {
@@ -426,8 +414,8 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     setPage(1);
   }, []);
 
-  const handleUnreadOnlyChange = useCallback((unread: boolean) => {
-    setUnreadOnly(unread);
+  const handleMailFilterChange = useCallback((filter: MailFilter) => {
+    setMailFilter(filter);
     setPage(1);
   }, []);
 
@@ -650,8 +638,9 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         onAiSearch={() => setAiSearchOpen(true)}
         dateFilter={dateFilter}
         onDateFilterChange={handleDateFilterChange}
-        unreadOnly={unreadOnly}
-        onUnreadOnlyChange={handleUnreadOnlyChange}
+        mailFilter={mailFilter}
+        onMailFilterChange={handleMailFilterChange}
+        ruleActionCounts={ruleActionCounts}
         totalCount={data?.pagination.total}
         previewPosition={previewPosition}
         onPreviewPositionChange={handlePreviewPositionChange}
@@ -709,8 +698,25 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
       ) : !visibleEvents.length ? (
         <EmptyState
           icon={Inbox}
-          title="No emails found"
-          description="No arrived emails have been recorded for this mailbox yet."
+          title={
+            mailFilter === 'read'
+              ? 'No rule-read emails'
+              : mailFilter === 'deleted'
+                ? 'No rule-deleted emails'
+                : 'No emails found'
+          }
+          description={
+            // These two filters only ever show what a RULE did, and provenance
+            // is recorded going forward -- so "empty" here usually means the
+            // rules simply haven't acted in this window, NOT that the mailbox
+            // failed to sync. Saying "no arrived emails" would read as a sync
+            // fault and send you chasing the wrong problem.
+            mailFilter === 'read'
+              ? 'No rules have marked emails read in this period. Try a wider date range.'
+              : mailFilter === 'deleted'
+                ? 'No rules have deleted emails in this period. Try a wider date range.'
+                : 'No arrived emails have been recorded for this mailbox yet.'
+          }
         />
       ) : (
         <PanelGroup
@@ -740,6 +746,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
                 activeEventId={previewEvent?._id}
                 focusedEventId={focusedIndex >= 0 && focusedIndex < visibleEvents.length ? visibleEvents[focusedIndex]._id : undefined}
                 folderFilter={folderFilter}
+                onSenderSortChange={handleSenderSortChange}
                 searchQuery={search}
                 isUnifiedMode={isUnifiedMode}
                 mailboxEmailMap={isUnifiedMode ? new Map(connectedMailboxes.map((mb) => [mb.id, mb.email])) : undefined}

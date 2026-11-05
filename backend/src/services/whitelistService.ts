@@ -55,6 +55,46 @@ export async function isWhitelisted(
 }
 
 /**
+ * Load every whitelist entry that applies to a mailbox ONCE and return a
+ * synchronous predicate.
+ *
+ * `isWhitelisted` costs one Mongo read plus two Redis round-trips per call,
+ * which is fine for a single inbound email but an N+1 when the pattern engine
+ * evaluates hundreds of senders in one analysis run. Callers in a loop should
+ * use this instead.
+ */
+export async function loadWhitelistMatcher(
+  mailboxId: Types.ObjectId,
+): Promise<(senderEmail: string) => boolean> {
+  const redis = getRedisClient();
+
+  const [mailbox, orgSenders, orgDomains] = await Promise.all([
+    Mailbox.findById(mailboxId).select(
+      'settings.whitelistedSenders settings.whitelistedDomains',
+    ),
+    redis.smembers(ORG_WHITELIST_SENDERS_KEY),
+    redis.smembers(ORG_WHITELIST_DOMAINS_KEY),
+  ]);
+
+  const senders = new Set<string>([
+    ...(mailbox?.settings.whitelistedSenders ?? []).map((s) => s.toLowerCase()),
+    ...orgSenders.map((s) => s.toLowerCase()),
+  ]);
+  const domains = new Set<string>([
+    ...(mailbox?.settings.whitelistedDomains ?? []).map((d) => d.toLowerCase()),
+    ...orgDomains.map((d) => d.toLowerCase()),
+  ]);
+
+  return (senderEmail: string): boolean => {
+    if (!senderEmail) return false;
+    const normalized = senderEmail.toLowerCase();
+    if (senders.has(normalized)) return true;
+    const domain = normalized.split('@')[1];
+    return domain ? domains.has(domain) : false;
+  };
+}
+
+/**
  * Add a sender or domain to the org-wide whitelist (stored in Redis).
  */
 export async function addToOrgWhitelist(

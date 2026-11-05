@@ -19,6 +19,7 @@ import logger from '../config/logger.js';
  */
 
 const CSRF_COOKIE = 'msedb_csrf';
+const SESSION_COOKIE = 'msedb_session';
 const CSRF_HEADER = 'x-csrf-token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -62,8 +63,12 @@ export function validateCsrf(req: Request, _res: Response, next: NextFunction): 
     return;
   }
 
-  // Bearer token requests (add-in) are not cookie-based — no CSRF risk
-  if (req.headers.authorization?.startsWith('Bearer ')) {
+  // Bearer token requests (add-in) are not cookie-based — no CSRF risk.
+  // Only skip when there's no session cookie at all: requireAuth tries the
+  // cookie FIRST, so a request carrying both would still authenticate via
+  // the cookie while an attacker-controlled Authorization header (which
+  // doesn't need to be a valid token to reach this check) disabled CSRF.
+  if (!req.cookies?.[SESSION_COOKIE] && req.headers.authorization?.startsWith('Bearer ')) {
     next();
     return;
   }

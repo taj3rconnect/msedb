@@ -11,6 +11,18 @@ export interface IEmailEventMetadata {
   isNewsletter?: boolean;
   isAutomated?: boolean;
   automatedByRule?: Types.ObjectId;
+  /**
+   * Rule-action provenance. Set ONLY when a RULE performed the action -- never
+   * when the user marks read / deletes by hand from the inbox. The inbox
+   * "Read" and "Deleted" filters key off these two timestamps, so a manual
+   * action leaking a stamp in here would silently misreport what automation
+   * did. Written by utils/ruleActionStamp.ts; a rescued staged email has its
+   * ruleDeletedAt cleared again (services/stagingManager.ts).
+   */
+  ruleMarkedReadAt?: Date;
+  ruleMarkedReadBy?: Types.ObjectId;
+  ruleDeletedAt?: Date;
+  ruleDeletedBy?: Types.ObjectId;
 }
 
 export interface IEmailEvent extends Document {
@@ -73,6 +85,10 @@ const emailEventSchema = new Schema<IEmailEvent>(
       isNewsletter: { type: Boolean },
       isAutomated: { type: Boolean },
       automatedByRule: { type: Schema.Types.ObjectId, ref: 'Rule' },
+      ruleMarkedReadAt: { type: Date },
+      ruleMarkedReadBy: { type: Schema.Types.ObjectId, ref: 'Rule' },
+      ruleDeletedAt: { type: Date },
+      ruleDeletedBy: { type: Schema.Types.ObjectId, ref: 'Rule' },
     },
     // Set by embeddingService.embedEmail() on successful Qdrant upsert.
     // Absence + timestamp >= reconcile cutoff = a real gap the reconciler
@@ -96,6 +112,17 @@ emailEventSchema.index({ receivedAt: 1 });
 // equality, timestamp range); embeddedAt existence is filtered in-memory
 // over the already-narrowed result set.
 emailEventSchema.index({ eventType: 1, isDeleted: 1, timestamp: 1 });
+// Back the inbox "Read"/"Deleted" rule-action filters. SPARSE because only the
+// small minority of events a rule actually touched carry these fields -- a
+// non-sparse index here would add ~493k near-empty entries for no gain.
+emailEventSchema.index(
+  { userId: 1, 'metadata.ruleMarkedReadAt': -1 },
+  { sparse: true }
+);
+emailEventSchema.index(
+  { userId: 1, 'metadata.ruleDeletedAt': -1 },
+  { sparse: true }
+);
 emailEventSchema.index({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 }); // 90-day TTL
 
 export const EmailEvent = model<IEmailEvent>('EmailEvent', emailEventSchema);

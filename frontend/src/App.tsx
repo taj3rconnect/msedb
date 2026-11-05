@@ -11,6 +11,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { CursorTipLayer } from '@/components/ui/cursor-tip';
 
 const DashboardPage = lazy(() => import('@/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const EmailActivityPage = lazy(() => import('@/pages/EmailActivityPage').then((m) => ({ default: m.EmailActivityPage })));
@@ -167,6 +168,7 @@ export default function App() {
       </TooltipProvider>
       <Toaster />
       <RulePopupModal />
+      <CursorTipLayer />
     </QueryClientProvider>
   );
 }

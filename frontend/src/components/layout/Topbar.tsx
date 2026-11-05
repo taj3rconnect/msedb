@@ -1,7 +1,7 @@
 import { HelpCircle, LogOut } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { useLocation, useParams, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useMemo } from 'react';
+import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -22,6 +22,12 @@ import {
 import { KillSwitch } from '@/components/layout/KillSwitch';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { fetchMailboxCounts } from '@/api/events';
+import {
+  buildInboxFilterParams,
+  parseDateFilter,
+  parseMailFilter,
+  resolveDateRange,
+} from '@/lib/inboxFilters';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -64,6 +70,7 @@ export function Topbar() {
   const mailboxes = useAuthStore((s) => s.mailboxes);
   const { logout } = useAuth();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { mailboxId } = useParams<{ mailboxId: string }>();
   const navigate = useNavigate();
 
@@ -73,11 +80,17 @@ export function Topbar() {
   const inboxFolder = useUiStore((s) => s.inboxFolder);
   const setInboxFolder = useUiStore((s) => s.setInboxFolder);
 
+  // The badges follow the filters the inbox list is showing (see inboxFilters.ts).
+  const dateFilter = parseDateFilter(searchParams.get('date'));
+  const mailFilter = parseMailFilter(searchParams.get('status'));
+  const dateRange = useMemo(() => resolveDateRange(dateFilter), [dateFilter]);
+
   const { data: countsData } = useQuery({
-    queryKey: ['mailbox-counts'],
-    queryFn: fetchMailboxCounts,
+    queryKey: ['mailbox-counts', dateFilter, mailFilter, inboxFolder],
+    queryFn: () => fetchMailboxCounts(buildInboxFilterParams(mailFilter, inboxFolder, dateRange)),
     enabled: isInboxPage && connectedMailboxes.length > 0,
     refetchInterval: 60000,
+    placeholderData: keepPreviousData,
   });
   const mailboxCounts = countsData?.counts ?? {};
 

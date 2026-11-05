@@ -8,6 +8,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { User } from '../models/User.js';
 import { queues } from '../jobs/queues.js';
 import { convertPatternToRule } from '../services/ruleConverter.js';
+import { classifyBulkTarget } from '../services/patternBulkPlan.js';
 import { getAccessTokenForMailbox } from '../auth/tokenManager.js';
 import { graphFetch } from '../services/graphClient.js';
 import logger from '../config/logger.js';
@@ -25,6 +26,33 @@ patternsRouter.use(requireAuth);
 
 // Valid action types for customization
 const VALID_ACTION_TYPES = ['delete', 'move', 'archive', 'markRead', 'flag', 'categorize'] as const;
+
+// Upper bound on a single bulk-approve request — keeps one click from queuing
+// an unbounded number of Graph-backed rule creations.
+const BULK_APPROVE_MAX = 500;
+
+/**
+ * Delete every rule this pattern is responsible for — the one converted from it
+ * plus any rule targeting the same sender email/domain (quick actions create
+ * those without a sourcePatternId).
+ *
+ * Used wherever a pattern stops standing behind its rule: reject, unapprove, and
+ * re-targeting an approved pattern to a different action.
+ */
+async function deleteRulesForPattern(
+  userId: string,
+  pattern: { _id: Types.ObjectId; condition?: { senderEmail?: string; senderDomain?: string } },
+): Promise<number> {
+  const clauses: Record<string, unknown>[] = [{ sourcePatternId: pattern._id }];
+  if (pattern.condition?.senderEmail) {
+    clauses.push({ 'conditions.senderEmail': pattern.condition.senderEmail });
+  }
+  if (pattern.condition?.senderDomain) {
+    clauses.push({ 'conditions.senderDomain': pattern.condition.senderDomain });
+  }
+  const result = await Rule.deleteMany({ userId, $or: clauses });
+  return result.deletedCount ?? 0;
+}
 
 /**
  * GET /api/patterns
@@ -193,6 +221,378 @@ patternsRouter.post('/analyze', async (req: Request, res: Response) => {
   res.json({
     message: 'Pattern analysis queued',
     jobId: job.id,
+  });
+});
+
+/**
+ * GET /api/patterns/suggest
+ *
+ * Typeahead suggestions for the patterns search box. Returns distinct sender
+ * emails and domains matching the query, aggregated in the database.
+ * Query params: q (required, >= 1 char), mailboxId (optional), limit (default 10, max 25)
+ */
+patternsRouter.get('/suggest', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const { q, mailboxId } = req.query;
+
+  if (!q || typeof q !== 'string' || !q.trim()) {
+    res.json({ suggestions: [] });
+    return;
+  }
+
+  const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 25);
+  const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const searchRegex = new RegExp(escaped, 'i');
+
+  const match: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
+  if (mailboxId && typeof mailboxId === 'string') {
+    match.mailboxId = new Types.ObjectId(mailboxId);
+  }
+  match.$or = [
+    { 'condition.senderEmail': searchRegex },
+    { 'condition.senderDomain': searchRegex },
+  ];
+
+  // Aggregate distinct sender values in the DB — never fetch-then-dedupe in app code.
+  const rows = await Pattern.aggregate<{ _id: { value: string; type: string }; count: number }>([
+    { $match: match },
+    {
+      $project: {
+        values: {
+          $filter: {
+            input: [
+              { value: '$condition.senderEmail', type: 'email' },
+              { value: '$condition.senderDomain', type: 'domain' },
+            ],
+            as: 'v',
+            cond: {
+              $and: [
+                { $ne: ['$$v.value', null] },
+                { $ne: ['$$v.value', ''] },
+                { $regexMatch: { input: { $ifNull: ['$$v.value', ''] }, regex: searchRegex } },
+              ],
+            },
+          },
+        },
+      },
+    },
+    { $unwind: '$values' },
+    { $group: { _id: { value: '$values.value', type: '$values.type' }, count: { $sum: 1 } } },
+    { $sort: { count: -1, '_id.value': 1 } },
+    { $limit: limit },
+  ]);
+
+  res.json({
+    suggestions: rows.map((r) => ({
+      value: r._id.value,
+      type: r._id.type as 'email' | 'domain',
+      count: r.count,
+    })),
+  });
+});
+
+/**
+ * Re-enable a sender the user previously silenced, so approving its pattern
+ * cannot produce a rule that the whitelist gate would quietly refuse to fire.
+ * Returns the values pulled from the mailbox whitelist.
+ */
+async function unsilenceSenderForPattern(
+  userId: string,
+  pattern: { mailboxId: Types.ObjectId; condition?: { senderEmail?: string; senderDomain?: string } },
+): Promise<string[]> {
+  const email = pattern.condition?.senderEmail?.trim().toLowerCase();
+  const domain = pattern.condition?.senderDomain?.trim().toLowerCase();
+  const pull: Record<string, unknown> = {};
+  if (email) pull['settings.whitelistedSenders'] = email;
+  if (domain) pull['settings.whitelistedDomains'] = domain;
+  if (!Object.keys(pull).length) return [];
+
+  const mailbox = await Mailbox.findOne({ _id: pattern.mailboxId, userId })
+    .select('settings.whitelistedSenders settings.whitelistedDomains')
+    .lean();
+  if (!mailbox) return [];
+
+  const removed: string[] = [];
+  if (email && mailbox.settings?.whitelistedSenders?.some((s) => s.toLowerCase() === email)) {
+    removed.push(email);
+  }
+  if (domain && mailbox.settings?.whitelistedDomains?.some((d) => d.toLowerCase() === domain)) {
+    removed.push(domain);
+  }
+  if (!removed.length) return [];
+
+  await Mailbox.updateOne({ _id: pattern.mailboxId, userId }, { $pull: pull });
+  await AuditLog.create({
+    userId,
+    mailboxId: pattern.mailboxId,
+    action: 'whitelist_updated',
+    targetType: 'mailbox',
+    targetId: pattern.mailboxId.toString(),
+    details: { source: 'pattern_bulk_approve', removed },
+  });
+  return removed;
+}
+
+/**
+ * POST /api/patterns/bulk-approve
+ *
+ * Apply one chosen action to many patterns at once, whatever state each one is
+ * in. Body: { patternIds: string[], actionType: 'delete' | 'markRead' }
+ *
+ *   detected / suggested → approved, and a rule is created
+ *   approved             → the old rule is deleted and rebuilt on the new action
+ *   rejected / expired   → re-approved: cooldown cleared, the sender is taken
+ *                          back off the whitelist (otherwise the new rule would
+ *                          never fire), and a rule is created
+ *
+ * Never runs implicitly — the frontend only calls this on an explicit click,
+ * preserving the "no rule without user approval" contract.
+ */
+patternsRouter.post('/bulk-approve', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const { patternIds, actionType } = req.body as {
+    patternIds?: unknown;
+    actionType?: unknown;
+  };
+
+  if (!Array.isArray(patternIds) || patternIds.length === 0) {
+    throw new ValidationError('patternIds must be a non-empty array');
+  }
+  if (patternIds.length > BULK_APPROVE_MAX) {
+    throw new ValidationError(`Cannot process more than ${BULK_APPROVE_MAX} patterns in one request`);
+  }
+  if (!patternIds.every((id): id is string => typeof id === 'string' && Types.ObjectId.isValid(id))) {
+    throw new ValidationError('patternIds must all be valid pattern ids');
+  }
+  if (actionType !== 'delete' && actionType !== 'markRead') {
+    throw new ValidationError("actionType must be 'delete' or 'markRead'");
+  }
+
+  const uniqueIds = [...new Set(patternIds)];
+  const patterns = await Pattern.find({ _id: { $in: uniqueIds }, userId });
+  const found = new Set(patterns.map((p) => p._id.toString()));
+
+  const results: Array<{
+    patternId: string;
+    status: 'created' | 'updated' | 'skipped' | 'failed';
+    ruleId?: string;
+    reason?: string;
+  }> = uniqueIds
+    .filter((id) => !found.has(id))
+    .map((id) => ({ patternId: id, status: 'skipped' as const, reason: 'Pattern not found' }));
+
+  for (const pattern of patterns) {
+    const patternId = pattern._id.toString();
+    const priorStatus = pattern.status;
+
+    try {
+      const originalAction = {
+        actionType: pattern.suggestedAction.actionType,
+        toFolder: pattern.suggestedAction.toFolder,
+        category: pattern.suggestedAction.category,
+      };
+
+      const plan = classifyBulkTarget(priorStatus, originalAction.actionType, actionType);
+
+      // Already doing exactly this — leave the live rule (and its stats) alone.
+      if (plan === 'skip') {
+        results.push({ patternId, status: 'skipped', reason: `Already set to ${actionType}` });
+        continue;
+      }
+
+      // An approved pattern's rule is replaced outright rather than edited, so a
+      // stale action can never outlive the change.
+      const rulesDeleted = plan === 'retarget' ? await deleteRulesForPattern(userId, pattern) : 0;
+
+      // Re-approving something the user had silenced: lift the whitelist entry
+      // too, or the rule we are about to create would never fire.
+      const unsilenced =
+        plan === 'unsilence' ? await unsilenceSenderForPattern(userId, pattern) : [];
+
+      // Bulk actions are always terminal (delete / markRead) — no folder or category carries over.
+      pattern.suggestedAction = { actionType };
+      pattern.status = 'approved';
+      pattern.approvedAt = new Date();
+      pattern.rejectedAt = undefined;
+      pattern.rejectionCooldownUntil = undefined;
+      await pattern.save();
+
+      await AuditLog.create({
+        userId,
+        mailboxId: pattern.mailboxId,
+        action: 'pattern_approved',
+        targetType: 'pattern',
+        targetId: patternId,
+        details: {
+          patternType: pattern.patternType,
+          confidence: pattern.confidence,
+          condition: pattern.condition,
+          suggestedAction: pattern.suggestedAction,
+          bulk: true,
+          priorStatus,
+          originalAction,
+          ...(rulesDeleted ? { retargeted: true, rulesDeleted } : {}),
+          ...(unsilenced.length ? { unsilenced } : {}),
+        },
+      });
+
+      const rule = await convertPatternToRule(pattern._id, new Types.ObjectId(userId));
+      results.push({
+        patternId,
+        status: plan === 'retarget' ? 'updated' : 'created',
+        ruleId: rule._id?.toString(),
+      });
+    } catch (err) {
+      // One bad pattern must not abort the batch — record it and keep going.
+      logger.warn('Bulk pattern approval failed for one pattern', {
+        patternId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      results.push({
+        patternId,
+        status: 'failed',
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  const created = results.filter((r) => r.status === 'created').length;
+  const updated = results.filter((r) => r.status === 'updated').length;
+  const skipped = results.filter((r) => r.status === 'skipped').length;
+  const failed = results.filter((r) => r.status === 'failed').length;
+
+  logger.info('Bulk pattern approval complete', {
+    userId,
+    actionType,
+    created,
+    updated,
+    skipped,
+    failed,
+  });
+
+  res.json({ created, updated, skipped, failed, total: uniqueIds.length, results });
+});
+
+/**
+ * POST /api/patterns/bulk-suppress
+ *
+ * Permanently silence the senders behind the given patterns: add each one to
+ * its mailbox's whitelist and mark the pattern rejected, so pattern analysis
+ * never suggests a rule for that sender again.
+ *
+ * Body: { patternIds: string[], scope?: 'sender' | 'domain' }
+ *   scope 'sender' (default) whitelists the exact address;
+ *   scope 'domain' whitelists the whole sending domain.
+ *
+ * Non-destructive: existing rules are left untouched. They become inert on
+ * their own because ruleEngine already refuses to act on whitelisted senders,
+ * so nothing the user built is deleted behind their back.
+ */
+patternsRouter.post('/bulk-suppress', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const { patternIds, scope = 'sender' } = req.body as {
+    patternIds?: unknown;
+    scope?: unknown;
+  };
+
+  if (!Array.isArray(patternIds) || patternIds.length === 0) {
+    throw new ValidationError('patternIds must be a non-empty array');
+  }
+  if (patternIds.length > BULK_APPROVE_MAX) {
+    throw new ValidationError(`Cannot process more than ${BULK_APPROVE_MAX} patterns in one request`);
+  }
+  if (!patternIds.every((id): id is string => typeof id === 'string' && Types.ObjectId.isValid(id))) {
+    throw new ValidationError('patternIds must all be valid pattern ids');
+  }
+  if (scope !== 'sender' && scope !== 'domain') {
+    throw new ValidationError("scope must be 'sender' or 'domain'");
+  }
+
+  const uniqueIds = [...new Set(patternIds)];
+  const patterns = await Pattern.find({ _id: { $in: uniqueIds }, userId });
+
+  // Group the values to whitelist by mailbox so each mailbox is written once,
+  // rather than once per pattern.
+  const byMailbox = new Map<string, { senders: Set<string>; domains: Set<string> }>();
+  const suppressedValues: string[] = [];
+  const skipped: Array<{ patternId: string; reason: string }> = [];
+
+  for (const pattern of patterns) {
+    const email = pattern.condition?.senderEmail?.trim();
+    const domain = pattern.condition?.senderDomain?.trim();
+    const value = scope === 'domain' ? (domain ?? email?.split('@')[1]) : (email ?? domain);
+
+    if (!value) {
+      skipped.push({ patternId: pattern._id.toString(), reason: 'Pattern has no sender to suppress' });
+      continue;
+    }
+
+    const key = pattern.mailboxId.toString();
+    if (!byMailbox.has(key)) byMailbox.set(key, { senders: new Set(), domains: new Set() });
+    const bucket = byMailbox.get(key)!;
+    // A value is a domain entry when we're in domain scope or it isn't an address.
+    if (scope === 'domain' || !value.includes('@')) bucket.domains.add(value.toLowerCase());
+    else bucket.senders.add(value.toLowerCase());
+    suppressedValues.push(value.toLowerCase());
+  }
+
+  // Apply the whitelist additions — $addToSet keeps this idempotent.
+  let mailboxesUpdated = 0;
+  for (const [mailboxId, { senders, domains }] of byMailbox) {
+    const addToSet: Record<string, unknown> = {};
+    if (senders.size) addToSet['settings.whitelistedSenders'] = { $each: [...senders] };
+    if (domains.size) addToSet['settings.whitelistedDomains'] = { $each: [...domains] };
+    if (!Object.keys(addToSet).length) continue;
+
+    const result = await Mailbox.updateOne({ _id: mailboxId, userId }, { $addToSet: addToSet });
+    if (result.matchedCount > 0) mailboxesUpdated++;
+
+    await AuditLog.create({
+      userId,
+      mailboxId,
+      action: 'whitelist_updated',
+      targetType: 'mailbox',
+      targetId: mailboxId,
+      details: {
+        source: 'pattern_bulk_suppress',
+        addedSenders: [...senders],
+        addedDomains: [...domains],
+      },
+    });
+  }
+
+  // Mark the patterns rejected so they leave the suggestion queue immediately.
+  // The whitelist — not this status — is what keeps them from coming back.
+  const rejectableIds = patterns
+    .filter((p) => p.status === 'detected' || p.status === 'suggested')
+    .map((p) => p._id);
+
+  const updateResult = await Pattern.updateMany(
+    { _id: { $in: rejectableIds }, userId },
+    {
+      $set: {
+        status: 'rejected',
+        rejectedAt: new Date(),
+        // Far-future: suppression is permanent, and the whitelist is the real gate.
+        rejectionCooldownUntil: new Date('9999-12-31T00:00:00.000Z'),
+      },
+    },
+  );
+
+  logger.info('Bulk pattern suppression complete', {
+    userId,
+    scope,
+    suppressed: suppressedValues.length,
+    mailboxesUpdated,
+    patternsRejected: updateResult.modifiedCount,
+  });
+
+  res.json({
+    suppressed: suppressedValues.length,
+    values: [...new Set(suppressedValues)],
+    patternsRejected: updateResult.modifiedCount,
+    mailboxesUpdated,
+    skipped,
   });
 });
 
@@ -367,20 +767,11 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
   }
 
   // Delete any rules associated with this pattern (by sourcePatternId or sender email/domain)
-  const ruleDeleteClauses: Record<string, unknown>[] = [
-    { sourcePatternId: pattern._id },
-  ];
-  if (pattern.condition?.senderEmail) {
-    ruleDeleteClauses.push({ 'conditions.senderEmail': pattern.condition.senderEmail });
-  }
-  if (pattern.condition?.senderDomain) {
-    ruleDeleteClauses.push({ 'conditions.senderDomain': pattern.condition.senderDomain });
-  }
-  const deleteResult = await Rule.deleteMany({ userId, $or: ruleDeleteClauses });
-  if (deleteResult.deletedCount > 0) {
+  const rulesDeleted = await deleteRulesForPattern(userId, pattern);
+  if (rulesDeleted > 0) {
     logger.info('Deleted rules on pattern rejection', {
       patternId: pattern._id,
-      deletedCount: deleteResult.deletedCount,
+      deletedCount: rulesDeleted,
       userId,
     });
   }
@@ -405,7 +796,7 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
       confidence: pattern.confidence,
       condition: pattern.condition,
       suggestedAction: pattern.suggestedAction,
-      rulesDeleted: deleteResult.deletedCount,
+      rulesDeleted,
     },
   });
 
@@ -413,9 +804,58 @@ patternsRouter.post('/:id/reject', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/patterns/:id/unapprove
+ *
+ * Undo an approval: the pattern returns to 'suggested' and the rule it created
+ * is deleted, so nothing keeps acting on that sender. The pattern itself is
+ * kept (with its evidence), so it can be approved again later.
+ */
+patternsRouter.post('/:id/unapprove', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+
+  const pattern = await Pattern.findOne({ _id: req.params.id, userId });
+  if (!pattern) {
+    throw new NotFoundError('Pattern not found');
+  }
+
+  if (pattern.status !== 'approved') {
+    throw new ConflictError(`Only approved patterns can be unapproved (current status: ${pattern.status})`);
+  }
+
+  const rulesDeleted = await deleteRulesForPattern(userId, pattern);
+
+  pattern.status = 'suggested';
+  pattern.approvedAt = undefined;
+  await pattern.save();
+
+  await AuditLog.create({
+    userId,
+    mailboxId: pattern.mailboxId,
+    action: 'pattern_unapproved',
+    targetType: 'pattern',
+    targetId: pattern._id.toString(),
+    details: {
+      patternType: pattern.patternType,
+      condition: pattern.condition,
+      suggestedAction: pattern.suggestedAction,
+      rulesDeleted,
+    },
+  });
+
+  logger.info('Pattern unapproved', { patternId: pattern._id, userId, rulesDeleted });
+
+  res.json({ pattern, rulesDeleted });
+});
+
+/**
  * POST /api/patterns/:id/customize
  *
- * Customize a pattern's suggested action and approve it.
+ * Set a pattern's action and approve it.
+ *
+ * Also accepts an already-approved pattern, which is how the user changes their
+ * mind about what an active rule does: the existing rule is deleted and a fresh
+ * one is created from the new action, so the rule can never disagree with the
+ * pattern it came from.
  */
 patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
   const userId = getUserId(req);
@@ -425,8 +865,9 @@ patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
     throw new NotFoundError('Pattern not found');
   }
 
-  if (pattern.status !== 'detected' && pattern.status !== 'suggested') {
-    throw new ConflictError(`Pattern is already ${pattern.status}`);
+  const wasApproved = pattern.status === 'approved';
+  if (pattern.status !== 'detected' && pattern.status !== 'suggested' && !wasApproved) {
+    throw new ConflictError(`Pattern is ${pattern.status} and cannot be changed`);
   }
 
   const { suggestedAction } = req.body as {
@@ -457,6 +898,10 @@ patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
     ...(suggestedAction.category ? { category: suggestedAction.category } : {}),
   };
 
+  // Re-targeting an already-approved pattern: the old rule is replaced outright
+  // rather than edited, so a stale action can never survive the change.
+  const rulesDeleted = wasApproved ? await deleteRulesForPattern(userId, pattern) : 0;
+
   pattern.status = 'approved';
   pattern.approvedAt = new Date();
   await pattern.save();
@@ -474,6 +919,7 @@ patternsRouter.post('/:id/customize', async (req: Request, res: Response) => {
       suggestedAction: pattern.suggestedAction,
       customized: true,
       originalAction,
+      ...(wasApproved ? { retargeted: true, rulesDeleted } : {}),
     },
   });
 

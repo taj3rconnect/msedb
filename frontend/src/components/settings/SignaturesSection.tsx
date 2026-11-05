@@ -7,6 +7,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { updateMailboxSignatures, type Signature, type MailboxInfo } from '@/api/settings';
 
 interface MailboxSignaturesProps {
@@ -92,6 +103,7 @@ function MailboxSignatures({ mailbox }: MailboxSignaturesProps) {
                 size="icon"
                 className="h-8 w-8 shrink-0"
                 title={sig.isDefault ? 'Default signature' : 'Set as default'}
+                aria-label={sig.isDefault ? 'Default signature' : 'Set as default'}
                 onClick={() => setDefault(sig.id)}
               >
                 {sig.isDefault ? (
@@ -100,14 +112,35 @@ function MailboxSignatures({ mailbox }: MailboxSignaturesProps) {
                   <StarOff className="h-4 w-4 text-muted-foreground" />
                 )}
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
-                onClick={() => remove(sig.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                    aria-label={`Delete signature "${sig.name}"`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete signature</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Delete signature &quot;{sig.name}&quot;? This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => remove(sig.id)}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
 
             {editingId === sig.id ? (

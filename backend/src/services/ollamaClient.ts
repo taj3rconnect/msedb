@@ -2,6 +2,13 @@ import type { Response } from 'express';
 import { config } from '../config/index.js';
 import logger from '../config/logger.js';
 
+/**
+ * Wall-clock cap for a single Ollama request, matching the 30s Graph timeout
+ * convention in graphClient.ts. Without it a hung Ollama blocks the
+ * email-embedding worker (BullMQ concurrency 1) forever.
+ */
+const OLLAMA_TIMEOUT_MS = 30_000;
+
 export interface ParsedSearchQuery {
   senderFilter?: string;
   senderDomainFilter?: string;
@@ -25,6 +32,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       model: config.ollamaEmbedModel,
       prompt: text,
     }),
+    signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -93,6 +101,7 @@ Query: "unread newsletters"
           num_predict: 300,
         },
       }),
+      signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -139,6 +148,7 @@ export async function generateOllamaCompletion(
       think: false,
       options: { temperature: opts.temperature, num_predict: opts.numPredict },
     }),
+    signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
   });
 
   if (!response.ok) {
