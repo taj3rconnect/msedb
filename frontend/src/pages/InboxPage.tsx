@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 import { fetchEvents, fetchRuleActionCounts, summarizeToday, sendSummaryEmail } from '@/api/events';
-import type { MailFilter } from '@/api/events';
+import type { MailFilter, SenderGroupBy } from '@/api/events';
 import type { EventItem } from '@/api/events';
 import { applyActionsToMessages } from '@/api/mailboxes';
 import { batchLookupTracking, type TrackingMatch } from '@/api/tracking';
@@ -42,6 +42,8 @@ import {
   buildInboxFilterParams,
   parseDateFilter,
   parseMailFilter,
+  parseMinSenderCount,
+  parseSenderGroupBy,
   resolveDateRange,
 } from '@/lib/inboxFilters';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -109,6 +111,13 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   // Set by a click on the Sender header. Sorted on the server so it covers every
   // page; null is the default newest-first order.
   const [senderSort, setSenderSort] = useState<SenderSort>(null);
+  // Unread only: show just the senders or domains with at least this many unread.
+  const [minSenderCount, setMinSenderCount] = useState(() =>
+    parseMinSenderCount(searchParams.get('minCount')),
+  );
+  const [senderGroupBy, setSenderGroupBy] = useState(() =>
+    parseSenderGroupBy(searchParams.get('groupBy')),
+  );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [dialogEvents, setDialogEvents] = useState<EventItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -243,16 +252,23 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         const next = new URLSearchParams(prev);
         next.set('date', dateFilter);
         next.set('status', mailFilter);
+        if (minSenderCount === undefined) {
+          next.delete('minCount');
+          next.delete('groupBy');
+        } else {
+          next.set('minCount', String(minSenderCount));
+          next.set('groupBy', senderGroupBy);
+        }
         return next;
       },
       { replace: true },
     );
-  }, [dateFilter, mailFilter, setSearchParams]);
+  }, [dateFilter, mailFilter, minSenderCount, senderGroupBy, setSearchParams]);
 
   // Clear selection and reset page when page, search, date filter, or folder changes
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [page, search, dateFilter, folderFilter]);
+  }, [page, search, dateFilter, folderFilter, minSenderCount, senderGroupBy]);
 
   // Reset page when folder changes
   useEffect(() => {
@@ -263,10 +279,13 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
   const dateRange = useMemo(() => resolveDateRange(dateFilter), [dateFilter]);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, mailFilter, folderFilter, senderSort],
+    queryKey: ['inbox-events', queryKeyId, page, search, dateFilter, mailFilter, folderFilter, senderSort, minSenderCount, senderGroupBy],
     queryFn: () =>
       fetchEvents({
-        ...buildInboxFilterParams(mailFilter, folderFilter, dateRange),
+        ...buildInboxFilterParams(mailFilter, folderFilter, dateRange, {
+          minCount: minSenderCount,
+          groupBy: senderGroupBy,
+        }),
         mailboxId: mailboxId || undefined,
         sortBy: senderSort ? 'sender.email' : 'timestamp',
         sortOrder: senderSort ?? 'desc',
@@ -400,6 +419,7 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
     setSearch('');
     setDateFilter('all');
     setMailFilter('all');
+    setMinSenderCount(undefined);
     setFolderFilter('inbox');
     setPage(1);
     setDeletedEventIds(new Set());
@@ -416,6 +436,18 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
 
   const handleMailFilterChange = useCallback((filter: MailFilter) => {
     setMailFilter(filter);
+    // The volume filter exists only on Unread, so it must not come back silently.
+    if (filter !== 'unread') setMinSenderCount(undefined);
+    setPage(1);
+  }, []);
+
+  const handleMinSenderCountChange = useCallback((minCount: number | undefined) => {
+    setMinSenderCount(minCount);
+    setPage(1);
+  }, []);
+
+  const handleSenderGroupByChange = useCallback((groupBy: SenderGroupBy) => {
+    setSenderGroupBy(groupBy);
     setPage(1);
   }, []);
 
@@ -640,6 +672,10 @@ function InboxEmailList({ mailboxId, isUnifiedMode = false }: { mailboxId?: stri
         onDateFilterChange={handleDateFilterChange}
         mailFilter={mailFilter}
         onMailFilterChange={handleMailFilterChange}
+        minSenderCount={minSenderCount}
+        senderGroupBy={senderGroupBy}
+        onMinSenderCountChange={handleMinSenderCountChange}
+        onSenderGroupByChange={handleSenderGroupByChange}
         ruleActionCounts={ruleActionCounts}
         totalCount={data?.pagination.total}
         previewPosition={previewPosition}

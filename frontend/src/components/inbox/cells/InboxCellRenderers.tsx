@@ -230,7 +230,7 @@ export function SenderCellRenderer(props: CustomCellRendererProps<EventItem, str
 
   return (
     <div className="min-w-0 w-full h-full flex items-center overflow-hidden">
-      <div className="min-w-0 w-full flex flex-col justify-center overflow-hidden">
+      <div className="min-w-0 flex-1 flex flex-col justify-center overflow-hidden">
         <div
           className="font-medium truncate text-left leading-tight"
           dangerouslySetInnerHTML={{
@@ -246,6 +246,14 @@ export function SenderCellRenderer(props: CustomCellRendererProps<EventItem, str
           />
         )}
       </div>
+      {event.senderGroupCount !== undefined && (
+        <span
+          className="ml-2 shrink-0 rounded bg-muted px-1.5 text-xs font-medium tabular-nums"
+          title={`${event.senderGroupCount.toLocaleString()} unread in this group`}
+        >
+          {event.senderGroupCount.toLocaleString()}
+        </span>
+      )}
     </div>
   );
 }
